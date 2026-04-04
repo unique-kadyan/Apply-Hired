@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Jobs - Job Application Bot{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <h1>Jobs</h1>
+    <span style="color: #94a3b8;">{{ jobs|length }} results</span>
+</div>
+
+<!-- Filters -->
+<div class="filters">
+    <form method="GET" style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: center;">
+        <select name="status">
+            <option value="">All Statuses</option>
+            <option value="new" {% if status_filter == 'new' %}selected{% endif %}>New</option>
+            <option value="saved" {% if status_filter == 'saved' %}selected{% endif %}>Saved</option>
+            <option value="applied" {% if status_filter == 'applied' %}selected{% endif %}>Applied</option>
+            <option value="interview" {% if status_filter == 'interview' %}selected{% endif %}>Interview</option>
+            <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+        </select>
+        <select name="min_score">
+            <option value="0" {% if min_score == 0 %}selected{% endif %}>Any Score</option>
+            <option value="0.3" {% if min_score == 0.3 %}selected{% endif %}>30%+</option>
+            <option value="0.5" {% if min_score == 0.5 %}selected{% endif %}>50%+</option>
+            <option value="0.7" {% if min_score == 0.7 %}selected{% endif %}>70%+</option>
+        </select>
+        <select name="source">
+            <option value="">All Sources</option>
+            <option value="RemoteOK" {% if source_filter == 'RemoteOK' %}selected{% endif %}>RemoteOK</option>
+            <option value="Remotive" {% if source_filter == 'Remotive' %}selected{% endif %}>Remotive</option>
+            <option value="Arbeitnow" {% if source_filter == 'Arbeitnow' %}selected{% endif %}>Arbeitnow</option>
+            <option value="JSearch" {% if source_filter == 'JSearch' %}selected{% endif %}>JSearch</option>
+            <option value="WeWorkRemotely" {% if source_filter == 'WeWorkRemotely' %}selected{% endif %}>WeWorkRemotely</option>
+            <option value="Jobicy" {% if source_filter == 'Jobicy' %}selected{% endif %}>Jobicy</option>
+            <option value="FindWork" {% if source_filter == 'FindWork' %}selected{% endif %}>FindWork</option>
+            <option value="Adzuna" {% if source_filter == 'Adzuna' %}selected{% endif %}>Adzuna</option>
+            <option value="TheMuse" {% if source_filter == 'TheMuse' %}selected{% endif %}>TheMuse</option>
+            <option value="HackerNews" {% if source_filter == 'HackerNews' %}selected{% endif %}>HackerNews</option>
+        </select>
+        <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+        <a href="{{ url_for('jobs_page') }}" class="btn btn-secondary btn-sm">Reset</a>
+    </form>
+</div>
+
+<!-- Job list with checkboxes -->
+<form method="POST" action="{{ url_for('apply_jobs') }}" id="applyForm">
+    <div class="card" style="padding: 0; overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 40px;">
+                        <input type="checkbox" id="selectAll" title="Select All">
+                    </th>
+                    <th>Score</th>
+                    <th>Title</th>
+                    <th>Company</th>
+                    <th>Location</th>
+                    <th>Source</th>
+                    <th>Salary</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr>
+                    <td>
+                        <input type="checkbox" name="job_ids" value="{{ job.id }}" class="job-checkbox"
+                               {% if job.status == 'applied' %}disabled{% endif %}>
+                    </td>
+                    <td>
+                        {% set pct = (job.score * 100)|int %}
+                        <span class="score-badge {% if pct >= 70 %}score-high{% elif pct >= 40 %}score-mid{% else %}score-low{% endif %}">
+                            {{ pct }}%
+                        </span>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('job_detail', job_id=job.id) }}" style="font-weight: 600;">
+                            {{ job.title[:50] }}{% if job.title|length > 50 %}...{% endif %}
+                        </a>
+                    </td>
+                    <td>{{ job.company[:25] }}</td>
+                    <td style="color: #94a3b8; font-size: 0.85rem;">{{ job.location[:20] }}</td>
+                    <td><span class="tag">{{ job.source }}</span></td>
+                    <td>
+                        {% if job.salary %}
+                        <span style="color: #6ee7b7; font-weight: 600; font-size: 0.85rem;">{{ job.salary }}</span>
+                        {% else %}
+                        <span style="color: #475569; font-size: 0.85rem;">Not listed</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="status-badge status-{{ job.status }}">{{ job.status }}</span></td>
+                    <td>
+                        <a href="{{ job.url }}" target="_blank" class="btn btn-sm btn-primary">Open</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Floating apply bar -->
+    <div class="apply-bar hidden" id="applyBar">
+        <div>
+            <span class="selected-count" id="selectedCount">0</span> selected (max 10)
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="clearSelection()">Clear</button>
+            <button type="submit" class="btn btn-success" id="applyBtn">
+                Apply to Selected Jobs
+            </button>
+        </div>
+    </div>
+</form>
+
+{% if not jobs %}
+<div style="text-align: center; padding: 4rem 2rem; color: #94a3b8;">
+    <p style="font-size: 1.2rem; margin-bottom: 1rem;">No jobs found.</p>
+    <a href="{{ url_for('search_page') }}" class="btn btn-primary">Run a Search</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const checkboxes = document.querySelectorAll('.job-checkbox');
+    const selectAll = document.getElementById('selectAll');
+    const applyBar = document.getElementById('applyBar');
+    const selectedCount = document.getElementById('selectedCount');
+    const applyBtn = document.getElementById('applyBtn');
+    const MAX_SELECT = 10;
+
+    function updateBar() {
+        const checked = document.querySelectorAll('.job-checkbox:checked');
+        const count = checked.length;
+        selectedCount.textContent = count;
+
+        if (count > 0) {
+            applyBar.classList.remove('hidden');
+        } else {
+            applyBar.classList.add('hidden');
+        }
+
+        // Disable unchecked boxes if 10 selected
+        if (count >= MAX_SELECT) {
+            checkboxes.forEach(cb => {
+                if (!cb.checked && !cb.disabled) cb.disabled = true;
+            });
+            applyBtn.textContent = `Apply to ${count} Jobs (Max)`;
+        } else {
+            checkboxes.forEach(cb => {
+                if (!cb.dataset.origDisabled) cb.disabled = false;
+            });
+            applyBtn.textContent = `Apply to ${count} Selected Job${count > 1 ? 's' : ''}`;
+        }
+    }
+
+    // Mark originally disabled checkboxes
+    checkboxes.forEach(cb => {
+        if (cb.disabled) cb.dataset.origDisabled = 'true';
+        cb.addEventListener('change', updateBar);
+    });
+
+    selectAll.addEventListener('change', function() {
+        let count = 0;
+        checkboxes.forEach(cb => {
+            if (!cb.dataset.origDisabled) {
+                if (this.checked && count < MAX_SELECT) {
+                    cb.checked = true;
+                    count++;
+                } else if (!this.checked) {
+                    cb.checked = false;
+                }
+            }
+        });
+        updateBar();
+    });
+
+    function clearSelection() {
+        checkboxes.forEach(cb => { cb.checked = false; });
+        selectAll.checked = false;
+        updateBar();
+    }
+
+    // Confirm before applying
+    document.getElementById('applyForm').addEventListener('submit', function(e) {
+        const count = document.querySelectorAll('.job-checkbox:checked').length;
+        if (count === 0) {
+            e.preventDefault();
+            alert('Please select at least one job.');
+            return;
+        }
+        if (!confirm(`Mark ${count} job(s) as applied? Cover letters will be auto-generated.`)) {
+            e.preventDefault();
+        }
+    });
+</script>
+{% endblock %}

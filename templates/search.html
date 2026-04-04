@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}Search - Job Application Bot{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 1.5rem;">Search Jobs</h1>
+
+<!-- Search form -->
+<div class="card">
+    <h2>Configure Your Search</h2>
+    <form method="POST" id="searchForm">
+
+        <!-- Job Title / Role -->
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; color: #94a3b8; font-weight: 600; margin-bottom: 0.5rem;">Job Title / Role</label>
+            <input type="text" name="job_title" id="jobTitle" placeholder="e.g. Senior Backend Engineer, Java Developer..."
+                   value="{{ request.form.get('job_title', '') }}"
+                   style="width: 100%; background: #0f172a; border: 1px solid #475569; color: #e2e8f0; padding: 0.7rem 1rem; border-radius: 8px; font-size: 1rem;">
+        </div>
+
+        <!-- Location -->
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; color: #94a3b8; font-weight: 600; margin-bottom: 0.5rem;">Location</label>
+            <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; color: #e2e8f0;">
+                    <input type="radio" name="location_type" value="remote" checked
+                           style="accent-color: #2563eb;" onchange="toggleLocationInput()">
+                    Remote (Worldwide)
+                </label>
+                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; color: #e2e8f0;">
+                    <input type="radio" name="location_type" value="remote_in_country"
+                           style="accent-color: #2563eb;" onchange="toggleLocationInput()">
+                    Remote in Country
+                </label>
+                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; color: #e2e8f0;">
+                    <input type="radio" name="location_type" value="custom"
+                           style="accent-color: #2563eb;" onchange="toggleLocationInput()">
+                    Specific Location
+                </label>
+            </div>
+            <div style="display: flex; gap: 1rem; margin-top: 0.8rem; flex-wrap: wrap;">
+                <div id="countrySelect" style="display: none;">
+                    <label style="color: #64748b; font-size: 0.8rem; display: block; margin-bottom: 0.3rem;">Country</label>
+                    <select name="country" id="countryInput"
+                            style="background: #0f172a; border: 1px solid #475569; color: #e2e8f0; padding: 0.5rem 1rem; border-radius: 8px; min-width: 200px;">
+                        <option value="India" {% if location_prefs.default_country == 'India' %}selected{% endif %}>India</option>
+                        <option value="USA" {% if location_prefs.default_country == 'USA' %}selected{% endif %}>United States</option>
+                        <option value="UK" {% if location_prefs.default_country == 'UK' %}selected{% endif %}>United Kingdom</option>
+                        <option value="Canada" {% if location_prefs.default_country == 'Canada' %}selected{% endif %}>Canada</option>
+                        <option value="Germany" {% if location_prefs.default_country == 'Germany' %}selected{% endif %}>Germany</option>
+                        <option value="Australia" {% if location_prefs.default_country == 'Australia' %}selected{% endif %}>Australia</option>
+                        <option value="Netherlands" {% if location_prefs.default_country == 'Netherlands' %}selected{% endif %}>Netherlands</option>
+                        <option value="Singapore" {% if location_prefs.default_country == 'Singapore' %}selected{% endif %}>Singapore</option>
+                        <option value="France" {% if location_prefs.default_country == 'France' %}selected{% endif %}>France</option>
+                        <option value="Spain" {% if location_prefs.default_country == 'Spain' %}selected{% endif %}>Spain</option>
+                        <option value="Brazil" {% if location_prefs.default_country == 'Brazil' %}selected{% endif %}>Brazil</option>
+                        <option value="Poland" {% if location_prefs.default_country == 'Poland' %}selected{% endif %}>Poland</option>
+                        <option value="Italy" {% if location_prefs.default_country == 'Italy' %}selected{% endif %}>Italy</option>
+                    </select>
+                </div>
+                <input type="text" name="custom_location" id="customLocation" placeholder="e.g. New York, London, Berlin..."
+                       style="background: #0f172a; border: 1px solid #475569; color: #e2e8f0; padding: 0.5rem 1rem; border-radius: 8px; display: none; flex: 1; min-width: 200px;">
+            </div>
+            <p style="color: #64748b; font-size: 0.8rem; margin-top: 0.5rem;">
+                Default: <strong>Remote + Remote in {{ location_prefs.default_country }}</strong>. Change country above or update in Profile.
+            </p>
+        </div>
+
+        <!-- Minimum Salary Filter -->
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; color: #94a3b8; font-weight: 600; margin-bottom: 0.5rem;">
+                Minimum Salary: $<span id="salaryValue">0</span> /year <span style="font-weight: 400; font-size: 0.85rem; color: #64748b;">(0 = no filter, shows all)</span>
+            </label>
+            <input type="range" name="min_salary" min="0" max="300000" step="10000" value="0" id="salarySlider"
+                   style="width: 100%; accent-color: #10b981;"
+                   oninput="document.getElementById('salaryValue').textContent = Number(this.value).toLocaleString()">
+        </div>
+
+        <!-- Skills selection -->
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; color: #94a3b8; font-weight: 600; margin-bottom: 0.5rem;">
+                Select Skills to Search For <span style="font-weight: 400; font-size: 0.85rem;">(click to select/deselect)</span>
+            </label>
+
+            {% for group_name, skills in profile.skills.items() %}
+            <div style="margin-bottom: 1rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
+                    <span style="color: #64748b; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">{{ group_name|replace('_', ' ') }}</span>
+                    <button type="button" class="group-select-btn" data-group="{{ group_name }}"
+                            onclick="toggleGroup('{{ group_name }}')"
+                            style="background: none; border: 1px solid #475569; color: #94a3b8; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 0.75rem; cursor: pointer;">
+                        Select All
+                    </button>
+                </div>
+                <div class="skills-grid" data-group="{{ group_name }}">
+                    {% for skill in skills %}
+                    <label class="skill-chip" data-group="{{ group_name }}">
+                        <input type="checkbox" name="skills" value="{{ skill }}" style="display: none;">
+                        <span class="chip-label">{{ skill }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+
+            <!-- Custom skills input -->
+            <div style="margin-top: 1rem;">
+                <label style="color: #64748b; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Add Custom Skills</label>
+                <input type="text" name="custom_skills" id="customSkills" placeholder="e.g. Kubernetes, GraphQL, Terraform (comma-separated)"
+                       style="width: 100%; background: #0f172a; border: 1px solid #475569; color: #e2e8f0; padding: 0.5rem 1rem; border-radius: 8px; margin-top: 0.4rem;">
+            </div>
+        </div>
+
+        <!-- Experience level -->
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; color: #94a3b8; font-weight: 600; margin-bottom: 0.5rem;">Experience Level</label>
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                {% for level in ['Junior', 'Mid-Level', 'Senior', 'Lead', 'Staff', 'Principal'] %}
+                <label class="level-chip">
+                    <input type="checkbox" name="levels" value="{{ level }}" style="display: none;"
+                           {% if level == 'Senior' %}checked{% endif %}>
+                    <span class="chip-label">{{ level }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Min match score -->
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; color: #94a3b8; font-weight: 600; margin-bottom: 0.5rem;">
+                Minimum Match Score: <span id="scoreValue">30</span>%
+            </label>
+            <input type="range" name="min_score" min="0" max="80" value="30" id="scoreSlider"
+                   style="width: 100%; accent-color: #2563eb;"
+                   oninput="document.getElementById('scoreValue').textContent = this.value">
+        </div>
+
+        <!-- Submit -->
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <button type="submit" class="btn btn-primary" id="searchBtn"
+                    {% if search_status.running %}disabled{% endif %}>
+                {% if search_status.running %}Search Running...{% else %}Start Search{% endif %}
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="selectRecommended()">Auto-Select Recommended Skills</button>
+        </div>
+    </form>
+</div>
+
+<!-- Search progress -->
+{% if search_status.running or search_status.message %}
+<div class="card" id="progressCard">
+    <h2>Search Progress</h2>
+    <div style="margin-bottom: 1rem;">
+        <div style="background: #334155; border-radius: 10px; height: 20px; overflow: hidden;">
+            <div id="progressBar" style="background: #2563eb; height: 100%; border-radius: 10px; transition: width 0.5s; width: {{ search_status.progress }}%;"></div>
+        </div>
+    </div>
+    <p id="statusMessage" style="color: #94a3b8;">{{ search_status.message }}</p>
+
+    {% if not search_status.running and search_status.progress == 100 %}
+    <div style="margin-top: 1rem;">
+        <a href="{{ url_for('jobs_page') }}" class="btn btn-success">View Results</a>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Sources info -->
+<div class="card">
+    <h2>Job Sources ({{ scraper_count }} Active Scrapers)</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; color: #94a3b8; line-height: 2;">
+        <div><span style="color: #6ee7b7; font-weight: 600;">RemoteOK</span> — Free, remote jobs API</div>
+        <div><span style="color: #6ee7b7; font-weight: 600;">Remotive</span> — Free, remote jobs API</div>
+        <div><span style="color: #6ee7b7; font-weight: 600;">Arbeitnow</span> — Free, EU/global remote</div>
+        <div><span style="color: #6ee7b7; font-weight: 600;">WeWorkRemotely</span> — Free, remote jobs</div>
+        <div><span style="color: #6ee7b7; font-weight: 600;">Jobicy</span> — Free, remote jobs API</div>
+        <div><span style="color: #6ee7b7; font-weight: 600;">FindWork</span> — Free, dev jobs API</div>
+        <div><span style="color: #6ee7b7; font-weight: 600;">TheMuse</span> — Free, company jobs API</div>
+        <div><span style="color: #6ee7b7; font-weight: 600;">HackerNews</span> — Monthly Who's Hiring</div>
+        <div><span style="color: #fcd34d; font-weight: 600;">JSearch</span> — LinkedIn/Indeed/Glassdoor (API key)</div>
+        <div><span style="color: #fcd34d; font-weight: 600;">Adzuna</span> — Global job aggregator (API key)</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .skill-chip, .level-chip {
+        display: inline-block;
+        cursor: pointer;
+        margin: 0.15rem;
+    }
+    .skill-chip .chip-label, .level-chip .chip-label {
+        display: inline-block;
+        background: #1e293b;
+        border: 1px solid #475569;
+        color: #94a3b8;
+        padding: 0.35rem 0.8rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        transition: all 0.15s;
+        user-select: none;
+    }
+    .skill-chip .chip-label:hover, .level-chip .chip-label:hover {
+        border-color: #60a5fa;
+        color: #e2e8f0;
+    }
+    .skill-chip input:checked + .chip-label,
+    .level-chip input:checked + .chip-label {
+        background: #1e3a5f;
+        border-color: #3b82f6;
+        color: #93c5fd;
+        font-weight: 600;
+    }
+</style>
+
+<script>
+    function toggleLocationInput() {
+        const locType = document.querySelector('input[name="location_type"]:checked').value;
+        const customInput = document.getElementById('customLocation');
+        const countrySelect = document.getElementById('countrySelect');
+
+        customInput.style.display = locType === 'custom' ? 'block' : 'none';
+        countrySelect.style.display = (locType === 'remote_in_country' || locType === 'remote') ? 'block' : 'none';
+
+        if (locType === 'custom') customInput.focus();
+    }
+    // Show country select on load since default is remote + country
+    toggleLocationInput();
+
+    function toggleGroup(group) {
+        const chips = document.querySelectorAll(`.skill-chip[data-group="${group}"] input`);
+        const allChecked = Array.from(chips).every(cb => cb.checked);
+        chips.forEach(cb => { cb.checked = !allChecked; });
+    }
+
+    function selectRecommended() {
+        // Auto-select the most relevant skills for job searching
+        const recommended = ['Java', 'Python', 'Spring Boot', 'React.js', 'PostgreSQL',
+                           'AWS', 'Docker', 'Kafka', 'Microservices', 'REST APIs',
+                           'Redis', 'JavaScript', 'FastAPI', 'Distributed Systems'];
+        document.querySelectorAll('.skill-chip input').forEach(cb => {
+            cb.checked = recommended.includes(cb.value);
+        });
+        // Set title if empty
+        const titleInput = document.getElementById('jobTitle');
+        if (!titleInput.value) {
+            titleInput.value = 'Senior Backend Engineer';
+        }
+    }
+
+    // Form validation
+    document.getElementById('searchForm').addEventListener('submit', function(e) {
+        const skills = document.querySelectorAll('.skill-chip input:checked');
+        const customSkills = document.getElementById('customSkills').value.trim();
+        const jobTitle = document.getElementById('jobTitle').value.trim();
+
+        if (skills.length === 0 && !customSkills && !jobTitle) {
+            e.preventDefault();
+            alert('Please enter a job title, select at least one skill, or add custom skills.');
+            return;
+        }
+    });
+
+    {% if search_status.running %}
+    function pollStatus() {
+        fetch('/search/status')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('progressBar').style.width = data.progress + '%';
+                document.getElementById('statusMessage').textContent = data.message;
+                if (data.running) {
+                    setTimeout(pollStatus, 2000);
+                } else {
+                    document.getElementById('searchBtn').disabled = false;
+                    document.getElementById('searchBtn').textContent = 'Start Search';
+                    if (data.progress >= 100) location.reload();
+                }
+            })
+            .catch(() => setTimeout(pollStatus, 3000));
+    }
+    pollStatus();
+    {% endif %}
+</script>
+{% endblock %}

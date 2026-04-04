@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobBot - Smart Job Application Bot</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0f172a; --bg2: #1e293b; --bg3: #334155;
+            --border: #334155; --text: #f1f5f9; --text2: #e2e8f0;
+            --muted: #94a3b8; --accent: #2563eb; --accent2: #3b82f6;
+            --green: #059669; --green2: #6ee7b7;
+            --yellow: #f59e0b; --yellow2: #fcd34d;
+            --red: #dc2626; --red2: #fca5a5;
+            --purple: #7c3aed;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text2); min-height: 100vh; }
+        a { color: #60a5fa; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useRef } = React;
+
+        // ============================================================
+        // API Helper
+        // ============================================================
+        const api = {
+            get: (url) => fetch(url).then(r => r.json()),
+            post: (url, data) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()),
+            put: (url, data) => fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()),
+            upload: (url, formData) => fetch(url, { method: 'POST', body: formData }).then(r => r.json()),
+        };
+
+        // ============================================================
+        // Shared Components
+        // ============================================================
+        const styles = {
+            navbar: { background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '0 2rem', display: 'flex', alignItems: 'center', gap: '2rem', position: 'sticky', top: 0, zIndex: 100, height: 56, backdropFilter: 'blur(12px)' },
+            logo: { fontSize: '1.25rem', fontWeight: 700, color: '#60a5fa', letterSpacing: '-0.02em' },
+            navLink: { color: 'var(--muted)', fontWeight: 500, padding: '0.5rem 1rem', borderRadius: 8, transition: 'all 0.15s', cursor: 'pointer', fontSize: '0.9rem', border: 'none', background: 'none' },
+            navActive: { color: '#fff', background: 'rgba(37,99,235,0.15)' },
+            container: { maxWidth: 1400, margin: '0 auto', padding: '1.5rem 2rem', animation: 'fadeIn 0.3s ease' },
+            card: { background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 14, padding: '1.5rem', marginBottom: '1rem', transition: 'border-color 0.2s' },
+            btn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', padding: '0.55rem 1.1rem', border: 'none', borderRadius: 8, fontSize: '0.88rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s', textDecoration: 'none', whiteSpace: 'nowrap' },
+            btnPrimary: { background: 'var(--accent)', color: '#fff' },
+            btnSuccess: { background: 'var(--green)', color: '#fff' },
+            btnSecondary: { background: '#475569', color: '#fff' },
+            btnDanger: { background: 'var(--red)', color: '#fff' },
+            btnSm: { padding: '0.35rem 0.7rem', fontSize: '0.8rem' },
+            input: { background: 'var(--bg)', border: '1px solid #475569', color: 'var(--text2)', padding: '0.6rem 1rem', borderRadius: 8, fontSize: '0.9rem', width: '100%', outline: 'none', transition: 'border-color 0.2s' },
+            select: { background: 'var(--bg)', border: '1px solid #475569', color: 'var(--text2)', padding: '0.5rem 1rem', borderRadius: 8, fontSize: '0.9rem', outline: 'none' },
+        };
+
+        function Badge({ score }) {
+            const pct = Math.round(score * 100);
+            const cls = pct >= 70 ? { background: '#065f46', color: '#6ee7b7' } : pct >= 40 ? { background: '#78350f', color: '#fcd34d' } : { background: '#7f1d1d', color: '#fca5a5' };
+            return <span style={{ ...cls, padding: '0.2rem 0.6rem', borderRadius: 20, fontWeight: 700, fontSize: '0.82rem', display: 'inline-block', minWidth: 44, textAlign: 'center' }}>{pct}%</span>;
+        }
+
+        function StatusBadge({ status }) {
+            const colors = { new: { bg: '#164e63', fg: '#67e8f9' }, saved: { bg: '#1e3a5f', fg: '#93c5fd' }, applied: { bg: '#065f46', fg: '#6ee7b7' }, interview: { bg: '#581c87', fg: '#d8b4fe' }, rejected: { bg: '#7f1d1d', fg: '#fca5a5' }, offer: { bg: '#14532d', fg: '#86efac' } };
+            const c = colors[status] || colors.new;
+            return <span style={{ background: c.bg, color: c.fg, padding: '0.2rem 0.6rem', borderRadius: 20, fontWeight: 600, fontSize: '0.78rem', textTransform: 'capitalize' }}>{status}</span>;
+        }
+
+        function SkillChip({ label, selected, onClick }) {
+            return (
+                <button onClick={onClick} style={{ background: selected ? '#1e3a5f' : 'var(--bg2)', border: `1px solid ${selected ? '#3b82f6' : '#475569'}`, color: selected ? '#93c5fd' : 'var(--muted)', padding: '0.35rem 0.8rem', borderRadius: 20, fontSize: '0.85rem', fontWeight: selected ? 600 : 500, cursor: 'pointer', transition: 'all 0.15s', margin: '0.15rem' }}>
+                    {label}
+                </button>
+            );
+        }
+
+        function Toast({ message, type, onClose }) {
+            useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, []);
+            const bg = type === 'success' ? '#065f46' : type === 'error' ? '#7f1d1d' : '#78350f';
+            const fg = type === 'success' ? '#6ee7b7' : type === 'error' ? '#fca5a5' : '#fcd34d';
+            return (
+                <div style={{ position: 'fixed', bottom: 20, right: 20, background: 'var(--bg2)', border: `1px solid ${fg}33`, borderRadius: 12, padding: '1rem 1.5rem', zIndex: 200, boxShadow: '0 8px 30px rgba(0,0,0,0.5)', maxWidth: 400, animation: 'fadeIn 0.3s', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ color: fg, fontSize: '1.2rem' }}>{type === 'success' ? '\u2713' : type === 'error' ? '\u2717' : '\u26A0'}</span>
+                    <span style={{ color: fg, fontWeight: 500 }}>{message}</span>
+                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', marginLeft: 'auto', fontSize: '1rem' }}>&times;</button>
+                </div>
+            );
+        }
+
+        // ============================================================
+        // Dashboard Page
+        // ============================================================
+        function Dashboard({ navigate }) {
+            const [stats, setStats] = useState(null);
+            const [jobs, setJobs] = useState([]);
+            useEffect(() => { api.get('/api/stats').then(setStats); api.get('/api/jobs?limit=10').then(setJobs); }, []);
+
+            if (!stats) return <div style={styles.container}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>;
+
+            return (
+                <div style={styles.container}>
+                    <h1 style={{ marginBottom: '0.5rem', fontSize: '1.5rem' }}>Dashboard</h1>
+                    <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>Job search overview</p>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                        {[
+                            { n: stats.total, l: 'Total Jobs', c: '#60a5fa' },
+                            { n: stats.new, l: 'New', c: '#67e8f9' },
+                            { n: stats.saved, l: 'Saved', c: '#93c5fd' },
+                            { n: stats.applied, l: 'Applied', c: '#6ee7b7' },
+                            { n: stats.interview, l: 'Interviews', c: '#d8b4fe' },
+                            { n: `${Math.round(stats.avg_score * 100)}%`, l: 'Avg Match', c: '#fcd34d' },
+                        ].map((s, i) => (
+                            <div key={i} style={{ ...styles.card, textAlign: 'center', padding: '1rem' }}>
+                                <div style={{ fontSize: '1.8rem', fontWeight: 700, color: s.c }}>{s.n}</div>
+                                <div style={{ color: 'var(--muted)', fontSize: '0.82rem', marginTop: '0.2rem' }}>{s.l}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                        <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => navigate('search')}>Search New Jobs</button>
+                        <button style={{ ...styles.btn, ...styles.btnSuccess }} onClick={() => navigate('jobs')}>View All Jobs</button>
+                        <button style={{ ...styles.btn, ...styles.btnSecondary }} onClick={() => navigate('profile')}>My Profile</button>
+                    </div>
+
+                    {stats.by_source && Object.keys(stats.by_source).length > 0 && (
+                        <div style={styles.card}>
+                            <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Sources</h2>
+                            <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+                                {Object.entries(stats.by_source).map(([src, cnt]) => (
+                                    <div key={src}><span style={{ fontWeight: 700, color: '#60a5fa' }}>{cnt}</span> <span style={{ color: 'var(--muted)' }}>{src}</span></div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div style={styles.card}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Recent Matches</h2>
+                        {jobs.length === 0 ? (
+                            <p style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center' }}>No jobs yet. Run a search to get started!</p>
+                        ) : (
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead><tr>
+                                        {['Score', 'Title', 'Company', 'Source', 'Status', ''].map(h => <th key={h} style={{ padding: '0.6rem 0.8rem', textAlign: 'left', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: '0.78rem', textTransform: 'uppercase' }}>{h}</th>)}
+                                    </tr></thead>
+                                    <tbody>
+                                        {jobs.map(j => (
+                                            <tr key={j.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.1s', cursor: 'pointer' }} onClick={() => navigate('job', j.id)}>
+                                                <td style={{ padding: '0.6rem 0.8rem' }}><Badge score={j.score} /></td>
+                                                <td style={{ padding: '0.6rem 0.8rem', fontWeight: 600, color: '#60a5fa' }}>{j.title}</td>
+                                                <td style={{ padding: '0.6rem 0.8rem' }}>{j.company}</td>
+                                                <td style={{ padding: '0.6rem 0.8rem' }}><span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.75rem' }}>{j.source}</span></td>
+                                                <td style={{ padding: '0.6rem 0.8rem' }}><StatusBadge status={j.status} /></td>
+                                                <td style={{ padding: '0.6rem 0.8rem' }}><a href={j.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }}>Open</a></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================================
+        // Jobs Page
+        // ============================================================
+        function Jobs({ navigate, showToast }) {
+            const [jobs, setJobs] = useState([]);
+            const [selected, setSelected] = useState(new Set());
+            const [filters, setFilters] = useState({ status: '', min_score: 0, source: '', salary: '' });
+            const [loading, setLoading] = useState(true);
+            const MAX_SELECT = 10;
+
+            const loadJobs = useCallback(() => {
+                setLoading(true);
+                const params = new URLSearchParams();
+                if (filters.status) params.set('status', filters.status);
+                if (filters.min_score) params.set('min_score', filters.min_score);
+                if (filters.source) params.set('source', filters.source);
+                api.get(`/api/jobs?${params}`).then(j => {
+                    // Client-side salary filter
+                    let filtered = j;
+                    if (filters.salary === 'has_salary') {
+                        filtered = j.filter(job => job.salary && job.salary.trim() && job.salary !== '-');
+                    } else if (filters.salary) {
+                        const minSal = parseInt(filters.salary);
+                        filtered = j.filter(job => {
+                            if (!job.salary) return false;
+                            const nums = job.salary.match(/[\d,]+/g);
+                            if (!nums) return false;
+                            const maxNum = Math.max(...nums.map(n => parseInt(n.replace(/,/g, ''))));
+                            return maxNum >= minSal;
+                        });
+                    }
+                    setJobs(filtered);
+                    setLoading(false);
+                });
+            }, [filters]);
+
+            useEffect(() => { loadJobs(); }, [loadJobs]);
+
+            const toggleSelect = (id) => {
+                setSelected(prev => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else if (next.size < MAX_SELECT) next.add(id);
+                    return next;
+                });
+            };
+
+            const selectAll = () => {
+                if (selected.size > 0) { setSelected(new Set()); return; }
+                const ids = new Set();
+                for (const j of jobs) { if (j.status !== 'applied' && ids.size < MAX_SELECT) ids.add(j.id); }
+                setSelected(ids);
+            };
+
+            const [applying, setApplying] = useState(false);
+
+            const applySelected = async () => {
+                if (selected.size === 0) return;
+                if (!confirm(`Mark ${selected.size} job(s) as applied?`)) return;
+                const res = await api.post('/api/apply', { job_ids: [...selected] });
+                showToast(`Marked ${res.applied} job(s) as applied!`, 'success');
+                setSelected(new Set());
+                loadJobs();
+            };
+
+            const autoApplySelected = async () => {
+                if (selected.size === 0) return;
+                if (!confirm(`Auto-apply to ${selected.size} job(s)?\n\nThis will:\n1. Generate AI cover letters for each job\n2. Open all job pages in Chrome\n3. Try to auto-fill your details\n\nContinue?`)) return;
+                setApplying(true);
+                showToast('Auto-applying... Opening job pages & generating cover letters...', 'warning');
+                try {
+                    const res = await api.post('/api/auto-apply', { job_ids: [...selected] });
+                    const msg = `Auto-apply complete!\nOpened: ${res.opened} | Auto-filled: ${res.auto_filled} | Failed: ${res.failed}`;
+                    showToast(msg, res.failed > 0 ? 'warning' : 'success');
+                } catch (err) {
+                    showToast('Auto-apply failed. Check console.', 'error');
+                }
+                setApplying(false);
+                setSelected(new Set());
+                loadJobs();
+            };
+
+            return (
+                <div style={styles.container}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <h1 style={{ fontSize: '1.5rem' }}>Jobs</h1>
+                        <span style={{ color: 'var(--muted)' }}>{jobs.length} results</span>
+                    </div>
+
+                    {/* Filters */}
+                    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <select style={styles.select} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
+                            <option value="">All Statuses</option>
+                            {['new', 'saved', 'applied', 'interview', 'rejected', 'offer'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                        </select>
+                        <select style={styles.select} value={filters.min_score} onChange={e => setFilters(f => ({ ...f, min_score: parseFloat(e.target.value) }))}>
+                            <option value="0">Any Score</option>
+                            <option value="0.3">30%+</option>
+                            <option value="0.5">50%+</option>
+                            <option value="0.7">70%+</option>
+                        </select>
+                        <select style={styles.select} value={filters.source} onChange={e => setFilters(f => ({ ...f, source: e.target.value }))}>
+                            <option value="">All Sources</option>
+                            {['RemoteOK', 'Remotive', 'Arbeitnow', 'JSearch', 'WeWorkRemotely', 'Jobicy', 'FindWork', 'Adzuna', 'TheMuse', 'HackerNews'].map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <select style={styles.select} value={filters.salary} onChange={e => setFilters(f => ({ ...f, salary: e.target.value }))}>
+                            <option value="">Any Salary</option>
+                            <option value="has_salary">Has Salary Info</option>
+                            <option value="50000">$50k+</option>
+                            <option value="80000">$80k+</option>
+                            <option value="100000">$100k+</option>
+                            <option value="150000">$150k+</option>
+                            <option value="200000">$200k+</option>
+                        </select>
+                        <button style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }} onClick={() => setFilters({ status: '', min_score: 0, source: '', salary: '' })}>Reset</button>
+                    </div>
+
+                    {/* Table */}
+                    <div style={{ ...styles.card, padding: 0, overflow: 'hidden', marginBottom: selected.size > 0 ? 70 : 0 }}>
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead><tr>
+                                    <th style={{ padding: '0.6rem', width: 40, borderBottom: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--muted)', fontSize: '0.78rem' }}>
+                                        <input type="checkbox" checked={selected.size > 0} onChange={selectAll} style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                                    </th>
+                                    {['Score', 'Title', 'Company', 'Location', 'Source', 'Salary', 'Status', ''].map(h =>
+                                        <th key={h} style={{ padding: '0.6rem 0.75rem', textAlign: 'left', borderBottom: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                                    )}
+                                </tr></thead>
+                                <tbody>
+                                    {jobs.map(j => (
+                                        <tr key={j.id} style={{ borderBottom: '1px solid var(--border)', background: selected.has(j.id) ? 'rgba(37,99,235,0.08)' : 'transparent', transition: 'background 0.1s' }}>
+                                            <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                                                <input type="checkbox" checked={selected.has(j.id)} disabled={j.status === 'applied'} onChange={() => toggleSelect(j.id)}
+                                                       style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: j.status === 'applied' ? 'not-allowed' : 'pointer' }} />
+                                            </td>
+                                            <td style={{ padding: '0.6rem 0.75rem' }}><Badge score={j.score} /></td>
+                                            <td style={{ padding: '0.6rem 0.75rem' }}>
+                                                <a onClick={() => navigate('job', j.id)} style={{ fontWeight: 600, cursor: 'pointer' }}>{j.title.substring(0, 45)}{j.title.length > 45 ? '...' : ''}</a>
+                                            </td>
+                                            <td style={{ padding: '0.6rem 0.75rem' }}>{j.company.substring(0, 22)}</td>
+                                            <td style={{ padding: '0.6rem 0.75rem', color: 'var(--muted)', fontSize: '0.85rem' }}>{(j.location || '').substring(0, 20)}</td>
+                                            <td style={{ padding: '0.6rem 0.75rem' }}><span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.72rem' }}>{j.source}</span></td>
+                                            <td style={{ padding: '0.6rem 0.75rem', fontSize: '0.85rem' }}>
+                                                {j.salary ? <span style={{ color: 'var(--green2)', fontWeight: 600 }}>{j.salary}</span> : <span style={{ color: '#475569' }}>Not listed</span>}
+                                            </td>
+                                            <td style={{ padding: '0.6rem 0.75rem' }}><StatusBadge status={j.status} /></td>
+                                            <td style={{ padding: '0.6rem 0.75rem' }}><a href={j.url} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary }}>Open</a></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {loading && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>Loading...</p>}
+                    {!loading && jobs.length === 0 && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}><p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>No jobs found.</p><button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => navigate('search')}>Run a Search</button></div>}
+
+                    {/* Floating apply bar */}
+                    {selected.size > 0 && (
+                        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'var(--bg2)', borderTop: '2px solid var(--accent)', padding: '0.75rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 100, boxShadow: '0 -4px 20px rgba(0,0,0,0.5)', animation: 'fadeIn 0.2s' }}>
+                            <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--accent2)' }}>{selected.size} selected <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(max {MAX_SELECT})</span></span>
+                            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                                <button style={{ ...styles.btn, ...styles.btnSecondary }} onClick={() => setSelected(new Set())}>Clear</button>
+                                <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={applySelected}>Mark Applied</button>
+                                <button style={{ ...styles.btn, background: 'linear-gradient(135deg, #059669, #2563eb)', color: '#fff', padding: '0.6rem 1.5rem', fontSize: '0.95rem' }} onClick={autoApplySelected} disabled={applying}>
+                                    {applying ? 'Applying...' : `Auto-Apply ${selected.size} Job${selected.size > 1 ? 's' : ''}`}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ============================================================
+        // Job Detail Page
+        // ============================================================
+        function JobDetail({ jobId, navigate, showToast }) {
+            const [job, setJob] = useState(null);
+            const [status, setStatus] = useState('');
+
+            useEffect(() => { api.get(`/api/jobs/${jobId}`).then(j => { setJob(j); setStatus(j.status); }); }, [jobId]);
+
+            if (!job) return <div style={styles.container}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>;
+
+            const updateStatus = async () => {
+                await api.put(`/api/jobs/${job.id}/status`, { status });
+                showToast(`Status updated to "${status}"`, 'success');
+                setJob(j => ({ ...j, status }));
+            };
+
+            const genCoverLetter = async () => {
+                showToast('Generating cover letter...', 'warning');
+                const res = await api.post(`/api/jobs/${job.id}/cover-letter`);
+                setJob(j => ({ ...j, cover_letter: res.cover_letter }));
+                showToast('Cover letter generated!', 'success');
+            };
+
+            const copyLetter = () => {
+                navigator.clipboard.writeText(job.cover_letter);
+                showToast('Copied to clipboard!', 'success');
+            };
+
+            const [autoApplying, setAutoApplying] = useState(false);
+            const autoApplySingle = async () => {
+                if (!confirm(`Auto-apply to "${job.title}" at ${job.company}?\n\nThis will generate a cover letter and open the job page in Chrome.`)) return;
+                setAutoApplying(true);
+                showToast('Auto-applying... Opening job page...', 'warning');
+                try {
+                    const res = await api.post('/api/auto-apply', { job_ids: [job.id] });
+                    showToast(`Auto-apply: ${res.details?.[0]?.status || 'done'}!`, 'success');
+                    setJob(j => ({ ...j, status: 'applied' }));
+                    setStatus('applied');
+                } catch (err) { showToast('Auto-apply failed', 'error'); }
+                setAutoApplying(false);
+            };
+
+            return (
+                <div style={styles.container}>
+                    <button onClick={() => navigate('jobs')} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '0.9rem', marginBottom: '1rem' }}>&larr; Back to Jobs</button>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
+                        <div>
+                            <h1 style={{ fontSize: '1.4rem', marginBottom: '0.3rem' }}>{job.title}</h1>
+                            <p style={{ color: '#60a5fa', fontSize: '1.05rem' }}>{job.company}</p>
+                            <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginTop: '0.2rem' }}>{job.location} | {job.source} | {job.date_posted || 'Unknown'}</p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            <Badge score={job.score} />
+                            <StatusBadge status={job.status} />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                        <button style={{ ...styles.btn, background: 'linear-gradient(135deg, #059669, #2563eb)', color: '#fff', padding: '0.6rem 1.5rem', fontSize: '0.95rem' }} onClick={autoApplySingle} disabled={autoApplying || job.status === 'applied'}>
+                            {autoApplying ? 'Applying...' : job.status === 'applied' ? 'Applied' : 'Auto-Apply'}
+                        </button>
+                        <a href={job.url} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnPrimary }}>Open Job Posting &rarr;</a>
+                        <button style={{ ...styles.btn, ...styles.btnSuccess }} onClick={genCoverLetter}>{job.cover_letter ? 'Regenerate' : 'Generate'} Cover Letter</button>
+                        {job.salary && <span style={{ ...styles.btn, ...styles.btnSecondary, cursor: 'default' }}>Salary: {job.salary}</span>}
+                    </div>
+
+                    <div style={styles.card}>
+                        <h2 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Update Status</h2>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <select style={styles.select} value={status} onChange={e => setStatus(e.target.value)}>
+                                {['new', 'saved', 'applied', 'interview', 'rejected', 'offer'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                            </select>
+                            <button style={{ ...styles.btn, ...styles.btnPrimary, ...styles.btnSm }} onClick={updateStatus}>Update</button>
+                        </div>
+                    </div>
+
+                    {job.score_details && (
+                        <div style={styles.card}>
+                            <h2 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Match Analysis</h2>
+                            <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                                <div><span style={{ color: 'var(--muted)' }}>Local: </span><strong>{Math.round((job.score_details.local_score || 0) * 100)}%</strong></div>
+                                {job.score_details.ai_score != null && <div><span style={{ color: 'var(--muted)' }}>AI: </span><strong>{Math.round(job.score_details.ai_score * 100)}%</strong></div>}
+                            </div>
+                            {job.score_details.ai_reasons && job.score_details.ai_reasons.length > 0 && (
+                                <ul style={{ paddingLeft: '1.5rem', lineHeight: 1.8, color: 'var(--text2)' }}>
+                                    {job.score_details.ai_reasons.map((r, i) => <li key={i}>{r}</li>)}
+                                </ul>
+                            )}
+                        </div>
+                    )}
+
+                    {job.tags && job.tags.length > 0 && (
+                        <div style={styles.card}>
+                            <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Tags</h2>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                {job.tags.map((t, i) => <span key={i} style={{ background: '#1e3a5f', color: '#93c5fd', padding: '0.25rem 0.7rem', borderRadius: 20, fontSize: '0.82rem' }}>{t}</span>)}
+                            </div>
+                        </div>
+                    )}
+
+                    {job.description && (
+                        <div style={styles.card}>
+                            <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Description</h2>
+                            <div style={{ lineHeight: 1.8, color: '#cbd5e1', fontSize: '0.92rem' }}>{job.description.substring(0, 2000)}</div>
+                        </div>
+                    )}
+
+                    {job.cover_letter && (
+                        <div style={styles.card}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                <h2 style={{ fontSize: '1rem', margin: 0 }}>Cover Letter</h2>
+                                <button style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }} onClick={copyLetter}>Copy</button>
+                            </div>
+                            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '1.5rem', whiteSpace: 'pre-wrap', lineHeight: 1.8, fontSize: '0.93rem' }}>{job.cover_letter}</div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ============================================================
+        // Search Page
+        // ============================================================
+        function Search({ profile, showToast }) {
+            const [jobTitle, setJobTitle] = useState('');
+            const [selectedSkills, setSelectedSkills] = useState(new Set());
+            const [customSkills, setCustomSkills] = useState('');
+            const [locationType, setLocationType] = useState('remote');
+            const [customLocation, setCustomLocation] = useState('');
+            const [remoteCountry, setRemoteCountry] = useState('');
+            const [levels, setLevels] = useState(new Set(['Senior']));
+            const [minScore, setMinScore] = useState(30);
+            const [minSalary, setMinSalary] = useState(0);
+            const [searchStatus, setSearchStatus] = useState(null);
+            const pollRef = useRef(null);
+
+            const toggleSkill = (skill) => {
+                setSelectedSkills(prev => { const n = new Set(prev); n.has(skill) ? n.delete(skill) : n.add(skill); return n; });
+            };
+
+            const toggleLevel = (level) => {
+                setLevels(prev => { const n = new Set(prev); n.has(level) ? n.delete(level) : n.add(level); return n; });
+            };
+
+            const selectRecommended = () => {
+                setSelectedSkills(new Set(['Java', 'Python', 'Spring Boot', 'React.js', 'PostgreSQL', 'AWS', 'Docker', 'Kafka', 'Microservices', 'REST APIs', 'Redis']));
+                if (!jobTitle) setJobTitle('Senior Backend Engineer');
+            };
+
+            const selectGroup = (group) => {
+                const skills = profile.skills[group] || [];
+                const allSelected = skills.every(s => selectedSkills.has(s));
+                setSelectedSkills(prev => {
+                    const n = new Set(prev);
+                    skills.forEach(s => allSelected ? n.delete(s) : n.add(s));
+                    return n;
+                });
+            };
+
+            const startSearch = async () => {
+                const allSkills = [...selectedSkills, ...customSkills.split(',').map(s => s.trim()).filter(Boolean)];
+                if (!jobTitle && allSkills.length === 0) { showToast('Enter a job title or select skills', 'error'); return; }
+
+                let location = 'remote';
+                let country = remoteCountry || 'India';
+                if (locationType === 'remote_country') location = `remote ${remoteCountry}`;
+                else if (locationType === 'custom') { location = customLocation; country = ''; }
+                await api.post('/api/search', { job_title: jobTitle, skills: allSkills, location, country, levels: [...levels], min_score: minScore / 100, min_salary: minSalary });
+                showToast('Search started!', 'success');
+                pollStatus();
+            };
+
+            const pollStatus = () => {
+                if (pollRef.current) clearInterval(pollRef.current);
+                pollRef.current = setInterval(async () => {
+                    const status = await api.get('/api/search/status');
+                    setSearchStatus(status);
+                    if (!status.running) { clearInterval(pollRef.current); pollRef.current = null; }
+                }, 2000);
+            };
+
+            useEffect(() => {
+                api.get('/api/search/status').then(s => { setSearchStatus(s); if (s.running) pollStatus(); });
+                return () => { if (pollRef.current) clearInterval(pollRef.current); };
+            }, []);
+
+            return (
+                <div style={styles.container}>
+                    <h1 style={{ fontSize: '1.5rem', marginBottom: '1.5rem' }}>Search Jobs</h1>
+
+                    <div style={styles.card}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Configure Your Search</h2>
+
+                        {/* Job title */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={{ display: 'block', color: 'var(--muted)', fontWeight: 600, marginBottom: '0.4rem', fontSize: '0.9rem' }}>Job Title / Role</label>
+                            <input style={styles.input} value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="e.g. Senior Backend Engineer, Java Developer..." />
+                        </div>
+
+                        {/* Location */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={{ display: 'block', color: 'var(--muted)', fontWeight: 600, marginBottom: '0.4rem', fontSize: '0.9rem' }}>Location</label>
+                            <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', color: 'var(--text2)' }}>
+                                    <input type="radio" checked={locationType === 'remote'} onChange={() => setLocationType('remote')} style={{ accentColor: 'var(--accent)' }} /> Remote (Worldwide)
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', color: 'var(--text2)' }}>
+                                    <input type="radio" checked={locationType === 'remote_country'} onChange={() => setLocationType('remote_country')} style={{ accentColor: 'var(--accent)' }} /> Remote in Country
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', color: 'var(--text2)' }}>
+                                    <input type="radio" checked={locationType === 'custom'} onChange={() => setLocationType('custom')} style={{ accentColor: 'var(--accent)' }} /> Specific Location
+                                </label>
+                            </div>
+                            {locationType === 'remote_country' && (
+                                <div style={{ marginTop: '0.75rem' }}>
+                                    <select style={{ ...styles.select, width: '100%', maxWidth: 350 }} value={remoteCountry} onChange={e => setRemoteCountry(e.target.value)}>
+                                        <option value="">Select country...</option>
+                                        <option value="USA">United States (USA)</option>
+                                        <option value="UK">United Kingdom (UK)</option>
+                                        <option value="Canada">Canada</option>
+                                        <option value="Germany">Germany</option>
+                                        <option value="Netherlands">Netherlands</option>
+                                        <option value="India">India</option>
+                                        <option value="Australia">Australia</option>
+                                        <option value="Singapore">Singapore</option>
+                                        <option value="UAE">UAE / Dubai</option>
+                                        <option value="France">France</option>
+                                        <option value="Spain">Spain</option>
+                                        <option value="Ireland">Ireland</option>
+                                        <option value="Sweden">Sweden</option>
+                                        <option value="Switzerland">Switzerland</option>
+                                        <option value="Japan">Japan</option>
+                                        <option value="Brazil">Brazil</option>
+                                        <option value="Europe">Europe (Any)</option>
+                                        <option value="APAC">Asia-Pacific (Any)</option>
+                                        <option value="LATAM">Latin America (Any)</option>
+                                    </select>
+                                    <input style={{ ...styles.input, marginTop: '0.5rem', maxWidth: 350 }} value={remoteCountry} onChange={e => setRemoteCountry(e.target.value)} placeholder="Or type any country/region..." />
+                                </div>
+                            )}
+                            {locationType === 'custom' && (
+                                <input style={{ ...styles.input, marginTop: '0.75rem', maxWidth: 350 }} value={customLocation} onChange={e => setCustomLocation(e.target.value)} placeholder="e.g. New York, Berlin, Bangalore..." />
+                            )}
+                        </div>
+
+                        {/* Salary */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={{ display: 'block', color: 'var(--muted)', fontWeight: 600, marginBottom: '0.4rem', fontSize: '0.9rem' }}>
+                                Minimum Salary: <strong style={{ color: minSalary > 0 ? 'var(--green2)' : 'var(--text)' }}>{minSalary > 0 ? `$${minSalary.toLocaleString()}+/yr` : 'Any'}</strong>
+                            </label>
+                            <input type="range" min="0" max="300000" step="10000" value={minSalary} onChange={e => setMinSalary(Number(e.target.value))} style={{ width: '100%', accentColor: 'var(--accent)' }} />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
+                                <span>Any</span>
+                                <span>$50k</span>
+                                <span>$100k</span>
+                                <span>$150k</span>
+                                <span>$200k</span>
+                                <span>$300k</span>
+                            </div>
+                        </div>
+
+                        {/* Skills */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={{ display: 'block', color: 'var(--muted)', fontWeight: 600, marginBottom: '0.4rem', fontSize: '0.9rem' }}>Select Skills <span style={{ fontWeight: 400, fontSize: '0.82rem' }}>(click to toggle)</span></label>
+                            {profile.skills && Object.entries(profile.skills).map(([group, skills]) => (
+                                <div key={group} style={{ marginBottom: '0.75rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
+                                        <span style={{ color: '#64748b', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{group.replace(/_/g, ' ')}</span>
+                                        <button style={{ background: 'none', border: '1px solid #475569', color: 'var(--muted)', padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.72rem', cursor: 'pointer' }} onClick={() => selectGroup(group)}>Toggle All</button>
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                        {skills.map(skill => <SkillChip key={skill} label={skill} selected={selectedSkills.has(skill)} onClick={() => toggleSkill(skill)} />)}
+                                    </div>
+                                </div>
+                            ))}
+                            <div style={{ marginTop: '0.75rem' }}>
+                                <span style={{ color: '#64748b', fontSize: '0.78rem', textTransform: 'uppercase' }}>Custom Skills</span>
+                                <input style={{ ...styles.input, marginTop: '0.3rem' }} value={customSkills} onChange={e => setCustomSkills(e.target.value)} placeholder="e.g. Kubernetes, GraphQL, Terraform (comma-separated)" />
+                            </div>
+                        </div>
+
+                        {/* Experience Level */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={{ display: 'block', color: 'var(--muted)', fontWeight: 600, marginBottom: '0.4rem', fontSize: '0.9rem' }}>Experience Level</label>
+                            <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                {['Junior', 'Mid-Level', 'Senior', 'Lead', 'Staff', 'Principal'].map(l => <SkillChip key={l} label={l} selected={levels.has(l)} onClick={() => toggleLevel(l)} />)}
+                            </div>
+                        </div>
+
+                        {/* Min Score */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={{ display: 'block', color: 'var(--muted)', fontWeight: 600, marginBottom: '0.4rem', fontSize: '0.9rem' }}>Minimum Match Score: <strong style={{ color: 'var(--text)' }}>{minScore}%</strong></label>
+                            <input type="range" min="0" max="80" value={minScore} onChange={e => setMinScore(Number(e.target.value))} style={{ width: '100%', accentColor: 'var(--accent)' }} />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.75rem' }}>
+                            <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={startSearch} disabled={searchStatus?.running}>
+                                {searchStatus?.running ? 'Searching...' : 'Start Search'}
+                            </button>
+                            <button style={{ ...styles.btn, ...styles.btnSecondary }} onClick={selectRecommended}>Auto-Select Recommended</button>
+                        </div>
+                    </div>
+
+                    {/* Progress */}
+                    {searchStatus && (searchStatus.running || searchStatus.progress > 0) && (
+                        <div style={styles.card}>
+                            <h2 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Search Progress</h2>
+                            <div style={{ background: 'var(--bg3)', borderRadius: 10, height: 18, overflow: 'hidden', marginBottom: '0.75rem' }}>
+                                <div style={{ background: 'var(--accent)', height: '100%', borderRadius: 10, transition: 'width 0.4s', width: `${searchStatus.progress}%` }}></div>
+                            </div>
+                            <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{searchStatus.message}</p>
+                        </div>
+                    )}
+
+                    <div style={styles.card}>
+                        <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Job Sources (10 Scrapers)</h2>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.5rem 2rem', color: 'var(--muted)', lineHeight: 2 }}>
+                            <div><span style={{ color: 'var(--green2)', fontWeight: 600 }}>RemoteOK</span> &mdash; Free, remote jobs</div>
+                            <div><span style={{ color: 'var(--green2)', fontWeight: 600 }}>Remotive</span> &mdash; Free, remote jobs</div>
+                            <div><span style={{ color: 'var(--green2)', fontWeight: 600 }}>Arbeitnow</span> &mdash; Free, EU/global</div>
+                            <div><span style={{ color: 'var(--green2)', fontWeight: 600 }}>WeWorkRemotely</span> &mdash; Free, remote</div>
+                            <div><span style={{ color: 'var(--green2)', fontWeight: 600 }}>Jobicy</span> &mdash; Free, remote + salary</div>
+                            <div><span style={{ color: 'var(--green2)', fontWeight: 600 }}>FindWork</span> &mdash; Free, dev jobs</div>
+                            <div><span style={{ color: 'var(--green2)', fontWeight: 600 }}>TheMuse</span> &mdash; Free, company jobs</div>
+                            <div><span style={{ color: 'var(--green2)', fontWeight: 600 }}>HackerNews</span> &mdash; Who's Hiring thread</div>
+                            <div><span style={{ color: 'var(--yellow2)', fontWeight: 600 }}>JSearch</span> &mdash; LinkedIn / Indeed / Glassdoor</div>
+                            <div><span style={{ color: 'var(--yellow2)', fontWeight: 600 }}>Adzuna</span> &mdash; Global aggregator</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================================
+        // Profile Page
+        // ============================================================
+        function Profile({ profile, setProfile, showToast }) {
+            const fileRef = useRef(null);
+            const [uploading, setUploading] = useState(false);
+
+            const uploadResume = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setUploading(true);
+                const fd = new FormData();
+                fd.append('resume', file);
+                try {
+                    const res = await api.upload('/api/profile/upload-resume', fd);
+                    if (res.error) { showToast(res.error, 'error'); }
+                    else { setProfile(res.profile); showToast('Resume parsed successfully! Profile updated.', 'success'); }
+                } catch (err) { showToast('Upload failed', 'error'); }
+                setUploading(false);
+            };
+
+            return (
+                <div style={styles.container}>
+                    <h1 style={{ fontSize: '1.5rem', marginBottom: '1.5rem' }}>Profile</h1>
+
+                    <div style={styles.card}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                            <div style={{ width: 72, height: 72, background: 'linear-gradient(135deg, #2563eb, #7c3aed)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.8rem', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                                {(profile.name || 'U')[0]}
+                            </div>
+                            <div>
+                                <h2 style={{ margin: 0, marginBottom: '0.2rem' }}>{profile.name || 'Your Name'}</h2>
+                                <p style={{ color: '#60a5fa' }}>{profile.title || 'Your Title'}</p>
+                                <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>{profile.location} | {profile.years_of_experience} yrs | {profile.open_to}</p>
+                                <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>{profile.email} | {profile.phone}</p>
+                            </div>
+                        </div>
+                        <p style={{ lineHeight: 1.7, color: '#cbd5e1' }}>{profile.summary}</p>
+                    </div>
+
+                    {/* Upload */}
+                    <div style={styles.card}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>Upload Resume</h2>
+                        <p style={{ color: 'var(--muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>Upload your resume (PDF, DOCX, TXT) and your profile will be auto-parsed.</p>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <input ref={fileRef} type="file" accept=".pdf,.docx,.txt" onChange={uploadResume} style={{ display: 'none' }} />
+                            <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => fileRef.current.click()} disabled={uploading}>
+                                {uploading ? 'Parsing resume...' : 'Choose File & Upload'}
+                            </button>
+                            <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Supports PDF, DOCX, TXT</span>
+                        </div>
+                    </div>
+
+                    {/* Skills */}
+                    <div style={styles.card}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Technical Skills</h2>
+                        {profile.skills && Object.entries(profile.skills).map(([group, skills]) => (
+                            <div key={group} style={{ marginBottom: '1rem' }}>
+                                <h3 style={{ fontSize: '0.8rem', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '0.4rem', letterSpacing: '0.05em' }}>{group.replace(/_/g, ' ')}</h3>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                    {skills.map((s, i) => <span key={i} style={{ background: '#1e3a5f', color: '#93c5fd', padding: '0.3rem 0.8rem', borderRadius: 20, fontSize: '0.83rem', fontWeight: 500 }}>{s}</span>)}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Experience */}
+                    <div style={styles.card}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Experience</h2>
+                        {(profile.experience || []).map((exp, i) => (
+                            <div key={i} style={{ marginBottom: '1.25rem', paddingBottom: '1.25rem', borderBottom: i < profile.experience.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                                    <h3 style={{ color: 'var(--text)' }}>{exp.title}</h3>
+                                    <span style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>{exp.period}</span>
+                                </div>
+                                <p style={{ color: '#60a5fa', marginBottom: '0.4rem' }}>{exp.company}</p>
+                                <ul style={{ paddingLeft: '1.5rem', lineHeight: 1.8, color: '#cbd5e1' }}>
+                                    {(exp.highlights || []).map((h, j) => <li key={j}>{h}</li>)}
+                                </ul>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div style={styles.card}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>Education</h2>
+                        <p style={{ color: '#cbd5e1' }}>{profile.education}</p>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================================
+        // App (Router)
+        // ============================================================
+        function App() {
+            const [page, setPage] = useState('dashboard');
+            const [pageArg, setPageArg] = useState(null);
+            const [profile, setProfile] = useState({});
+            const [toast, setToast] = useState(null);
+
+            useEffect(() => { api.get('/api/profile').then(setProfile); }, []);
+
+            const navigate = (p, arg = null) => { setPage(p); setPageArg(arg); window.scrollTo(0, 0); };
+            const showToast = (message, type = 'success') => setToast({ message, type });
+
+            return (
+                <div>
+                    {/* Navbar */}
+                    <div style={styles.navbar}>
+                        <div style={styles.logo}>JobBot</div>
+                        <nav style={{ display: 'flex', gap: '0.25rem' }}>
+                            {[['dashboard', 'Dashboard'], ['jobs', 'Jobs'], ['search', 'Search'], ['profile', 'Profile']].map(([key, label]) => (
+                                <button key={key} onClick={() => navigate(key)}
+                                    style={{ ...styles.navLink, ...(page === key || (page === 'job' && key === 'jobs') ? styles.navActive : {}) }}>
+                                    {label}
+                                </button>
+                            ))}
+                        </nav>
+                    </div>
+
+                    {/* Page content */}
+                    {page === 'dashboard' && <Dashboard navigate={navigate} />}
+                    {page === 'jobs' && <Jobs navigate={navigate} showToast={showToast} />}
+                    {page === 'job' && <JobDetail jobId={pageArg} navigate={navigate} showToast={showToast} />}
+                    {page === 'search' && <Search profile={profile} showToast={showToast} />}
+                    {page === 'profile' && <Profile profile={profile} setProfile={setProfile} showToast={showToast} />}
+
+                    {/* Toast */}
+                    {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+                    <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>

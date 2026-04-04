@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} - Job Application Bot{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('jobs_page') }}" style="color: #94a3b8; font-size: 0.9rem;">&larr; Back to Jobs</a>
+
+<div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: flex-start; gap: 2rem; flex-wrap: wrap;">
+    <div>
+        <h1 style="margin-bottom: 0.3rem;">{{ job.title }}</h1>
+        <p style="font-size: 1.1rem; color: #60a5fa;">{{ job.company }}</p>
+        <p style="color: #94a3b8; margin-top: 0.3rem;">{{ job.location }} | {{ job.source }} | Posted: {{ job.date_posted or 'Unknown' }}</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+        {% set pct = (job.score * 100)|int %}
+        <span class="score-badge {% if pct >= 70 %}score-high{% elif pct >= 40 %}score-mid{% else %}score-low{% endif %}" style="font-size: 1.2rem; padding: 0.4rem 1rem;">
+            {{ pct }}% Match
+        </span>
+        <span class="status-badge status-{{ job.status }}" style="font-size: 1rem; padding: 0.4rem 1rem;">
+            {{ job.status }}
+        </span>
+    </div>
+</div>
+
+<!-- Action buttons -->
+<div style="display: flex; gap: 1rem; margin: 1.5rem 0; flex-wrap: wrap;">
+    <a href="{{ job.url }}" target="_blank" class="btn btn-primary">Open Job Posting &rarr;</a>
+
+    <form method="POST" action="{{ url_for('generate_letter', job_id=job.id) }}" style="display: inline;">
+        <button type="submit" class="btn btn-success">
+            {% if job.cover_letter %}Regenerate Cover Letter{% else %}Generate Cover Letter{% endif %}
+        </button>
+    </form>
+
+    {% if job.salary %}
+    <span class="btn btn-secondary" style="cursor: default;">Salary: {{ job.salary }}</span>
+    {% endif %}
+</div>
+
+<!-- Status update -->
+<div class="card">
+    <h2>Update Status</h2>
+    <form method="POST" action="{{ url_for('update_status', job_id=job.id) }}" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+        <select name="status" style="background: #0f172a; border: 1px solid #475569; color: #e2e8f0; padding: 0.5rem 1rem; border-radius: 8px;">
+            {% for s in ['new', 'saved', 'applied', 'interview', 'rejected', 'offer'] %}
+            <option value="{{ s }}" {% if job.status == s %}selected{% endif %}>{{ s|capitalize }}</option>
+            {% endfor %}
+        </select>
+        <input type="text" name="notes" placeholder="Add notes..." value="{{ job.notes or '' }}"
+               style="flex: 1; min-width: 200px; background: #0f172a; border: 1px solid #475569; color: #e2e8f0; padding: 0.5rem 1rem; border-radius: 8px;">
+        <button type="submit" class="btn btn-primary btn-sm">Update</button>
+    </form>
+</div>
+
+<!-- Score details -->
+{% if job.score_details %}
+<div class="card">
+    <h2>Match Analysis</h2>
+    <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+        <div>
+            <span style="color: #94a3b8;">Local Score:</span>
+            <span style="font-weight: 700;">{{ "%.0f%%"|format((job.score_details.local_score or 0) * 100) }}</span>
+        </div>
+        {% if job.score_details.ai_score is not none %}
+        <div>
+            <span style="color: #94a3b8;">AI Score:</span>
+            <span style="font-weight: 700;">{{ "%.0f%%"|format((job.score_details.ai_score or 0) * 100) }}</span>
+        </div>
+        <div>
+            <span style="color: #94a3b8;">Recommendation:</span>
+            <span style="font-weight: 700; color: #6ee7b7;">{{ job.score_details.ai_recommendation or 'N/A' }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if job.score_details.ai_reasons %}
+    <div style="margin-top: 1rem;">
+        <h3 style="font-size: 0.95rem; color: #94a3b8; margin-bottom: 0.5rem;">Why it matches:</h3>
+        <ul style="padding-left: 1.5rem; line-height: 1.8;">
+            {% for reason in job.score_details.ai_reasons %}
+            <li>{{ reason }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if job.score_details.ai_missing_skills %}
+    <div style="margin-top: 1rem;">
+        <h3 style="font-size: 0.95rem; color: #fcd34d; margin-bottom: 0.5rem;">Skills you may need:</h3>
+        <div class="skills-grid">
+            {% for skill in job.score_details.ai_missing_skills %}
+            <span class="tag" style="background: #78350f; color: #fcd34d;">{{ skill }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Tags -->
+{% if job.tags %}
+<div class="card">
+    <h2>Tags</h2>
+    <div class="skills-grid">
+        {% for tag in job.tags %}
+        <span class="skill-tag">{{ tag }}</span>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Description -->
+{% if job.description %}
+<div class="card">
+    <h2>Job Description</h2>
+    <div style="line-height: 1.8; color: #cbd5e1;">{{ job.description }}</div>
+</div>
+{% endif %}
+
+<!-- Cover Letter -->
+{% if job.cover_letter %}
+<div class="card">
+    <h2>Cover Letter</h2>
+    <div class="cover-letter">{{ job.cover_letter }}</div>
+    <div style="margin-top: 1rem;">
+        <button class="btn btn-sm btn-secondary" onclick="copyLetter()">Copy to Clipboard</button>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyLetter() {
+    const text = document.querySelector('.cover-letter').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        alert('Cover letter copied to clipboard!');
+    });
+}
+</script>
+{% endblock %}

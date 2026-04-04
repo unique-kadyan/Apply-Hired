@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Job Application Bot{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 0.5rem;">Dashboard</h1>
+<p style="color: #94a3b8; margin-bottom: 2rem;">Welcome back, {{ profile.name }}!</p>
+
+<!-- Stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="number">{{ stats.total }}</div>
+        <div class="label">Total Jobs</div>
+    </div>
+    <div class="stat-card">
+        <div class="number" style="color: #67e8f9;">{{ stats.new }}</div>
+        <div class="label">New</div>
+    </div>
+    <div class="stat-card">
+        <div class="number" style="color: #93c5fd;">{{ stats.saved }}</div>
+        <div class="label">Saved</div>
+    </div>
+    <div class="stat-card">
+        <div class="number" style="color: #6ee7b7;">{{ stats.applied }}</div>
+        <div class="label">Applied</div>
+    </div>
+    <div class="stat-card">
+        <div class="number" style="color: #d8b4fe;">{{ stats.interview }}</div>
+        <div class="label">Interviews</div>
+    </div>
+    <div class="stat-card">
+        <div class="number">{{ "%.0f%%"|format(stats.avg_score * 100) }}</div>
+        <div class="label">Avg Match</div>
+    </div>
+</div>
+
+<!-- Quick actions -->
+<div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+    <a href="{{ url_for('search_page') }}" class="btn btn-primary">Search New Jobs</a>
+    <a href="{{ url_for('jobs_page', min_score=0.5) }}" class="btn btn-success">View Top Matches</a>
+    <a href="{{ url_for('jobs_page', status='applied') }}" class="btn btn-secondary">View Applied</a>
+</div>
+
+<!-- Sources breakdown -->
+{% if stats.by_source %}
+<div class="card">
+    <h2>Jobs by Source</h2>
+    <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+        {% for source, count in stats.by_source.items() %}
+        <div>
+            <span style="font-weight: 700; color: #60a5fa;">{{ count }}</span>
+            <span style="color: #94a3b8;">{{ source }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Recent jobs -->
+<div class="card">
+    <h2>Recent Top Matches</h2>
+    {% if recent_jobs %}
+    <table>
+        <thead>
+            <tr>
+                <th>Score</th>
+                <th>Title</th>
+                <th>Company</th>
+                <th>Salary</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for job in recent_jobs %}
+            <tr>
+                <td>
+                    {% set pct = (job.score * 100)|int %}
+                    <span class="score-badge {% if pct >= 70 %}score-high{% elif pct >= 40 %}score-mid{% else %}score-low{% endif %}">
+                        {{ pct }}%
+                    </span>
+                </td>
+                <td><a href="{{ url_for('job_detail', job_id=job.id) }}">{{ job.title }}</a></td>
+                <td>{{ job.company }}</td>
+                <td>
+                    {% if job.salary %}
+                    <span style="color: #6ee7b7; font-weight: 600; font-size: 0.85rem;">{{ job.salary }}</span>
+                    {% else %}
+                    <span style="color: #475569; font-size: 0.8rem;">-</span>
+                    {% endif %}
+                </td>
+                <td><span class="tag">{{ job.source }}</span></td>
+                <td><span class="status-badge status-{{ job.status }}">{{ job.status }}</span></td>
+                <td><a href="{{ job.url }}" target="_blank" class="btn btn-sm btn-secondary">Apply</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #94a3b8; padding: 2rem; text-align: center;">No jobs yet. Run a <a href="{{ url_for('search_page') }}">search</a> to get started!</p>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Profile - Job Application Bot{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 1.5rem;">Profile</h1>
+
+<!-- Profile header -->
+<div class="card">
+    <div class="profile-header">
+        <div class="profile-avatar">{{ profile.name[0] }}</div>
+        <div>
+            <h2 style="margin-bottom: 0.2rem;">{{ profile.name }}</h2>
+            <p style="color: #60a5fa;">{{ profile.title }}</p>
+            <p style="color: #94a3b8; font-size: 0.9rem;">{{ profile.location }} | {{ profile.years_of_experience }} years exp | {{ profile.open_to }}</p>
+            <p style="color: #94a3b8; font-size: 0.9rem;">{{ profile.email }} | {{ profile.phone }}</p>
+        </div>
+    </div>
+
+    <p style="line-height: 1.7; color: #cbd5e1;">{{ profile.summary }}</p>
+</div>
+
+<!-- Upload Resume -->
+<div class="card">
+    <h2>Upload Resume</h2>
+    <p style="color: #94a3b8; margin-bottom: 1rem;">Upload a new resume (PDF, DOCX, or TXT). Your profile in config.py can be updated to reflect changes.</p>
+    <form method="POST" action="{{ url_for('upload_resume') }}" enctype="multipart/form-data" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+        <input type="file" name="resume" accept=".pdf,.docx,.txt"
+               style="background: #0f172a; border: 1px solid #475569; color: #e2e8f0; padding: 0.5rem; border-radius: 8px;">
+        <button type="submit" class="btn btn-primary">Upload</button>
+    </form>
+</div>
+
+<!-- Skills -->
+<div class="card">
+    <h2>Technical Skills</h2>
+    {% for group_name, skills in profile.skills.items() %}
+    <div style="margin-bottom: 1rem;">
+        <h3 style="font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 0.5rem;">
+            {{ group_name|replace('_', ' ') }}
+        </h3>
+        <div class="skills-grid">
+            {% for skill in skills %}
+            <span class="skill-tag">{{ skill }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Experience -->
+<div class="card">
+    <h2>Experience</h2>
+    {% for exp in profile.experience %}
+    <div style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #334155;">
+        <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
+            <h3 style="color: #f1f5f9;">{{ exp.title }}</h3>
+            <span style="color: #94a3b8; font-size: 0.9rem;">{{ exp.period }}</span>
+        </div>
+        <p style="color: #60a5fa; margin-bottom: 0.5rem;">{{ exp.company }}</p>
+        <ul style="padding-left: 1.5rem; line-height: 1.8; color: #cbd5e1;">
+            {% for h in exp.highlights %}
+            <li>{{ h }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Education -->
+<div class="card">
+    <h2>Education</h2>
+    <p style="color: #cbd5e1;">{{ profile.education }}</p>
+</div>
+
+<!-- Certifications -->
+{% if profile.certifications %}
+<div class="card">
+    <h2>Certifications</h2>
+    <ul style="padding-left: 1.5rem; line-height: 1.8; color: #cbd5e1;">
+        {% for cert in profile.certifications %}
+        <li>{{ cert }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+{% endblock %}

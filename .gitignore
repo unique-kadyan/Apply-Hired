@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+data/jobs.db
+venv/
+.venv/
+.env
+.env.*
