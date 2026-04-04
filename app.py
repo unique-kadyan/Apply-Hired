@@ -436,8 +436,10 @@ def _run_search_background(params=None):
 
 if __name__ == "__main__":
     init_db()
+    port = int(os.environ.get("PORT", 5000))
+    debug = not os.environ.get("RENDER")  # disable debug on Render
     print("\n  Job Application Bot - API Server")
-    print("  API:      http://127.0.0.1:5000/api/")
-    print("  Frontend: http://127.0.0.1:3000 (React dev server)")
-    print("  Or:       http://127.0.0.1:5000 (production build)\n")
-    app.run(debug=True, use_reloader=False, port=5000)
+    print(f"  Running on port {port}")
+    print("  API:      /api/")
+    print("  Frontend: / (production build)\n")
+    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=False)
