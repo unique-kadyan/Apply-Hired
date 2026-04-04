@@ -1,14 +1,17 @@
-"""Flask REST API backend for Job Application Bot."""
+"""Flask REST API backend for Job Application Bot — with user auth."""
 
 import os
 import json
 import threading
-import webbrowser
+import functools
+import secrets
 from datetime import datetime
+from urllib.parse import urlencode
 
-from flask import Flask, request, jsonify, send_from_directory
+import requests as http_requests
+from flask import Flask, request, jsonify, send_from_directory, session, redirect
 
-from config import PROFILE, LOCATION_PREFERENCES
+from config import LOCATION_PREFERENCES
 from scrapers import search_all_boards, ALL_SCRAPERS, Job
 from matcher import rank_jobs
 from cover_letter import generate_cover_letter
@@ -16,15 +19,65 @@ from resume_parser import parse_resume
 from tracker import (
     init_db, save_job, get_jobs, get_stats, get_job_by_id,
     update_job_status, log_search_run,
+    create_user, authenticate_user, get_user_by_id, update_user_profile,
 )
 
 app = Flask(__name__, static_folder="frontend/build", static_url_path="")
-app.secret_key = os.urandom(24)
+app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
 app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), "uploads")
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
-# In-memory state
-search_status = {"running": False, "message": "", "progress": 0}
-current_profile = dict(PROFILE)  # mutable copy
+# Google OAuth config
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+
+# In-memory state (per-user search status keyed by user_id)
+search_status_map: dict[int, dict] = {}
+
+# Default profile template for new users
+DEFAULT_PROFILE = {
+    "name": "", "title": "", "email": "", "phone": "", "location": "",
+    "years_of_experience": 0, "open_to": "Remote Roles", "summary": "",
+    "skills": {}, "experience": [], "education": "", "certifications": [],
+}
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
+def login_required(f):
+    """Decorator to require authentication."""
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        user_id = session.get("user_id")
+        if not user_id:
+            return jsonify({"error": "Authentication required"}), 401
+        user = get_user_by_id(user_id)
+        if not user:
+            session.clear()
+            return jsonify({"error": "Authentication required"}), 401
+        request.user = user
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def _get_user_profile(user) -> dict:
+    """Parse the profile JSON from user record."""
+    profile = user.get("profile", "{}")
+    if isinstance(profile, str):
+        try:
+            profile = json.loads(profile)
+        except (json.JSONDecodeError, TypeError):
+            profile = {}
+    if not profile:
+        profile = dict(DEFAULT_PROFILE)
+        profile["name"] = user.get("name", "")
+        profile["email"] = user.get("email", "")
+    return profile
 
 
 # ---------------------------------------------------------------------------
@@ -37,31 +90,219 @@ def serve_react():
 
 @app.errorhandler(404)
 def not_found(e):
-    # SPA fallback — serve index.html for all unknown routes
     if request.path.startswith("/api/"):
         return jsonify({"error": "Not found"}), 404
     return send_from_directory(app.static_folder, "index.html")
 
 
 # ---------------------------------------------------------------------------
-# API: Profile
+# API: Auth
+# ---------------------------------------------------------------------------
+
+@app.route("/api/auth/signup", methods=["POST"])
+def api_signup():
+    data = request.get_json() or {}
+    name = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip()
+    password = data.get("password", "")
+
+    if not name or not email or not password:
+        return jsonify({"error": "Name, email, and password are required"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    user = create_user(name, email, password)
+    if not user:
+        return jsonify({"error": "An account with this email already exists"}), 409
+
+    # Set initial profile
+    profile = dict(DEFAULT_PROFILE)
+    profile["name"] = name
+    profile["email"] = email
+    update_user_profile(user["id"], profile)
+
+    session["user_id"] = user["id"]
+    return jsonify({
+        "message": "Account created successfully",
+        "user": {"id": user["id"], "name": name, "email": email},
+    }), 201
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_login():
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip()
+    password = data.get("password", "")
+
+    if not email or not password:
+        return jsonify({"error": "Email and password are required"}), 400
+
+    user = authenticate_user(email, password)
+    if not user:
+        return jsonify({"error": "Invalid email or password"}), 401
+
+    session["user_id"] = user["id"]
+    return jsonify({
+        "message": "Logged in successfully",
+        "user": {"id": user["id"], "name": user["name"], "email": user["email"]},
+    })
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify({"message": "Logged out"})
+
+
+@app.route("/api/auth/me", methods=["GET"])
+def api_me():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"user": None})
+    user = get_user_by_id(user_id)
+    if not user:
+        session.clear()
+        return jsonify({"user": None})
+    return jsonify({
+        "user": {"id": user["id"], "name": user["name"], "email": user["email"]},
+    })
+
+
+# ---------------------------------------------------------------------------
+# API: Google OAuth SSO
+# ---------------------------------------------------------------------------
+
+@app.route("/api/auth/google")
+def google_login():
+    """Redirect user to Google's OAuth consent screen."""
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        return jsonify({"error": "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET."}), 500
+
+    # Build the callback URL dynamically
+    callback_url = request.host_url.rstrip("/") + "/api/auth/google/callback"
+
+    # Store a CSRF state token
+    state = secrets.token_urlsafe(32)
+    session["oauth_state"] = state
+
+    params = urlencode({
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": callback_url,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+        "state": state,
+        "prompt": "select_account",
+    })
+    return redirect(f"{GOOGLE_AUTH_URL}?{params}")
+
+
+@app.route("/api/auth/google/callback")
+def google_callback():
+    """Handle Google's OAuth callback — exchange code for tokens, create/login user."""
+    error = request.args.get("error")
+    if error:
+        return redirect("/?auth_error=" + error)
+
+    code = request.args.get("code")
+    state = request.args.get("state")
+
+    # Verify CSRF state
+    if not state or state != session.pop("oauth_state", None):
+        return redirect("/?auth_error=invalid_state")
+
+    callback_url = request.host_url.rstrip("/") + "/api/auth/google/callback"
+
+    # Exchange authorization code for tokens
+    try:
+        token_resp = http_requests.post(GOOGLE_TOKEN_URL, data={
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": callback_url,
+            "grant_type": "authorization_code",
+        }, timeout=10)
+        token_data = token_resp.json()
+    except Exception:
+        return redirect("/?auth_error=token_exchange_failed")
+
+    access_token = token_data.get("access_token")
+    if not access_token:
+        return redirect("/?auth_error=no_access_token")
+
+    # Fetch user info from Google
+    try:
+        user_resp = http_requests.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        google_user = user_resp.json()
+    except Exception:
+        return redirect("/?auth_error=userinfo_failed")
+
+    email = google_user.get("email", "")
+    name = google_user.get("name", email.split("@")[0])
+
+    if not email:
+        return redirect("/?auth_error=no_email")
+
+    # Try to find existing user, or create a new one
+    from tracker import _get_conn
+    conn = _get_conn()
+    row = conn.execute("SELECT id, name, email FROM users WHERE email = ?", (email.lower(),)).fetchone()
+
+    if row:
+        # Existing user — log them in
+        user_id = row["id"]
+    else:
+        # New user — create account (random password since they use Google SSO)
+        random_pw = secrets.token_urlsafe(32)
+        user = create_user(name, email, random_pw)
+        if not user:
+            conn.close()
+            return redirect("/?auth_error=account_creation_failed")
+        user_id = user["id"]
+
+        # Set initial profile
+        profile = dict(DEFAULT_PROFILE)
+        profile["name"] = name
+        profile["email"] = email
+        profile["picture"] = google_user.get("picture", "")
+        update_user_profile(user_id, profile)
+
+    conn.close()
+    session["user_id"] = user_id
+
+    # Redirect to the frontend — it will detect the session via /api/auth/me
+    return redirect("/?auth_success=1")
+
+
+# ---------------------------------------------------------------------------
+# API: Profile (per-user)
 # ---------------------------------------------------------------------------
 
 @app.route("/api/profile", methods=["GET"])
+@login_required
 def api_get_profile():
-    return jsonify(current_profile)
+    profile = _get_user_profile(request.user)
+    return jsonify(profile)
+
 
 @app.route("/api/profile", methods=["PUT"])
+@login_required
 def api_update_profile():
-    global current_profile
     data = request.get_json()
+    profile = _get_user_profile(request.user)
     if data:
-        current_profile.update(data)
-    return jsonify(current_profile)
+        profile.update(data)
+    update_user_profile(request.user["id"], profile)
+    return jsonify(profile)
+
 
 @app.route("/api/profile/upload-resume", methods=["POST"])
+@login_required
 def api_upload_resume():
-    global current_profile
     if "resume" not in request.files:
         return jsonify({"error": "No file provided"}), 400
 
@@ -78,33 +319,36 @@ def api_upload_resume():
 
     try:
         parsed = parse_resume(filepath)
-        # Merge parsed data into current profile
+        profile = _get_user_profile(request.user)
+
         for key, value in parsed.items():
-            if value:  # only overwrite if parsed value is non-empty
-                if isinstance(value, dict) and key in current_profile:
-                    # Merge skills dicts
-                    if isinstance(current_profile[key], dict):
+            if value:
+                if isinstance(value, dict) and key in profile:
+                    if isinstance(profile[key], dict):
                         for k, v in value.items():
                             if v:
-                                current_profile[key][k] = v
+                                profile[key][k] = v
                     else:
-                        current_profile[key] = value
+                        profile[key] = value
                 else:
-                    current_profile[key] = value
+                    profile[key] = value
+
+        update_user_profile(request.user["id"], profile)
 
         return jsonify({
             "message": "Resume parsed successfully!",
-            "profile": current_profile,
+            "profile": profile,
         })
     except Exception as e:
         return jsonify({"error": f"Failed to parse resume: {str(e)}"}), 500
 
 
 # ---------------------------------------------------------------------------
-# API: Jobs
+# API: Jobs (per-user)
 # ---------------------------------------------------------------------------
 
 @app.route("/api/jobs", methods=["GET"])
+@login_required
 def api_get_jobs():
     status = request.args.get("status", "")
     min_score = float(request.args.get("min_score", 0))
@@ -116,8 +360,8 @@ def api_get_jobs():
         min_score=min_score,
         source=source or None,
         limit=limit,
+        user_id=request.user["id"],
     )
-    # Parse JSON fields
     for job in jobs:
         job["tags"] = json.loads(job.get("tags", "[]"))
         job["score_details"] = json.loads(job.get("score_details", "{}"))
@@ -126,8 +370,9 @@ def api_get_jobs():
 
 
 @app.route("/api/jobs/<int:job_id>", methods=["GET"])
+@login_required
 def api_get_job(job_id):
-    job = get_job_by_id(job_id)
+    job = get_job_by_id(job_id, user_id=request.user["id"])
     if not job:
         return jsonify({"error": "Job not found"}), 404
     job["tags"] = json.loads(job.get("tags", "[]"))
@@ -136,7 +381,11 @@ def api_get_job(job_id):
 
 
 @app.route("/api/jobs/<int:job_id>/status", methods=["PUT"])
+@login_required
 def api_update_job_status(job_id):
+    job = get_job_by_id(job_id, user_id=request.user["id"])
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
     data = request.get_json()
     status = data.get("status", "new")
     notes = data.get("notes", "")
@@ -145,8 +394,9 @@ def api_update_job_status(job_id):
 
 
 @app.route("/api/jobs/<int:job_id>/cover-letter", methods=["POST"])
+@login_required
 def api_generate_cover_letter(job_id):
-    job = get_job_by_id(job_id)
+    job = get_job_by_id(job_id, user_id=request.user["id"])
     if not job:
         return jsonify({"error": "Job not found"}), 404
 
@@ -171,8 +421,8 @@ def api_generate_cover_letter(job_id):
 
 
 @app.route("/api/apply", methods=["POST"])
+@login_required
 def api_apply_jobs():
-    """Mark jobs as applied (track only, no browser)."""
     data = request.get_json()
     job_ids = data.get("job_ids", [])
 
@@ -184,7 +434,7 @@ def api_apply_jobs():
     results = []
     for job_id in job_ids:
         try:
-            job = get_job_by_id(int(job_id))
+            job = get_job_by_id(int(job_id), user_id=request.user["id"])
             if not job or job["status"] == "applied":
                 continue
 
@@ -212,8 +462,8 @@ def api_apply_jobs():
 
 
 @app.route("/api/auto-apply", methods=["POST"])
+@login_required
 def api_auto_apply():
-    """Auto-apply: opens job pages in browser, auto-fills forms, generates cover letters."""
     from auto_apply import auto_apply_batch
 
     data = request.get_json()
@@ -224,15 +474,13 @@ def api_auto_apply():
     if len(job_ids) > 10:
         return jsonify({"error": "Maximum 10 jobs at a time"}), 400
 
-    # Prepare jobs with cover letters
     jobs_with_letters = []
     for job_id in job_ids:
         try:
-            job = get_job_by_id(int(job_id))
+            job = get_job_by_id(int(job_id), user_id=request.user["id"])
             if not job:
                 continue
 
-            # Generate cover letter if missing
             if not job.get("cover_letter"):
                 job_obj = Job(
                     title=job["title"], company=job["company"], location=job["location"],
@@ -249,20 +497,15 @@ def api_auto_apply():
                 job["cover_letter"] = letter
 
             jobs_with_letters.append({
-                "id": job["id"],
-                "title": job["title"],
-                "company": job["company"],
-                "url": job["url"],
-                "cover_letter": job.get("cover_letter", ""),
+                "id": job["id"], "title": job["title"], "company": job["company"],
+                "url": job["url"], "cover_letter": job.get("cover_letter", ""),
                 "description": job.get("description", ""),
             })
         except Exception:
             continue
 
-    # Run auto-apply
     results = auto_apply_batch(jobs_with_letters)
 
-    # Update status for successfully opened jobs
     for detail in results.get("details", []):
         if detail["status"] in ("opened", "auto_filled", "opened_browser"):
             update_job_status(
@@ -274,12 +517,15 @@ def api_auto_apply():
 
 
 # ---------------------------------------------------------------------------
-# API: Search
+# API: Search (per-user)
 # ---------------------------------------------------------------------------
 
 @app.route("/api/search", methods=["POST"])
+@login_required
 def api_search():
-    if search_status["running"]:
+    user_id = request.user["id"]
+    user_status = search_status_map.get(user_id, {})
+    if user_status.get("running"):
         return jsonify({"error": "A search is already running"}), 409
 
     data = request.get_json() or {}
@@ -293,7 +539,11 @@ def api_search():
         "min_salary": data.get("min_salary", 0),
     }
 
-    thread = threading.Thread(target=_run_search_background, args=(search_params,), daemon=True)
+    thread = threading.Thread(
+        target=_run_search_background,
+        args=(search_params, user_id),
+        daemon=True,
+    )
     thread.start()
 
     return jsonify({"message": "Search started"})
@@ -304,40 +554,30 @@ def api_get_location_prefs():
     return jsonify(LOCATION_PREFERENCES)
 
 
-@app.route("/api/location-preferences", methods=["PUT"])
-def api_update_location_prefs():
-    data = request.get_json()
-    if data:
-        if "default_country" in data:
-            LOCATION_PREFERENCES["default_country"] = data["default_country"]
-        if "job_types" in data:
-            LOCATION_PREFERENCES["job_types"] = data["job_types"]
-        if "allowed_locations" in data:
-            LOCATION_PREFERENCES["allowed_locations"] = data["allowed_locations"]
-    return jsonify(LOCATION_PREFERENCES)
-
-
 @app.route("/api/search/status", methods=["GET"])
+@login_required
 def api_search_status():
-    return jsonify(search_status)
+    user_id = request.user["id"]
+    status = search_status_map.get(user_id, {"running": False, "message": "", "progress": 0})
+    return jsonify(status)
 
 
 # ---------------------------------------------------------------------------
-# API: Stats
+# API: Stats (per-user)
 # ---------------------------------------------------------------------------
 
 @app.route("/api/stats", methods=["GET"])
+@login_required
 def api_get_stats():
-    return jsonify(get_stats())
+    return jsonify(get_stats(user_id=request.user["id"]))
 
 
 # ---------------------------------------------------------------------------
-# Background search
+# Background search (per-user)
 # ---------------------------------------------------------------------------
 
-def _run_search_background(params=None):
-    global search_status
-    search_status = {"running": True, "message": "Preparing search...", "progress": 10}
+def _run_search_background(params=None, user_id=None):
+    search_status_map[user_id] = {"running": True, "message": "Preparing search...", "progress": 10}
 
     try:
         if params is None:
@@ -374,8 +614,8 @@ def _run_search_background(params=None):
 
         queries = list(dict.fromkeys(queries))[:8]
 
-        search_status["message"] = f"Searching for: {', '.join(queries[:3])}..."
-        search_status["progress"] = 20
+        search_status_map[user_id]["message"] = f"Searching for: {', '.join(queries[:3])}..."
+        search_status_map[user_id]["progress"] = 20
 
         all_jobs = search_all_boards(queries, location=location, country=country)
 
@@ -385,7 +625,7 @@ def _run_search_background(params=None):
             filtered = []
             for job in all_jobs:
                 if not job.salary:
-                    filtered.append(job)  # keep jobs without salary info
+                    filtered.append(job)
                     continue
                 nums = _re.findall(r'[\d,]+', job.salary)
                 if nums:
@@ -396,22 +636,21 @@ def _run_search_background(params=None):
                     filtered.append(job)
             all_jobs = filtered
 
-        search_status["message"] = f"Found {len(all_jobs)} jobs. Scoring..."
-        search_status["progress"] = 60
+        search_status_map[user_id]["message"] = f"Found {len(all_jobs)} jobs. Scoring..."
+        search_status_map[user_id]["progress"] = 60
 
-        # Score all jobs (no filtering — save everything so the UI can filter)
         ranked = rank_jobs(all_jobs, min_score=0)
         matched_count = sum(
             1 for _, sd in ranked
             if sd["final_score"] >= min_score
         )
 
-        search_status["message"] = f"Saving {len(ranked)} jobs..."
-        search_status["progress"] = 80
+        search_status_map[user_id]["message"] = f"Saving {len(ranked)} jobs..."
+        search_status_map[user_id]["progress"] = 80
 
         new_count = 0
         for job, score_data in ranked:
-            if save_job(job, score_data):
+            if save_job(job, score_data, user_id=user_id):
                 new_count += 1
 
         log_search_run(
@@ -419,15 +658,16 @@ def _run_search_background(params=None):
             total_found=len(all_jobs),
             total_matched=matched_count,
             sources=[s.name for s in ALL_SCRAPERS],
+            user_id=user_id,
         )
 
-        search_status["message"] = f"Done! Found {len(all_jobs)} jobs, {matched_count} matched, {new_count} new."
-        search_status["progress"] = 100
+        search_status_map[user_id]["message"] = f"Done! Found {len(all_jobs)} jobs, {matched_count} matched, {new_count} new."
+        search_status_map[user_id]["progress"] = 100
 
     except Exception as e:
-        search_status["message"] = f"Error: {e}"
+        search_status_map[user_id]["message"] = f"Error: {e}"
     finally:
-        search_status["running"] = False
+        search_status_map[user_id]["running"] = False
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +677,7 @@ def _run_search_background(params=None):
 if __name__ == "__main__":
     init_db()
     port = int(os.environ.get("PORT", 5000))
-    debug = not os.environ.get("RENDER")  # disable debug on Render
+    debug = not os.environ.get("RENDER")
     print("\n  Job Application Bot - API Server")
     print(f"  Running on port {port}")
     print("  API:      /api/")
