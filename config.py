@@ -12,7 +12,12 @@ ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID", "")
 ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "")
 
 # --- Database ---
-DB_PATH = os.path.join(os.path.dirname(__file__), "data", "jobs.db")
+# Use /tmp on cloud platforms (Render, etc.) where the project dir is read-only
+_default_db_dir = os.path.join(os.path.dirname(__file__), "data")
+if os.environ.get("RENDER") or not os.access(os.path.dirname(__file__), os.W_OK):
+    _default_db_dir = os.path.join("/tmp", "jobbot_data")
+os.makedirs(_default_db_dir, exist_ok=True)
+DB_PATH = os.path.join(_default_db_dir, "jobs.db")
 
 # --- Resume Profile ---
 PROFILE = {
