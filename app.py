@@ -173,13 +173,28 @@ def api_signup():
     if existing:
         return jsonify({"error": "An account with this email already exists"}), 409
 
+    # If SMTP is not configured, create account directly (no email verification)
+    if not SMTP_EMAIL or not SMTP_PASSWORD:
+        user = create_user(name, email, password)
+        if not user:
+            return jsonify({"error": "An account with this email already exists"}), 409
+        profile = dict(DEFAULT_PROFILE)
+        profile["name"] = name
+        profile["email"] = email
+        update_user_profile(user["id"], profile)
+        session["user_id"] = user["id"]
+        return jsonify({
+            "message": "Account created successfully",
+            "user": {"id": user["id"], "name": name, "email": email},
+        }), 201
+
     # Generate 6-digit OTP
     otp = str(random.randint(100000, 999999))
 
     # Send OTP email
     sent = _send_otp_email(email, otp)
     if not sent:
-        return jsonify({"error": "Failed to send verification email. Check SMTP settings."}), 500
+        return jsonify({"error": "Failed to send verification email. Please try again."}), 500
 
     # Store pending signup (expires in 10 minutes)
     pending_otps[email] = {
