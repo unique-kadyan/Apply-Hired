@@ -2,10 +2,14 @@
 
 import os
 import json
+import random
+import smtplib
 import threading
 import functools
 import secrets
 from datetime import datetime
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from urllib.parse import urlencode
 
 import requests as http_requests
@@ -33,6 +37,15 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+
+# SMTP config for sending OTP emails (use Gmail App Password)
+SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "")      # e.g. your-gmail@gmail.com
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "") # Gmail App Password (16 chars)
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
+
+# In-memory OTP store: { email: { "otp": "123456", "name": ..., "password": ..., "expires": timestamp } }
+pending_otps: dict = {}
 
 # In-memory state (per-user search status keyed by user_id)
 search_status_map: dict[int, dict] = {}
@@ -80,6 +93,46 @@ def _get_user_profile(user) -> dict:
     return profile
 
 
+def _send_otp_email(to_email: str, otp: str) -> bool:
+    """Send OTP verification email via SMTP."""
+    if not SMTP_EMAIL or not SMTP_PASSWORD:
+        return False
+
+    msg = MIMEMultipart("alternative")
+    msg["From"] = f"JobBot <{SMTP_EMAIL}>"
+    msg["To"] = to_email
+    msg["Subject"] = f"JobBot — Your verification code is {otp}"
+
+    html = f"""
+    <div style="font-family:'Segoe UI',system-ui,sans-serif;max-width:480px;margin:0 auto;
+                background:#0f172a;color:#e2e8f0;padding:2rem;border-radius:12px">
+        <h1 style="color:#60a5fa;margin:0 0 0.5rem">JobBot</h1>
+        <p style="color:#94a3b8;margin:0 0 1.5rem">Verify your email to create your account</p>
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;
+                    padding:1.5rem;text-align:center;margin-bottom:1.5rem">
+            <p style="color:#94a3b8;margin:0 0 0.5rem;font-size:0.9rem">Your verification code</p>
+            <div style="font-size:2.5rem;font-weight:800;letter-spacing:0.3em;color:#fff">{otp}</div>
+        </div>
+        <p style="color:#64748b;font-size:0.82rem;margin:0">
+            This code expires in 10 minutes. If you didn't request this, ignore this email.
+        </p>
+    </div>
+    """
+
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_EMAIL, SMTP_PASSWORD)
+            server.sendmail(SMTP_EMAIL, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        import logging
+        logging.error(f"Failed to send OTP email: {e}")
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Serve React app
 # ---------------------------------------------------------------------------
@@ -101,15 +154,71 @@ def not_found(e):
 
 @app.route("/api/auth/signup", methods=["POST"])
 def api_signup():
+    """Step 1: Validate input and send OTP email."""
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
-    email = (data.get("email") or "").strip()
+    email = (data.get("email") or "").strip().lower()
     password = data.get("password", "")
 
     if not name or not email or not password:
         return jsonify({"error": "Name, email, and password are required"}), 400
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    # Check if email already registered
+    from tracker import _get_conn
+    conn = _get_conn()
+    existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+    conn.close()
+    if existing:
+        return jsonify({"error": "An account with this email already exists"}), 409
+
+    # Generate 6-digit OTP
+    otp = str(random.randint(100000, 999999))
+
+    # Send OTP email
+    sent = _send_otp_email(email, otp)
+    if not sent:
+        return jsonify({"error": "Failed to send verification email. Check SMTP settings."}), 500
+
+    # Store pending signup (expires in 10 minutes)
+    pending_otps[email] = {
+        "otp": otp,
+        "name": name,
+        "password": password,
+        "expires": datetime.now().timestamp() + 600,
+    }
+
+    return jsonify({"message": "Verification code sent to your email", "needs_otp": True})
+
+
+@app.route("/api/auth/verify-otp", methods=["POST"])
+def api_verify_otp():
+    """Step 2: Verify OTP and create account."""
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    otp = (data.get("otp") or "").strip()
+
+    if not email or not otp:
+        return jsonify({"error": "Email and verification code are required"}), 400
+
+    pending = pending_otps.get(email)
+    if not pending:
+        return jsonify({"error": "No pending verification. Please sign up again."}), 400
+
+    # Check expiry
+    if datetime.now().timestamp() > pending["expires"]:
+        del pending_otps[email]
+        return jsonify({"error": "Verification code expired. Please sign up again."}), 400
+
+    # Check OTP
+    if otp != pending["otp"]:
+        return jsonify({"error": "Invalid verification code"}), 400
+
+    # OTP correct — create the account
+    name = pending["name"]
+    password = pending["password"]
+    del pending_otps[email]
 
     user = create_user(name, email, password)
     if not user:
@@ -123,7 +232,7 @@ def api_signup():
 
     session["user_id"] = user["id"]
     return jsonify({
-        "message": "Account created successfully",
+        "message": "Account verified and created successfully",
         "user": {"id": user["id"], "name": name, "email": email},
     }), 201
 
