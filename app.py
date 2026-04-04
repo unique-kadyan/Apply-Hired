@@ -288,7 +288,9 @@ def google_login():
         return jsonify({"error": "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET."}), 500
 
     # Build the callback URL dynamically
-    callback_url = request.host_url.rstrip("/") + "/api/auth/google/callback"
+    callback_url = request.url_root.rstrip("/") + "/api/auth/google/callback"
+    if callback_url.startswith("http://") and "localhost" not in callback_url and "127.0.0.1" not in callback_url:
+        callback_url = callback_url.replace("http://", "https://", 1)
 
     # Store a CSRF state token
     state = secrets.token_urlsafe(32)
@@ -320,7 +322,9 @@ def google_callback():
     if not state or state != session.pop("oauth_state", None):
         return redirect("/?auth_error=invalid_state")
 
-    callback_url = request.host_url.rstrip("/") + "/api/auth/google/callback"
+    callback_url = request.url_root.rstrip("/") + "/api/auth/google/callback"
+    if callback_url.startswith("http://") and "localhost" not in callback_url and "127.0.0.1" not in callback_url:
+        callback_url = callback_url.replace("http://", "https://", 1)
 
     # Exchange authorization code for tokens
     try:
