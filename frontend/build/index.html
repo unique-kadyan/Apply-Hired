@@ -1035,8 +1035,10 @@
                     {/* Resume Score */}
                     {profile.resume_score && <ResumeScoreCard score={profile.resume_score} />}
 
-                    {/* Paid Resume Optimizer */}
-                    <ResumeOptimizer profile={profile} setProfile={setProfile} showToast={showToast} />
+                    {/* Paid Resume Optimizer — only if score < 100 */}
+                    {(!profile.resume_score || profile.resume_score.total_score < 100) && (
+                        <ResumeOptimizer profile={profile} setProfile={setProfile} showToast={showToast} />
+                    )}
 
                     {/* Skills */}
                     <div style={styles.card}>
