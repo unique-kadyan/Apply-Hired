@@ -12,7 +12,25 @@ logger = logging.getLogger(__name__)
 
 
 def extract_text_from_pdf(filepath: str) -> str:
-    """Extract text from a PDF file."""
+    """Extract text from a PDF file using pdfplumber (layout-aware)."""
+    try:
+        import pdfplumber
+        text = ""
+        with pdfplumber.open(filepath) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text(
+                    x_tolerance=2,
+                    y_tolerance=3,
+                    layout=False,
+                )
+                if page_text:
+                    text += page_text + "\n"
+        if text.strip():
+            return text
+    except Exception as e:
+        logger.warning(f"pdfplumber failed, falling back to PyPDF2: {e}")
+
+    # Fallback to PyPDF2
     from PyPDF2 import PdfReader
     reader = PdfReader(filepath)
     text = ""
@@ -67,7 +85,7 @@ def parse_resume_ai(text: str) -> Optional[dict]:
 
 CRITICAL RULES:
 - Extract EVERY job listed in the experience section. Do NOT skip any.
-- Extract the FULL job title (e.g. "Senior Engineer – Applications & Platforms", NOT just "Senior")
+- Extract the FULL job title completely without missing any part or letter (e.g. "Senior Engineer – Applications & Platforms", NOT just "Senior")
 - Extract the FULL company name
 - Extract ALL bullet points / highlights for each job — do NOT summarize or truncate them
 - Extract ALL skills mentioned anywhere in the resume

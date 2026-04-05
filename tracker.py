@@ -1,106 +1,105 @@
-"""SQLite-based job application tracker with user authentication."""
+"""MongoDB-based job application tracker with user authentication."""
 
-import sqlite3
 import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import quote_plus
 
 from werkzeug.security import generate_password_hash, check_password_hash
+from bson import ObjectId
+from pymongo import MongoClient, DESCENDING
 
-from config import DB_PATH
+from config import MONGO_URI
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# MongoDB connection
+# ---------------------------------------------------------------------------
 
-def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+_client: Optional[MongoClient] = None
+_db = None
+
+
+def _fix_mongo_uri(uri: str) -> str:
+    """URL-encode username and password if they contain special characters."""
+    if "://" not in uri:
+        return uri
+    # Split: mongodb+srv://user:pass@host/...
+    scheme, rest = uri.split("://", 1)
+    if "@" not in rest:
+        return uri
+    userinfo, hostpart = rest.rsplit("@", 1)
+    if ":" in userinfo:
+        user, passwd = userinfo.split(":", 1)
+        user = quote_plus(user)
+        passwd = quote_plus(passwd)
+        userinfo = f"{user}:{passwd}"
+    return f"{scheme}://{userinfo}@{hostpart}"
+
+
+def _get_db():
+    """Get (or lazily create) the MongoDB database connection."""
+    global _client, _db
+    if _db is not None:
+        return _db
+
+    if not MONGO_URI:
+        raise RuntimeError("MONGO_URI is not set. Add it to your .env file.")
+
+    safe_uri = _fix_mongo_uri(MONGO_URI)
+    _client = MongoClient(safe_uri)
+    _db = _client.get_default_database(default="jobbot")
+    logger.info(f"Connected to MongoDB: {_db.name}")
+    return _db
+
+
+def _id_str(doc: dict) -> dict:
+    """Convert MongoDB _id (ObjectId) to string 'id' for JSON compatibility."""
+    if doc and "_id" in doc:
+        doc["id"] = str(doc["_id"])
+        del doc["_id"]
+    return doc
+
+
+def _to_object_id(id_val):
+    """Convert a string or int ID to ObjectId if possible."""
+    if isinstance(id_val, ObjectId):
+        return id_val
+    try:
+        return ObjectId(str(id_val))
+    except Exception:
+        return None
 
 
 def init_db():
-    """Create tables if they don't exist."""
-    conn = _get_conn()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            profile TEXT DEFAULT '{}',
-            created_at TEXT DEFAULT (datetime('now'))
-        );
+    """Ensure indexes exist on all collections."""
+    db = _get_db()
 
-        CREATE TABLE IF NOT EXISTS jobs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            title TEXT NOT NULL,
-            company TEXT NOT NULL,
-            location TEXT DEFAULT 'Remote',
-            url TEXT NOT NULL,
-            source TEXT,
-            description TEXT,
-            salary TEXT,
-            tags TEXT DEFAULT '[]',
-            date_posted TEXT,
-            job_type TEXT DEFAULT 'remote',
-            score REAL DEFAULT 0.0,
-            score_details TEXT DEFAULT '{}',
-            status TEXT DEFAULT 'new',
-            cover_letter TEXT,
-            notes TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            UNIQUE(user_id, url)
-        );
+    # Users indexes
+    db.users.create_index("email", unique=True)
 
-        CREATE TABLE IF NOT EXISTS search_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            run_at TEXT DEFAULT (datetime('now')),
-            queries TEXT,
-            total_found INTEGER DEFAULT 0,
-            total_matched INTEGER DEFAULT 0,
-            sources TEXT,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        );
+    # Jobs indexes
+    db.jobs.create_index([("user_id", 1), ("url", 1)], unique=True)
+    db.jobs.create_index([("score", DESCENDING)])
+    db.jobs.create_index("status")
+    db.jobs.create_index("source")
+    db.jobs.create_index("user_id")
 
-    """)
-    conn.commit()
+    # Search runs index
+    db.search_runs.create_index("user_id")
 
-    # Migrate existing tables — add user_id column if missing (must run before indexes)
-    try:
-        cols = [row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()]
-        if "user_id" not in cols:
-            conn.execute("ALTER TABLE jobs ADD COLUMN user_id INTEGER")
-            logger.info("Migrated jobs table: added user_id column")
-    except Exception as e:
-        logger.debug(f"Migration check (jobs): {e}")
+    logger.info("MongoDB indexes ensured")
 
-    try:
-        cols = [row[1] for row in conn.execute("PRAGMA table_info(search_runs)").fetchall()]
-        if "user_id" not in cols:
-            conn.execute("ALTER TABLE search_runs ADD COLUMN user_id INTEGER")
-            logger.info("Migrated search_runs table: added user_id column")
-    except Exception as e:
-        logger.debug(f"Migration check (search_runs): {e}")
 
-    conn.commit()
+# ---------------------------------------------------------------------------
+# Internal helper used by routes/auth.py  (replaces sqlite _get_conn)
+# ---------------------------------------------------------------------------
 
-    # Create indexes after migration ensures columns exist
-    conn.executescript("""
-        CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-        CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(score DESC);
-        CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
-        CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(user_id);
-        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-    """)
-    conn.commit()
-    conn.close()
+def _get_conn():
+    """Return the db handle — kept for compatibility with routes/auth.py."""
+    return _get_db()
 
 
 # ---------------------------------------------------------------------------
@@ -109,103 +108,112 @@ def init_db():
 
 def create_user(name: str, email: str, password: str) -> Optional[dict]:
     """Create a new user. Returns user dict or None if email exists."""
-    conn = _get_conn()
+    db = _get_db()
+    doc = {
+        "name": name,
+        "email": email.lower().strip(),
+        "password_hash": generate_password_hash(password),
+        "profile": "{}",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
     try:
-        conn.execute(
-            "INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)",
-            (name, email.lower().strip(), generate_password_hash(password)),
-        )
-        conn.commit()
-        user = conn.execute(
-            "SELECT id, name, email, profile, created_at FROM users WHERE email = ?",
-            (email.lower().strip(),)
-        ).fetchone()
-        return dict(user) if user else None
-    except sqlite3.IntegrityError:
+        result = db.users.insert_one(doc)
+        doc["id"] = str(result.inserted_id)
+        del doc["_id"]
+        del doc["password_hash"]
+        return doc
+    except Exception:
         return None
-    finally:
-        conn.close()
 
 
 def authenticate_user(email: str, password: str) -> Optional[dict]:
     """Verify credentials. Returns user dict or None."""
-    conn = _get_conn()
-    row = conn.execute(
-        "SELECT * FROM users WHERE email = ?", (email.lower().strip(),)
-    ).fetchone()
-    conn.close()
+    db = _get_db()
+    row = db.users.find_one({"email": email.lower().strip()})
     if row and check_password_hash(row["password_hash"], password):
-        return {"id": row["id"], "name": row["name"], "email": row["email"],
-                "profile": row["profile"], "created_at": row["created_at"]}
+        return {
+            "id": str(row["_id"]),
+            "name": row["name"],
+            "email": row["email"],
+            "profile": row.get("profile", "{}"),
+            "created_at": row.get("created_at", ""),
+        }
     return None
 
 
-def get_user_by_id(user_id: int) -> Optional[dict]:
+def get_user_by_id(user_id) -> Optional[dict]:
     """Get user by ID (no password hash)."""
-    conn = _get_conn()
-    row = conn.execute(
-        "SELECT id, name, email, profile, created_at FROM users WHERE id = ?",
-        (user_id,)
-    ).fetchone()
-    conn.close()
-    return dict(row) if row else None
+    db = _get_db()
+    oid = _to_object_id(user_id)
+    if not oid:
+        return None
+    row = db.users.find_one({"_id": oid})
+    if not row:
+        return None
+    return {
+        "id": str(row["_id"]),
+        "name": row["name"],
+        "email": row["email"],
+        "profile": row.get("profile", "{}"),
+        "created_at": row.get("created_at", ""),
+    }
 
 
-def update_user_profile(user_id: int, profile_data: dict):
+def update_user_profile(user_id, profile_data: dict):
     """Save profile JSON for a user."""
-    conn = _get_conn()
-    conn.execute(
-        "UPDATE users SET profile = ? WHERE id = ?",
-        (json.dumps(profile_data), user_id),
-    )
-    conn.commit()
-    conn.close()
-
-
-def save_job(job, score_data: dict, cover_letter: str = "", user_id: int = None) -> bool:
-    """Save a job to the database. Returns True if new, False if exists."""
-    conn = _get_conn()
-    try:
-        conn.execute(
-            """INSERT OR IGNORE INTO jobs
-               (user_id, title, company, location, url, source, description, salary,
-                tags, date_posted, job_type, score, score_details, cover_letter)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                user_id,
-                job.title,
-                job.company,
-                job.location,
-                job.url,
-                job.source,
-                job.description,
-                job.salary,
-                json.dumps(job.tags),
-                job.date_posted,
-                job.job_type,
-                score_data.get("final_score", 0.0),
-                json.dumps(score_data),
-                cover_letter,
-            ),
+    db = _get_db()
+    oid = _to_object_id(user_id)
+    if oid:
+        db.users.update_one(
+            {"_id": oid},
+            {"$set": {"profile": json.dumps(profile_data)}},
         )
-        conn.commit()
-        return conn.total_changes > 0
-    except sqlite3.Error as e:
-        logger.error(f"DB save error: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Jobs
+# ---------------------------------------------------------------------------
+
+def save_job(job, score_data: dict, cover_letter: str = "", user_id=None) -> bool:
+    """Save a job to the database. Returns True if new, False if exists."""
+    db = _get_db()
+    doc = {
+        "user_id": str(user_id) if user_id else None,
+        "title": job.title,
+        "company": job.company,
+        "location": job.location,
+        "url": job.url,
+        "source": job.source,
+        "description": job.description,
+        "salary": job.salary,
+        "tags": json.dumps(job.tags) if isinstance(job.tags, list) else job.tags,
+        "date_posted": job.date_posted,
+        "job_type": job.job_type,
+        "score": score_data.get("final_score", 0.0),
+        "score_details": json.dumps(score_data),
+        "status": "new",
+        "cover_letter": cover_letter,
+        "notes": "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        db.jobs.insert_one(doc)
+        return True
+    except Exception:
         return False
-    finally:
-        conn.close()
 
 
-def update_job_status(job_id: int, status: str, notes: str = ""):
+def update_job_status(job_id, status: str, notes: str = ""):
     """Update job application status."""
-    conn = _get_conn()
-    conn.execute(
-        "UPDATE jobs SET status = ?, notes = ?, updated_at = ? WHERE id = ?",
-        (status, notes, datetime.now(timezone.utc).isoformat(), job_id),
-    )
-    conn.commit()
-    conn.close()
+    db = _get_db()
+    oid = _to_object_id(job_id)
+    if oid:
+        db.jobs.update_one(
+            {"_id": oid},
+            {"$set": {"status": status, "notes": notes,
+                       "updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
 
 
 def get_jobs(
@@ -213,86 +221,91 @@ def get_jobs(
     min_score: float = 0.0,
     limit: int = 50,
     source: Optional[str] = None,
-    user_id: int = None,
+    user_id=None,
 ) -> list[dict]:
     """Retrieve jobs with optional filters."""
-    conn = _get_conn()
-    query = "SELECT * FROM jobs WHERE score >= ?"
-    params: list = [min_score]
+    db = _get_db()
+    query: dict = {"score": {"$gte": min_score}}
 
     if user_id is not None:
-        query += " AND user_id = ?"
-        params.append(user_id)
+        query["user_id"] = str(user_id)
     if status:
-        query += " AND status = ?"
-        params.append(status)
+        query["status"] = status
     if source:
-        query += " AND source = ?"
-        params.append(source)
+        query["source"] = source
 
-    query += " ORDER BY score DESC LIMIT ?"
-    params.append(limit)
-
-    rows = conn.execute(query, params).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    cursor = db.jobs.find(query).sort("score", DESCENDING).limit(limit)
+    return [_id_str(doc) for doc in cursor]
 
 
-def get_job_by_id(job_id: int, user_id: int = None) -> Optional[dict]:
+def get_job_by_id(job_id, user_id=None) -> Optional[dict]:
     """Get a single job by ID, optionally scoped to a user."""
-    conn = _get_conn()
+    db = _get_db()
+    oid = _to_object_id(job_id)
+    if not oid:
+        return None
+
+    query: dict = {"_id": oid}
     if user_id is not None:
-        row = conn.execute(
-            "SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)
-        ).fetchone()
-    else:
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
+        query["user_id"] = str(user_id)
+
+    doc = db.jobs.find_one(query)
+    return _id_str(doc) if doc else None
 
 
-def get_stats(user_id: int = None) -> dict:
+def get_stats(user_id=None) -> dict:
     """Get dashboard statistics, optionally scoped to a user."""
-    conn = _get_conn()
-    stats = {}
+    db = _get_db()
+    base_filter: dict = {}
+    if user_id is not None:
+        base_filter["user_id"] = str(user_id)
 
-    where = "WHERE user_id = ?" if user_id is not None else ""
-    p = (user_id,) if user_id is not None else ()
+    stats = {
+        "total": db.jobs.count_documents(base_filter),
+        "new": db.jobs.count_documents({**base_filter, "status": "new"}),
+        "applied": db.jobs.count_documents({**base_filter, "status": "applied"}),
+        "interview": db.jobs.count_documents({**base_filter, "status": "interview"}),
+        "rejected": db.jobs.count_documents({**base_filter, "status": "rejected"}),
+        "saved": db.jobs.count_documents({**base_filter, "status": "saved"}),
+    }
 
-    stats["total"] = conn.execute(f"SELECT COUNT(*) FROM jobs {where}", p).fetchone()[0]
-    stats["new"] = conn.execute(f"SELECT COUNT(*) FROM jobs {where}{' AND' if where else 'WHERE'} status='new'", p).fetchone()[0]
-    stats["applied"] = conn.execute(f"SELECT COUNT(*) FROM jobs {where}{' AND' if where else 'WHERE'} status='applied'", p).fetchone()[0]
-    stats["interview"] = conn.execute(f"SELECT COUNT(*) FROM jobs {where}{' AND' if where else 'WHERE'} status='interview'", p).fetchone()[0]
-    stats["rejected"] = conn.execute(f"SELECT COUNT(*) FROM jobs {where}{' AND' if where else 'WHERE'} status='rejected'", p).fetchone()[0]
-    stats["saved"] = conn.execute(f"SELECT COUNT(*) FROM jobs {where}{' AND' if where else 'WHERE'} status='saved'", p).fetchone()[0]
-    stats["avg_score"] = conn.execute(f"SELECT COALESCE(AVG(score), 0) FROM jobs {where}", p).fetchone()[0]
+    # Average score
+    pipeline = [{"$match": base_filter}, {"$group": {"_id": None, "avg": {"$avg": "$score"}}}]
+    result = list(db.jobs.aggregate(pipeline))
+    stats["avg_score"] = result[0]["avg"] if result and result[0]["avg"] else 0
 
-    sources = conn.execute(
-        f"SELECT source, COUNT(*) as cnt FROM jobs {where} GROUP BY source ORDER BY cnt DESC", p
-    ).fetchall()
-    stats["by_source"] = {row["source"]: row["cnt"] for row in sources}
-
-    stats["top_companies"] = [
-        row["company"]
-        for row in conn.execute(
-            f"SELECT company, MAX(score) as s FROM jobs {where} GROUP BY company ORDER BY s DESC LIMIT 10", p
-        ).fetchall()
+    # By source
+    pipeline = [
+        {"$match": base_filter},
+        {"$group": {"_id": "$source", "cnt": {"$sum": 1}}},
+        {"$sort": {"cnt": -1}},
     ]
+    stats["by_source"] = {r["_id"]: r["cnt"] for r in db.jobs.aggregate(pipeline) if r["_id"]}
 
-    conn.close()
+    # Top companies
+    pipeline = [
+        {"$match": base_filter},
+        {"$group": {"_id": "$company", "max_score": {"$max": "$score"}}},
+        {"$sort": {"max_score": -1}},
+        {"$limit": 10},
+    ]
+    stats["top_companies"] = [r["_id"] for r in db.jobs.aggregate(pipeline)]
+
     return stats
 
 
 def log_search_run(queries: list[str], total_found: int, total_matched: int,
-                   sources: list[str], user_id: int = None):
+                   sources: list[str], user_id=None):
     """Log a search run for analytics."""
-    conn = _get_conn()
-    conn.execute(
-        "INSERT INTO search_runs (user_id, queries, total_found, total_matched, sources) VALUES (?, ?, ?, ?, ?)",
-        (user_id, json.dumps(queries), total_found, total_matched, json.dumps(sources)),
-    )
-    conn.commit()
-    conn.close()
+    db = _get_db()
+    db.search_runs.insert_one({
+        "user_id": str(user_id) if user_id else None,
+        "run_at": datetime.now(timezone.utc).isoformat(),
+        "queries": queries,
+        "total_found": total_found,
+        "total_matched": total_matched,
+        "sources": sources,
+    })
 
 
 # Initialize on import

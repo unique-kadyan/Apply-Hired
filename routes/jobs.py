@@ -9,7 +9,7 @@ from middleware import login_required
 from scrapers import Job
 from cover_letter import generate_cover_letter
 from tracker import (
-    get_jobs, get_job_by_id, update_job_status, _get_conn,
+    get_jobs, get_job_by_id, update_job_status, _get_db, _to_object_id,
 )
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/api")
@@ -25,15 +25,15 @@ def _job_to_obj(job: dict) -> Job:
     )
 
 
-def _ensure_cover_letter(job: dict, job_id: int) -> str:
+def _ensure_cover_letter(job: dict, job_id) -> str:
     """Generate and persist a cover letter if one doesn't exist."""
     if job.get("cover_letter"):
         return job["cover_letter"]
     letter = generate_cover_letter(_job_to_obj(job))
-    conn = _get_conn()
-    conn.execute("UPDATE jobs SET cover_letter = ? WHERE id = ?", (letter, job_id))
-    conn.commit()
-    conn.close()
+    db = _get_db()
+    oid = _to_object_id(job_id)
+    if oid:
+        db.jobs.update_one({"_id": oid}, {"$set": {"cover_letter": letter}})
     return letter
 
 
@@ -89,10 +89,10 @@ def gen_cover_letter(job_id):
     if not job:
         return jsonify({"error": "Job not found"}), 404
     letter = generate_cover_letter(_job_to_obj(job))
-    conn = _get_conn()
-    conn.execute("UPDATE jobs SET cover_letter = ? WHERE id = ?", (letter, job_id))
-    conn.commit()
-    conn.close()
+    db = _get_db()
+    oid = _to_object_id(job_id)
+    if oid:
+        db.jobs.update_one({"_id": oid}, {"$set": {"cover_letter": letter}})
     return jsonify({"cover_letter": letter})
 
 

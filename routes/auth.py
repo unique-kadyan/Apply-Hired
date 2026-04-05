@@ -13,7 +13,7 @@ from middleware import DEFAULT_PROFILE, get_user_profile
 from services.email_service import is_smtp_configured, send_otp_email
 from tracker import (
     create_user, authenticate_user, get_user_by_id,
-    update_user_profile, _get_conn,
+    update_user_profile, _get_db,
 )
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
@@ -60,9 +60,8 @@ def signup():
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters"}), 400
 
-    conn = _get_conn()
-    existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
-    conn.close()
+    db = _get_db()
+    existing = db.users.find_one({"email": email})
     if existing:
         return jsonify({"error": "An account with this email already exists"}), 409
 
@@ -233,19 +232,17 @@ def google_callback():
         return redirect("/?auth_error=no_email")
 
     # Find or create user
-    conn = _get_conn()
-    row = conn.execute("SELECT id FROM users WHERE email = ?", (email.lower(),)).fetchone()
+    db = _get_db()
+    row = db.users.find_one({"email": email.lower()})
 
     if row:
-        user_id = row["id"]
+        user_id = str(row["_id"])
     else:
         user = create_user(name, email, secrets.token_urlsafe(32))
         if not user:
-            conn.close()
             return redirect("/?auth_error=account_creation_failed")
         user_id = user["id"]
         _init_profile(user_id, name, email, {"picture": google_user.get("picture", "")})
 
-    conn.close()
     session["user_id"] = user_id
     return redirect("/?auth_success=1")
