@@ -1,4 +1,4 @@
-"""Email service — sends OTP verification emails via SMTP."""
+"""Email service — sends OTP verification emails via Resend (HTTP) or SMTP fallback."""
 
 import os
 import logging
@@ -8,6 +8,11 @@ from email.mime.multipart import MIMEMultipart
 
 logger = logging.getLogger(__name__)
 
+# Resend (HTTP-based, works on Render)
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM = os.environ.get("RESEND_FROM", "JobBot <onboarding@resend.dev>")
+
+# SMTP fallback (works locally, blocked on Render free tier)
 SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
@@ -15,20 +20,11 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
 
 
 def is_smtp_configured() -> bool:
-    return bool(SMTP_EMAIL and SMTP_PASSWORD)
+    return bool(RESEND_API_KEY or (SMTP_EMAIL and SMTP_PASSWORD))
 
 
-def send_otp_email(to_email: str, otp: str) -> bool:
-    """Send a styled OTP verification email. Returns True on success."""
-    if not is_smtp_configured():
-        return False
-
-    msg = MIMEMultipart("alternative")
-    msg["From"] = f"JobBot <{SMTP_EMAIL}>"
-    msg["To"] = to_email
-    msg["Subject"] = f"JobBot — Your verification code is {otp}"
-
-    html = f"""
+def _build_html(otp: str) -> str:
+    return f"""
     <div style="font-family:'Segoe UI',system-ui,sans-serif;max-width:480px;margin:0 auto;
                 background:#0f172a;color:#e2e8f0;padding:2rem;border-radius:12px">
         <h1 style="color:#60a5fa;margin:0 0 0.5rem">JobBot</h1>
@@ -43,10 +39,36 @@ def send_otp_email(to_email: str, otp: str) -> bool:
         </p>
     </div>
     """
-    msg.attach(MIMEText(html, "html"))
+
+
+def _send_via_resend(to_email: str, otp: str) -> bool:
+    """Send email via Resend HTTP API (works on Render)."""
+    try:
+        import resend
+        resend.api_key = RESEND_API_KEY
+        resend.Emails.send({
+            "from": RESEND_FROM,
+            "to": [to_email],
+            "subject": f"JobBot — Your verification code is {otp}",
+            "html": _build_html(otp),
+        })
+        print(f"[Resend] OTP sent to {to_email}")
+        return True
+    except Exception as e:
+        print(f"[Resend] FAILED: {e}")
+        return False
+
+
+def _send_via_smtp(to_email: str, otp: str) -> bool:
+    """Send email via SMTP (works locally)."""
+    msg = MIMEMultipart("alternative")
+    msg["From"] = f"JobBot <{SMTP_EMAIL}>"
+    msg["To"] = to_email
+    msg["Subject"] = f"JobBot — Your verification code is {otp}"
+    msg.attach(MIMEText(_build_html(otp), "html"))
 
     try:
-        print(f"[SMTP] Connecting to {SMTP_HOST}:{SMTP_PORT} as {SMTP_EMAIL}")
+        print(f"[SMTP] Connecting to {SMTP_HOST}:{SMTP_PORT}")
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
             server.starttls()
             server.login(SMTP_EMAIL, SMTP_PASSWORD)
@@ -55,5 +77,50 @@ def send_otp_email(to_email: str, otp: str) -> bool:
         return True
     except Exception as e:
         print(f"[SMTP] FAILED: {e}")
-        logger.error(f"Failed to send OTP email: {e}")
         return False
+
+
+def _send_via_brevo(to_email: str, otp: str) -> bool:
+    """Send email via Brevo (Sendinblue) HTTP API — free 300/day, no domain needed."""
+    brevo_key = os.environ.get("BREVO_API_KEY", "")
+    if not brevo_key:
+        return False
+    try:
+        import requests
+        resp = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={"api-key": brevo_key, "Content-Type": "application/json"},
+            json={
+                "sender": {"name": "JobBot", "email": os.environ.get("BREVO_FROM", SMTP_EMAIL or "noreply@jobbot.app")},
+                "to": [{"email": to_email}],
+                "subject": f"JobBot — Your verification code is {otp}",
+                "htmlContent": _build_html(otp),
+            },
+            timeout=10,
+        )
+        if resp.status_code in (200, 201):
+            print(f"[Brevo] OTP sent to {to_email}")
+            return True
+        print(f"[Brevo] FAILED: {resp.status_code} {resp.text[:100]}")
+        return False
+    except Exception as e:
+        print(f"[Brevo] FAILED: {e}")
+        return False
+
+
+def send_otp_email(to_email: str, otp: str) -> bool:
+    """Send OTP email. Tries Brevo → Resend → SMTP in order."""
+    if os.environ.get("BREVO_API_KEY"):
+        if _send_via_brevo(to_email, otp):
+            return True
+
+    if RESEND_API_KEY:
+        if _send_via_resend(to_email, otp):
+            return True
+
+    if SMTP_EMAIL and SMTP_PASSWORD:
+        if _send_via_smtp(to_email, otp):
+            return True
+
+    logger.error("No email provider configured or all failed")
+    return False
