@@ -48,8 +48,9 @@ def _get_db():
     if not MONGO_URI:
         raise RuntimeError("MONGO_URI is not set. Add it to your .env file.")
 
+    import certifi
     safe_uri = _fix_mongo_uri(MONGO_URI)
-    _client = MongoClient(safe_uri)
+    _client = MongoClient(safe_uri, tlsCAFile=certifi.where())
     _db = _client.get_default_database(default="jobbot")
     logger.info(f"Connected to MongoDB: {_db.name}")
     return _db
