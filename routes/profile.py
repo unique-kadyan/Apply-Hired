@@ -5,7 +5,7 @@ import os
 from flask import Blueprint, request, jsonify, current_app
 
 from middleware import login_required, get_user_profile
-from resume_parser import parse_resume
+from resume_parser import parse_resume, score_resume
 from tracker import update_user_profile
 
 profile_bp = Blueprint("profile", __name__, url_prefix="/api/profile")
@@ -58,7 +58,39 @@ def upload_resume():
                 else:
                     profile[key] = value
 
+        # Score the resume
+        try:
+            resume_score = score_resume(filepath)
+        except Exception:
+            resume_score = None
+
+        profile["resume_score"] = resume_score
         update_user_profile(request.user["id"], profile)
-        return jsonify({"message": "Resume parsed successfully!", "profile": profile})
+        return jsonify({"message": "Resume parsed successfully!", "profile": profile, "resume_score": resume_score})
     except Exception as e:
         return jsonify({"error": f"Failed to parse resume: {str(e)}"}), 500
+
+
+@profile_bp.route("/score-resume", methods=["POST"])
+@login_required
+def score_resume_endpoint():
+    """Score a resume file without updating the profile."""
+    if "resume" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["resume"]
+    if file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+    if not file.filename.lower().endswith((".pdf", ".docx", ".txt")):
+        return jsonify({"error": "Only PDF, DOCX, and TXT files are supported"}), 400
+
+    upload_dir = current_app.config["UPLOAD_FOLDER"]
+    os.makedirs(upload_dir, exist_ok=True)
+    filepath = os.path.join(upload_dir, file.filename)
+    file.save(filepath)
+
+    try:
+        result = score_resume(filepath)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": f"Failed to score resume: {str(e)}"}), 500

@@ -11,32 +11,112 @@ from config import OPENAI_API_KEY
 logger = logging.getLogger(__name__)
 
 
+def _quality_score(text: str) -> int:
+    """Rate how well-extracted a PDF text is. Higher = better."""
+    if not text or not text.strip():
+        return 0
+    score = 0
+    # Longer text is generally better (more content preserved)
+    score += min(30, len(text) // 100)
+    # Lines that look like complete job titles (multi-word, capitalized)
+    title_patterns = len(re.findall(
+        r'(?:Senior|Lead|Staff|Principal|Junior|Full|Software|Backend|Frontend|Project|Freelance)\s*[-–]?\s*\w+',
+        text, re.IGNORECASE
+    ))
+    score += min(20, title_patterns * 5)
+    # Bullet points preserved
+    score += min(15, len(re.findall(r'[•\-\*]\s+\w', text)) * 2)
+    # Section headers present
+    headers = len(re.findall(r'\b(?:EXPERIENCE|EDUCATION|SKILLS|SUMMARY|PROJECTS|CERTIFICATIONS|ACHIEVEMENTS)\b', text, re.IGNORECASE))
+    score += min(15, headers * 3)
+    # Penalty for fragmented short lines (sign of bad extraction)
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    short_fragments = sum(1 for l in lines if len(l) < 4 and l[0].isalpha())
+    score -= short_fragments * 5
+    # Penalty for broken words (e.g. "Sof" on one line, "tware" on next)
+    broken = len(re.findall(r'\b[A-Z][a-z]{0,3}\n\s*[a-z]', text))
+    score -= broken * 10
+    return max(0, score)
+
+
 def extract_text_from_pdf(filepath: str) -> str:
-    """Extract text from a PDF file using pdfplumber (layout-aware)."""
+    """Extract text from a PDF by trying multiple strategies and picking the best."""
+    candidates = []
+
+    # Strategy 1: pdfplumber with layout mode
     try:
         import pdfplumber
-        text = ""
         with pdfplumber.open(filepath) as pdf:
+            page_width = pdf.pages[0].width if pdf.pages else 600
+            text = ""
             for page in pdf.pages:
                 page_text = page.extract_text(
-                    x_tolerance=2,
-                    y_tolerance=3,
-                    layout=False,
+                    layout=True,
+                    layout_width=int(page_width / 4),
+                    layout_width_chars=int(page_width / 4),
                 )
                 if page_text:
                     text += page_text + "\n"
-        if text.strip():
-            return text
+            if text.strip():
+                candidates.append(("pdfplumber_layout", text))
     except Exception as e:
-        logger.warning(f"pdfplumber failed, falling back to PyPDF2: {e}")
+        logger.debug(f"pdfplumber layout: {e}")
 
-    # Fallback to PyPDF2
-    from PyPDF2 import PdfReader
-    reader = PdfReader(filepath)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text() or ""
-    return text
+    # Strategy 2: pdfplumber default (no layout)
+    try:
+        import pdfplumber
+        with pdfplumber.open(filepath) as pdf:
+            text = ""
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+            if text.strip():
+                candidates.append(("pdfplumber_default", text))
+    except Exception as e:
+        logger.debug(f"pdfplumber default: {e}")
+
+    # Strategy 3: pdfplumber with generous tolerances
+    try:
+        import pdfplumber
+        with pdfplumber.open(filepath) as pdf:
+            text = ""
+            for page in pdf.pages:
+                page_text = page.extract_text(x_tolerance=5, y_tolerance=5)
+                if page_text:
+                    text += page_text + "\n"
+            if text.strip():
+                candidates.append(("pdfplumber_tolerant", text))
+    except Exception as e:
+        logger.debug(f"pdfplumber tolerant: {e}")
+
+    # Strategy 4: pdfminer (comes with pdfplumber)
+    try:
+        from pdfminer.high_level import extract_text as pdfminer_extract
+        text = pdfminer_extract(filepath)
+        if text and text.strip():
+            candidates.append(("pdfminer", text))
+    except Exception as e:
+        logger.debug(f"pdfminer: {e}")
+
+    # Strategy 5: PyPDF2 fallback
+    try:
+        from PyPDF2 import PdfReader
+        reader = PdfReader(filepath)
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        if text.strip():
+            candidates.append(("pypdf2", text))
+    except Exception as e:
+        logger.debug(f"PyPDF2: {e}")
+
+    if not candidates:
+        return ""
+
+    # Score each candidate and pick the best
+    best_name, best_text = max(candidates, key=lambda c: _quality_score(c[1]))
+    logger.info(f"PDF extraction: chose {best_name} (score={_quality_score(best_text)}) "
+                f"from {len(candidates)} strategies")
+    return best_text
 
 
 def extract_text_from_docx(filepath: str) -> str:
@@ -361,3 +441,205 @@ def parse_resume(filepath: str) -> dict:
     # Fall back to local regex parsing
     logger.info("Resume parsed with regex (no API key)")
     return parse_resume_local(text)
+
+
+# ---------------------------------------------------------------------------
+# Resume scorer
+# ---------------------------------------------------------------------------
+
+def _score_resume_local(text: str) -> dict:
+    """Score a resume using heuristics (no API key needed)."""
+    scores = {}
+    total = 0
+
+    # 1. Contact info (10 pts)
+    contact = 0
+    if _extract_email(text): contact += 3
+    if _extract_phone(text): contact += 3
+    if re.search(r"linkedin|github", text, re.IGNORECASE): contact += 4
+    scores["contact_info"] = {"score": contact, "max": 10, "tips": []}
+    if contact < 10:
+        if not _extract_email(text): scores["contact_info"]["tips"].append("Add your email address")
+        if not _extract_phone(text): scores["contact_info"]["tips"].append("Add your phone number")
+        if not re.search(r"linkedin", text, re.IGNORECASE): scores["contact_info"]["tips"].append("Add your LinkedIn profile URL")
+        if not re.search(r"github", text, re.IGNORECASE): scores["contact_info"]["tips"].append("Add your GitHub profile URL")
+    total += contact
+
+    # 2. Summary/Objective (10 pts)
+    summary = _extract_summary(text)
+    summary_score = 0
+    if summary:
+        words = len(summary.split())
+        if words >= 30: summary_score = 10
+        elif words >= 15: summary_score = 7
+        else: summary_score = 4
+    scores["summary"] = {"score": summary_score, "max": 10, "tips": []}
+    if summary_score < 10:
+        if not summary: scores["summary"]["tips"].append("Add a professional summary at the top of your resume")
+        elif len(summary.split()) < 30: scores["summary"]["tips"].append("Expand your summary to 2-3 sentences with measurable impact")
+    total += summary_score
+
+    # 3. Skills (15 pts)
+    skills = _extract_skills(text)
+    skill_count = sum(len(v) for v in skills.values())
+    skill_score = min(15, skill_count * 1.5)
+    scores["skills"] = {"score": round(skill_score), "max": 15, "tips": []}
+    if skill_score < 15:
+        scores["skills"]["tips"].append(f"Found {skill_count} skills — aim for 10+ relevant technical skills")
+        if not skills.get("cloud_devops"): scores["skills"]["tips"].append("Add cloud/DevOps skills (AWS, Docker, CI/CD)")
+    total += skill_score
+
+    # 4. Experience (25 pts)
+    exp = _extract_experience(text)
+    exp_score = 0
+    if exp:
+        exp_score += min(10, len(exp) * 3)  # up to 10 for number of roles
+        bullet_count = sum(len(e.get("highlights", [])) for e in exp)
+        exp_score += min(10, bullet_count * 2)  # up to 10 for bullets
+        # Check for quantified achievements
+        metrics = len(re.findall(r'\d+[%xX]|\$[\d,]+|\d+\+?\s*(?:users|clients|engineers|teams|rps)', text, re.IGNORECASE))
+        exp_score += min(5, metrics * 1.5)  # up to 5 for metrics
+    scores["experience"] = {"score": round(min(25, exp_score)), "max": 25, "tips": []}
+    if exp_score < 25:
+        if not exp: scores["experience"]["tips"].append("Add your work experience with company names and dates")
+        elif bullet_count < 6: scores["experience"]["tips"].append("Add more bullet points to each role (3-5 per job)")
+        if metrics < 3: scores["experience"]["tips"].append("Quantify achievements with numbers (%, $, users, etc.)")
+    total += min(25, exp_score)
+
+    # 5. Education (10 pts)
+    edu = _extract_education(text)
+    edu_score = 10 if edu and len(edu) > 10 else 0
+    scores["education"] = {"score": edu_score, "max": 10, "tips": []}
+    if edu_score == 0:
+        scores["education"]["tips"].append("Add your education with degree, university, and year")
+    total += edu_score
+
+    # 6. Formatting & length (15 pts)
+    word_count = len(text.split())
+    format_score = 0
+    if 300 <= word_count <= 1200: format_score += 5
+    elif word_count > 100: format_score += 3
+    if len(re.findall(r'[•\-\*]\s', text)) >= 5: format_score += 5  # uses bullet points
+    if re.search(r'(?:EXPERIENCE|EDUCATION|SKILLS|SUMMARY|PROJECTS)', text, re.IGNORECASE): format_score += 5  # has section headers
+    scores["formatting"] = {"score": min(15, format_score), "max": 15, "tips": []}
+    if format_score < 15:
+        if word_count < 300: scores["formatting"]["tips"].append("Resume seems too short — aim for 400-800 words")
+        elif word_count > 1200: scores["formatting"]["tips"].append("Resume is too long — keep it to 1-2 pages")
+        if len(re.findall(r'[•\-\*]\s', text)) < 5: scores["formatting"]["tips"].append("Use bullet points for achievements instead of paragraphs")
+    total += min(15, format_score)
+
+    # 7. Keywords & ATS (15 pts)
+    ats_keywords = ["team", "lead", "manage", "develop", "design", "implement", "optimize",
+                    "deploy", "scale", "architect", "mentor", "collaborate", "deliver", "automate"]
+    keyword_hits = sum(1 for kw in ats_keywords if re.search(rf"\b{kw}", text, re.IGNORECASE))
+    ats_score = min(15, keyword_hits * 2)
+    scores["ats_keywords"] = {"score": round(ats_score), "max": 15, "tips": []}
+    if ats_score < 15:
+        scores["ats_keywords"]["tips"].append("Use action verbs: led, built, optimized, delivered, scaled, automated")
+    total += ats_score
+
+    return {
+        "total_score": round(min(100, total)),
+        "max_score": 100,
+        "sections": scores,
+    }
+
+
+def _score_resume_ai(text: str) -> Optional[dict]:
+    """Score a resume using AI for deeper analysis."""
+    if not OPENAI_API_KEY:
+        return None
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return None
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    prompt = f"""You are an expert resume reviewer and ATS (Applicant Tracking System) analyst.
+Score this resume on a 0-100 scale across these categories. Be strict but fair.
+
+For each category, give a score and 1-2 specific, actionable tips to improve.
+
+Return ONLY valid JSON:
+{{
+    "total_score": 0-100,
+    "max_score": 100,
+    "sections": {{
+        "contact_info": {{
+            "score": 0-10,
+            "max": 10,
+            "tips": ["tip1"]
+        }},
+        "summary": {{
+            "score": 0-10,
+            "max": 10,
+            "tips": ["tip1"]
+        }},
+        "skills": {{
+            "score": 0-15,
+            "max": 15,
+            "tips": ["tip1"]
+        }},
+        "experience": {{
+            "score": 0-25,
+            "max": 25,
+            "tips": ["tip1"]
+        }},
+        "education": {{
+            "score": 0-10,
+            "max": 10,
+            "tips": ["tip1"]
+        }},
+        "formatting": {{
+            "score": 0-15,
+            "max": 15,
+            "tips": ["tip1"]
+        }},
+        "ats_keywords": {{
+            "score": 0-15,
+            "max": 15,
+            "tips": ["tip1"]
+        }}
+    }},
+    "overall_tips": ["top 3 most impactful improvements"],
+    "strengths": ["top 3 strengths of this resume"]
+}}
+
+RESUME TEXT:
+{text[:8000]}
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        result_text = response.choices[0].message.content
+        json_match = re.search(r"\{.*\}", result_text, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group())
+    except Exception as e:
+        logger.error(f"AI resume scoring failed: {e}")
+
+    return None
+
+
+def score_resume(filepath: str) -> dict:
+    """Score a resume file. Uses AI if available, falls back to heuristics."""
+    text = extract_text(filepath)
+    if not text.strip():
+        raise ValueError("Could not extract text from the resume file.")
+
+    # Try AI scoring first
+    ai_score = _score_resume_ai(text)
+    if ai_score:
+        ai_score["method"] = "ai"
+        return ai_score
+
+    # Fall back to local scoring
+    result = _score_resume_local(text)
+    result["method"] = "local"
+    return result
