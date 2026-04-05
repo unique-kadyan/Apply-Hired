@@ -194,45 +194,100 @@ RESUME TEXT:
 """
 
 
+def _pdf_to_base64_images(filepath: str) -> list[str]:
+    """Convert each PDF page to a base64-encoded PNG image."""
+    import base64
+    images = []
+    try:
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(filepath)
+        for i in range(len(pdf)):
+            page = pdf[i]
+            # Render at 200 DPI for good quality without being too large
+            bitmap = page.render(scale=200 / 72)
+            pil_image = bitmap.to_pil()
+            import io
+            buf = io.BytesIO()
+            pil_image.save(buf, format="PNG", optimize=True)
+            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            images.append(b64)
+            if i >= 2:  # max 3 pages
+                break
+        pdf.close()
+    except Exception as e:
+        logger.warning(f"PDF to image conversion failed: {e}")
+    return images
+
+
 def _build_ai_providers() -> list[dict]:
     """Build an ordered list of AI providers to try.
 
-    Priority: paid APIs first (better quality), then free APIs as fallback.
-    All use OpenAI-compatible /v1/chat/completions format.
+    Priority: paid APIs with vision first, then text-only fallbacks.
     """
     providers = []
 
-    # 1. OpenAI (paid, best quality)
+    # 1. OpenAI (paid, supports vision — best for PDF images)
     if OPENAI_API_KEY:
         providers.append({
             "name": "openai",
             "base_url": None,
             "api_key": OPENAI_API_KEY,
             "model": "gpt-4o-mini",
+            "supports_vision": True,
         })
 
-    # 2. DeepSeek (paid, cheap)
+    # 2. DeepSeek (paid, text-only)
     if DEEPSEEK_API_KEY:
         providers.append({
             "name": "deepseek",
             "base_url": "https://api.deepseek.com",
             "api_key": DEEPSEEK_API_KEY,
             "model": "deepseek-chat",
+            "supports_vision": False,
         })
 
-    # 3. Pollinations.ai (free, no key needed, OpenAI-compatible)
+    # 3. Pollinations.ai (free, no key needed)
     providers.append({
         "name": "pollinations",
         "base_url": "https://text.pollinations.ai/openai",
         "api_key": "dummy",
         "model": "openai",
+        "supports_vision": False,
     })
 
     return providers
 
 
-def _call_ai(provider: dict, prompt: str) -> Optional[str]:
-    """Call an AI provider and return the raw response text."""
+def _call_ai_vision(provider: dict, prompt: str, images: list[str]) -> Optional[str]:
+    """Call an AI provider with images (vision mode). Returns raw response text."""
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return None
+
+    kwargs = {"api_key": provider["api_key"]}
+    if provider["base_url"]:
+        kwargs["base_url"] = provider["base_url"]
+
+    # Build multimodal content: text prompt + images
+    content = [{"type": "text", "text": prompt}]
+    for img_b64 in images:
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{img_b64}", "detail": "high"},
+        })
+
+    client = OpenAI(**kwargs)
+    response = client.chat.completions.create(
+        model=provider["model"],
+        max_tokens=4000,
+        messages=[{"role": "user", "content": content}],
+    )
+    return response.choices[0].message.content
+
+
+def _call_ai_text(provider: dict, prompt: str) -> Optional[str]:
+    """Call an AI provider with text-only prompt."""
     try:
         from openai import OpenAI
     except ImportError:
@@ -257,25 +312,65 @@ def _is_quota_error(e: Exception) -> bool:
     return any(kw in err for kw in ("quota", "rate_limit", "429", "insufficient_quota", "billing"))
 
 
-def parse_resume_ai(text: str) -> Optional[dict]:
-    """Parse resume using AI providers with automatic failover."""
+def _parse_ai_response(result_text: str) -> Optional[dict]:
+    """Extract JSON from AI response text."""
+    if not result_text:
+        return None
+    json_match = re.search(r"\{.*\}", result_text, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group())
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def parse_resume_ai(text: str, filepath: str = None) -> Optional[dict]:
+    """Parse resume using AI with automatic failover.
+
+    Strategy:
+    1. Vision providers get PDF page images (zero text extraction artifacts)
+    2. Text providers get extracted text as fallback
+    3. Each provider is tried in priority order
+    """
     providers = _build_ai_providers()
     if not providers:
         return None
 
-    prompt = _RESUME_PARSE_PROMPT + text[:12000]
+    # Convert PDF to images for vision-capable providers
+    images = []
+    if filepath and filepath.lower().endswith(".pdf"):
+        images = _pdf_to_base64_images(filepath)
+
+    vision_prompt = _RESUME_PARSE_PROMPT.replace(
+        "The text below was extracted from a PDF file using automated text extraction.\n\n"
+        "PDF text extraction commonly produces artifacts: words, job titles, company names, "
+        "and sentences may be split across multiple lines or truncated mid-word due to column "
+        "layouts, page breaks, or formatting. You must intelligently reconstruct all fragmented "
+        "text into its complete, meaningful form by inferring from surrounding context. Never "
+        "return partial or truncated words — every field must contain complete, properly formed text.",
+        "Parse the resume shown in the image(s) below. Extract ALL information exactly as displayed — "
+        "every job title, company, date, bullet point, skill, and section. Do not skip or truncate anything."
+    )
+
+    text_prompt = _RESUME_PARSE_PROMPT + text[:12000]
 
     for provider in providers:
         try:
-            logger.info(f"Trying resume parse with {provider['name']}")
-            result_text = _call_ai(provider, prompt)
-            if not result_text:
-                continue
-            json_match = re.search(r"\{.*\}", result_text, re.DOTALL)
-            if json_match:
-                parsed = json.loads(json_match.group())
+            logger.info(f"Trying resume parse with {provider['name']} "
+                        f"({'vision' if provider.get('supports_vision') and images else 'text'})")
+
+            # Use vision if provider supports it and we have images
+            if provider.get("supports_vision") and images:
+                result_text = _call_ai_vision(provider, vision_prompt, images)
+            else:
+                result_text = _call_ai_text(provider, text_prompt)
+
+            parsed = _parse_ai_response(result_text)
+            if parsed:
                 logger.info(f"Resume parsed with {provider['name']}")
                 return parsed
+
         except Exception as e:
             if _is_quota_error(e):
                 logger.warning(f"{provider['name']} quota exceeded, trying next provider")
@@ -291,25 +386,27 @@ def parse_resume_ai(text: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 # Common skill keywords to look for
+# Each entry is (regex_pattern, display_name). If display_name is None, the pattern is used as-is.
 SKILL_PATTERNS = {
     "languages": [
-        "Java", "Python", "JavaScript", "TypeScript", "C\\+\\+", "C#", "Go",
+        "Java", "Python", "JavaScript", "TypeScript", ("C\\+\\+", "C++"), "C#", "Go",
         "Golang", "Rust", "Ruby", "PHP", "Kotlin", "Swift", "Scala", "SQL",
-        "R", "Perl", "Dart", "Lua", "Shell", "Bash",
+        "Perl", "Dart", "Lua", "Shell", "Bash",
     ],
     "backend": [
         "Spring Boot", "Spring Security", "Spring Data", "Spring Cloud",
-        "Hibernate", "FastAPI", "Django", "Flask", "Express\\.js", "NestJS",
-        "Node\\.js", "Kafka", "RabbitMQ", "gRPC", "GraphQL", "REST API",
-        "ASP\\.NET", "Ruby on Rails", "Laravel", "Gin", "Fiber",
+        "Hibernate", "FastAPI", "Django", "Flask", ("Express\\.js", "Express.js"), "NestJS",
+        ("Node\\.js", "Node.js"), "Kafka", "RabbitMQ", "gRPC", "GraphQL", "REST API",
+        ("ASP\\.NET", "ASP.NET"), "Ruby on Rails", "Laravel", "Gin", "Fiber",
     ],
     "frontend": [
-        "React", "React\\.js", "Next\\.js", "Vue\\.js", "Angular",
-        "Svelte", "Tailwind", "Bootstrap", "HTML5?", "CSS3?",
+        "React", ("React\\.js", "React.js"), ("Next\\.js", "Next.js"), ("Vue\\.js", "Vue.js"), "Angular",
+        "Svelte", "Tailwind", "Bootstrap", ("HTML5?", "HTML5"), ("CSS3?", "CSS3"),
         "jQuery", "Redux", "Webpack", "Vite",
     ],
     "databases": [
-        "PostgreSQL", "MySQL", "MongoDB", "Redis", "Oracle",
+        "PostgreSQL", "MySQL", "MongoDB", "Redis", ("Oracle SQL", "Oracle SQL"),
+        ("Oracle DB", "Oracle DB"), ("Oracle", "Oracle SQL"),
         "SQLite", "DynamoDB", "Cassandra", "Elasticsearch",
         "Firebase", "CouchDB", "MariaDB", "SQL Server", "Neo4j",
     ],
@@ -320,8 +417,8 @@ SKILL_PATTERNS = {
         "ECS", "EKS", "Fargate", "Heroku", "Vercel", "Netlify",
     ],
     "architecture": [
-        "Microservices", "REST APIs?", "Event[- ]Driven", "Distributed Systems?",
-        "HLD", "LLD", "DDD", "Domain[- ]Driven", "CQRS", "Serverless",
+        "Microservices", "REST APIs", ("Event[- ]Driven", "Event-Driven"), ("Distributed Systems?", "Distributed Systems"),
+        "HLD", "LLD", "DDD", ("Domain[- ]Driven", "Domain-Driven"), "CQRS", "Serverless",
         "SOA", "Monolith", "API Gateway",
     ],
     "testing": [
@@ -357,14 +454,16 @@ def _extract_name(text: str) -> str:
 def _extract_skills(text: str) -> dict[str, list[str]]:
     """Extract skills by matching known patterns."""
     found = {}
-    for group, patterns in SKILL_PATTERNS.items():
+    for group, entries in SKILL_PATTERNS.items():
         matches = []
-        for pattern in patterns:
+        for entry in entries:
+            if isinstance(entry, tuple):
+                pattern, display = entry
+            else:
+                pattern, display = entry, entry
             if re.search(rf"\b{pattern}\b", text, re.IGNORECASE):
-                # Use the clean version of the pattern
-                clean = pattern.replace("\\.", ".").replace("\\+", "+").replace("?", "").replace("s?", "s")
-                if clean not in matches:
-                    matches.append(clean)
+                if display not in matches:
+                    matches.append(display)
         found[group] = matches
     return found
 
@@ -589,8 +688,8 @@ def parse_resume(filepath: str) -> dict:
     if not text.strip():
         raise ValueError("Could not extract text from the resume file.")
 
-    # Try AI parsing (auto-failover: OpenAI → DeepSeek)
-    ai_result = parse_resume_ai(text)
+    # Try AI parsing (auto-failover: OpenAI vision → DeepSeek text → Pollinations text)
+    ai_result = parse_resume_ai(text, filepath=filepath)
     if ai_result:
         logger.info("Resume parsed with AI")
         return _fix_broken_fields(ai_result)

@@ -126,8 +126,7 @@ def apply_jobs():
 @jobs_bp.route("/auto-apply", methods=["POST"])
 @login_required
 def auto_apply():
-    from auto_apply import auto_apply_batch
-
+    """Generate cover letters and return job URLs for the frontend to open."""
     data = request.get_json()
     job_ids = data.get("job_ids", [])
     if not job_ids:
@@ -135,27 +134,26 @@ def auto_apply():
     if len(job_ids) > 10:
         return jsonify({"error": "Maximum 10 jobs at a time"}), 400
 
-    jobs_with_letters = []
+    details = []
     for jid in job_ids:
         try:
-            job = get_job_by_id(int(jid), user_id=request.user["id"])
+            job = get_job_by_id(jid, user_id=request.user["id"])
             if not job:
                 continue
-            letter = _ensure_cover_letter(job, int(jid))
-            jobs_with_letters.append({
+            letter = _ensure_cover_letter(job, jid)
+            update_job_status(jid, "applied",
+                              f"Applied on {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+            details.append({
                 "id": job["id"], "title": job["title"], "company": job["company"],
-                "url": job["url"], "cover_letter": letter,
-                "description": job.get("description", ""),
+                "url": job["url"], "cover_letter": letter, "status": "ready",
             })
         except Exception:
             continue
 
-    results = auto_apply_batch(jobs_with_letters)
-
-    for detail in results.get("details", []):
-        if detail["status"] in ("opened", "auto_filled", "opened_browser"):
-            update_job_status(
-                detail["id"], "applied",
-                f"Auto-applied on {datetime.now().strftime('%Y-%m-%d %H:%M')} ({detail['status']})",
-            )
-    return jsonify(results)
+    return jsonify({
+        "total": len(details),
+        "opened": len(details),
+        "auto_filled": 0,
+        "failed": 0,
+        "details": details,
+    })

@@ -280,7 +280,7 @@
                             </div>
                         )}
 
-                        <button onClick={() => { setShowForm(true); setOptimized(null); }}
+                        <button onClick={() => { setShowForm(true); setOptimized(null); setHasPaid(false); }}
                             style={{ ...styles.btn, ...styles.btnSecondary, fontSize: '0.85rem' }}>
                             Re-optimize for a Different Role
                         </button>
@@ -348,7 +348,7 @@
                                 }}>
                                 {priceLabel ? `Optimize for ${priceLabel}` : 'Optimize Resume'}
                             </button>
-                            <p style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '0.5rem' }}>One-time payment. Secure checkout via Razorpay.</p>
+                            <p style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '0.5rem' }}>Per-optimization payment. Secure checkout via Razorpay.</p>
                         </div>
                     </div>
                 </div>
@@ -500,13 +500,32 @@
 
             const autoApplySelected = async () => {
                 if (selected.size === 0) return;
-                if (!confirm(`Auto-apply to ${selected.size} job(s)?\n\nThis will:\n1. Generate AI cover letters for each job\n2. Open all job pages in Chrome\n3. Try to auto-fill your details\n\nContinue?`)) return;
+                if (!confirm(`Auto-apply to ${selected.size} job(s)?\n\nThis will:\n1. Generate AI cover letters for each job\n2. Open each job page in a new tab\n3. Copy the cover letter to your clipboard\n\nContinue?`)) return;
                 setApplying(true);
-                showToast('Auto-applying... Opening job pages & generating cover letters...', 'warning');
+                showToast('Generating cover letters...', 'warning');
                 try {
                     const res = await api.post('/api/auto-apply', { job_ids: [...selected] });
-                    const msg = `Auto-apply complete!\nOpened: ${res.opened} | Auto-filled: ${res.auto_filled} | Failed: ${res.failed}`;
-                    showToast(msg, res.failed > 0 ? 'warning' : 'success');
+                    const details = res.details || [];
+                    const urls = details.filter(d => d.url).map(d => d.url);
+
+                    // Open all URLs in new tabs
+                    let opened = 0;
+                    urls.forEach(url => {
+                        const w = window.open(url, '_blank');
+                        if (w) opened++;
+                    });
+
+                    // Copy the first cover letter to clipboard
+                    const firstLetter = details.find(d => d.cover_letter);
+                    if (firstLetter) {
+                        try { await navigator.clipboard.writeText(firstLetter.cover_letter); } catch(e) {}
+                    }
+
+                    if (opened < urls.length) {
+                        showToast(`${opened}/${urls.length} tabs opened. Your browser blocked some popups — please allow popups for this site.`, 'warning');
+                    } else {
+                        showToast(`${urls.length} job page(s) opened! Cover letter copied to clipboard.`, 'success');
+                    }
                 } catch (err) {
                     showToast('Auto-apply failed. Check console.', 'error');
                 }
@@ -639,12 +658,17 @@
 
             const [autoApplying, setAutoApplying] = useState(false);
             const autoApplySingle = async () => {
-                if (!confirm(`Auto-apply to "${job.title}" at ${job.company}?\n\nThis will generate a cover letter and open the job page in Chrome.`)) return;
+                if (!confirm(`Auto-apply to "${job.title}" at ${job.company}?\n\nThis will generate a cover letter, copy it to clipboard, and open the job page.`)) return;
                 setAutoApplying(true);
-                showToast('Auto-applying... Opening job page...', 'warning');
+                showToast('Generating cover letter...', 'warning');
                 try {
                     const res = await api.post('/api/auto-apply', { job_ids: [job.id] });
-                    showToast(`Auto-apply: ${res.details?.[0]?.status || 'done'}!`, 'success');
+                    const detail = res.details?.[0];
+                    if (detail?.cover_letter) {
+                        try { await navigator.clipboard.writeText(detail.cover_letter); } catch(e) {}
+                    }
+                    if (detail?.url) window.open(detail.url, '_blank');
+                    showToast('Job page opened! Cover letter copied to clipboard.', 'success');
                     setJob(j => ({ ...j, status: 'applied' }));
                     setStatus('applied');
                 } catch (err) { showToast('Auto-apply failed', 'error'); }
@@ -733,7 +757,7 @@
         // ============================================================
         // Search Page
         // ============================================================
-        function Search({ profile, showToast }) {
+        function Search({ profile, showToast, navigate }) {
             const [jobTitle, setJobTitle] = useState('');
             const [selectedSkills, setSelectedSkills] = useState(new Set());
             const [customSkills, setCustomSkills] = useState('');
@@ -787,7 +811,10 @@
                 pollRef.current = setInterval(async () => {
                     const status = await api.get('/api/search/status');
                     setSearchStatus(status);
-                    if (!status.running) { clearInterval(pollRef.current); pollRef.current = null; }
+                    if (!status.running) {
+                        clearInterval(pollRef.current); pollRef.current = null;
+                        if (status.progress >= 100 && navigate) { showToast(status.message, 'success'); setTimeout(() => navigate('jobs'), 1500); }
+                    }
                 }, 2000);
             };
 
@@ -1049,49 +1076,126 @@
         // Auth Page (Login / Signup + Google SSO)
         // ============================================================
         function AuthPage({ onAuth, showToast }) {
-            const googleLogin = () => {
-                window.location.href = '/api/auth/google';
+            const [mode, setMode] = useState('login');
+            const [name, setName] = useState('');
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [otp, setOtp] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [otpSent, setOtpSent] = useState(false);
+
+            const googleLogin = () => { window.location.href = '/api/auth/google'; };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                try {
+                    if (otpSent) {
+                        const res = await api.post('/api/auth/verify-otp', { email, otp });
+                        if (res.error) showToast(res.error, 'error');
+                        else if (res.user) onAuth(res.user);
+                    } else if (mode === 'signup') {
+                        const res = await api.post('/api/auth/signup', { name, email, password });
+                        if (res.error) showToast(res.error, 'error');
+                        else if (res.needs_otp) { setOtpSent(true); showToast('Verification code sent to your email!', 'success'); }
+                        else if (res.user) onAuth(res.user);
+                    } else {
+                        const res = await api.post('/api/auth/login', { email, password });
+                        if (res.error) showToast(res.error, 'error');
+                        else if (res.user) onAuth(res.user);
+                    }
+                } catch (err) { showToast('Something went wrong. Please try again.', 'error'); }
+                setLoading(false);
             };
+
+            const labelStyle = { display: 'block', color: 'var(--muted)', fontWeight: 600, marginBottom: '0.3rem', fontSize: '0.85rem' };
 
             return (
                 <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
                     <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: '2.5rem', width: '100%', maxWidth: 420, animation: 'fadeIn 0.4s ease' }}>
                         {/* Logo */}
-                        <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
                             <div style={{ fontSize: '2.5rem', fontWeight: 800, background: 'linear-gradient(135deg, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '0.5rem' }}>
                                 JobBot
                             </div>
-                            <p style={{ color: 'var(--muted)', fontSize: '1rem', lineHeight: 1.6 }}>
-                                AI-Powered Job Application Automation
+                            <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
+                                {otpSent ? `Enter the code sent to ${email}` : mode === 'login' ? 'Welcome back! Sign in to continue.' : 'Create your account to get started.'}
                             </p>
                         </div>
 
-                        {/* Google Sign In Button */}
-                        <button onClick={googleLogin} style={{
-                            width: '100%', padding: '0.85rem', borderRadius: 10, border: '1px solid #475569',
-                            background: '#fff', color: '#1f2937', fontSize: '1rem', fontWeight: 600,
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            gap: '0.7rem', transition: 'all 0.15s', marginBottom: '1.5rem',
-                        }}>
-                            <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 019.5 24c0-1.59.28-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 000 24c0 3.77.9 7.35 2.56 10.52l7.97-5.93z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 5.93C6.51 42.62 14.62 48 24 48z"/></svg>
-                            Sign in with Google
-                        </button>
+                        {/* OTP verification step */}
+                        {otpSent ? (
+                            <form onSubmit={handleSubmit}>
+                                <div style={{ marginBottom: '1.5rem' }}>
+                                    <label style={labelStyle}>Verification Code</label>
+                                    <input style={{ ...styles.input, textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.3em', fontWeight: 700 }}
+                                           value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                           placeholder="000000" required maxLength={6} autoFocus />
+                                </div>
+                                <button type="submit" disabled={loading || otp.length !== 6} style={{
+                                    ...styles.btn, ...styles.btnPrimary, width: '100%', padding: '0.7rem', fontSize: '0.95rem',
+                                    justifyContent: 'center', opacity: otp.length !== 6 ? 0.5 : 1,
+                                }}>
+                                    {loading ? 'Verifying...' : 'Verify & Create Account'}
+                                </button>
+                                <button type="button" onClick={() => { setOtpSent(false); setOtp(''); }}
+                                    style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '0.85rem', marginTop: '0.75rem', width: '100%', textAlign: 'center' }}>
+                                    Back
+                                </button>
+                            </form>
+                        ) : (
+                            <React.Fragment>
+                                {/* Google Sign In */}
+                                <button onClick={googleLogin} style={{
+                                    width: '100%', padding: '0.85rem', borderRadius: 10, border: '1px solid #475569',
+                                    background: '#fff', color: '#1f2937', fontSize: '1rem', fontWeight: 600,
+                                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    gap: '0.7rem', transition: 'all 0.15s', marginBottom: '1.5rem',
+                                }}>
+                                    <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 019.5 24c0-1.59.28-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 000 24c0 3.77.9 7.35 2.56 10.52l7.97-5.93z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 5.93C6.51 42.62 14.62 48 24 48z"/></svg>
+                                    Continue with Google
+                                </button>
 
-                        {/* Features */}
-                        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1.5rem' }}>
-                            <div style={{ display: 'grid', gap: '0.75rem' }}>
-                                {[
-                                    ['Search 10+ job boards at once'],
-                                    ['AI-powered job matching & scoring'],
-                                    ['Auto-apply with one click'],
-                                    ['AI cover letter generation'],
-                                ].map(([text], i) => (
-                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: 'var(--muted)', fontSize: '0.88rem' }}>
-                                        <span style={{ color: 'var(--green2)' }}>&#10003;</span> {text}
+                                {/* Divider */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                                    <div style={{ flex: 1, height: 1, background: 'var(--border)' }}></div>
+                                    <span style={{ color: '#64748b', fontSize: '0.8rem' }}>or</span>
+                                    <div style={{ flex: 1, height: 1, background: 'var(--border)' }}></div>
+                                </div>
+
+                                {/* Email/Password Form */}
+                                <form onSubmit={handleSubmit}>
+                                    {mode === 'signup' && (
+                                        <div style={{ marginBottom: '1rem' }}>
+                                            <label style={labelStyle}>Full Name</label>
+                                            <input style={styles.input} value={name} onChange={e => setName(e.target.value)} placeholder="Your name" required />
+                                        </div>
+                                    )}
+                                    <div style={{ marginBottom: '1rem' }}>
+                                        <label style={labelStyle}>Email</label>
+                                        <input style={styles.input} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required />
                                     </div>
-                                ))}
-                            </div>
-                        </div>
+                                    <div style={{ marginBottom: '1.5rem' }}>
+                                        <label style={labelStyle}>Password</label>
+                                        <input style={styles.input} type="password" value={password} onChange={e => setPassword(e.target.value)}
+                                               placeholder={mode === 'signup' ? 'Min 6 characters' : 'Your password'} required minLength={mode === 'signup' ? 6 : 1} />
+                                    </div>
+                                    <button type="submit" disabled={loading} style={{
+                                        ...styles.btn, ...styles.btnPrimary, width: '100%', padding: '0.7rem', fontSize: '0.95rem', justifyContent: 'center',
+                                    }}>
+                                        {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
+                                    </button>
+                                </form>
+
+                                <p style={{ textAlign: 'center', marginTop: '1.25rem', color: 'var(--muted)', fontSize: '0.88rem' }}>
+                                    {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+                                    <button onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+                                        style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}>
+                                        {mode === 'login' ? 'Sign Up' : 'Sign In'}
+                                    </button>
+                                </p>
+                            </React.Fragment>
+                        )}
                     </div>
                 </div>
             );
@@ -1350,7 +1454,7 @@
                     {page === 'dashboard' && <Dashboard navigate={navigate} />}
                     {page === 'jobs' && <Jobs navigate={navigate} showToast={showToast} />}
                     {page === 'job' && <JobDetail jobId={pageArg} navigate={navigate} showToast={showToast} />}
-                    {page === 'search' && <Search profile={profile} showToast={showToast} />}
+                    {page === 'search' && <Search profile={profile} showToast={showToast} navigate={navigate} />}
                     {page === 'profile' && <Profile profile={profile} setProfile={setProfile} showToast={showToast} />}
 
                     {/* Toast */}

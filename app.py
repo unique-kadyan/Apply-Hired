@@ -17,7 +17,7 @@ def create_app() -> Flask:
     app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
     app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), "uploads")
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    app.config["PERMANENT_SESSION_LIFETIME"] = int(os.environ.get("SESSION_LIFETIME_DAYS", 30)) * 86400
+    app.config["PERMANENT_SESSION_LIFETIME"] = int(float(os.environ.get("SESSION_LIFETIME_DAYS", 30)) * 86400)
     app.config["SESSION_COOKIE_SECURE"] = not os.environ.get("FLASK_DEBUG")
 
     # Register blueprints
