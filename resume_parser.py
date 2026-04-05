@@ -463,6 +463,107 @@ def parse_resume_local(text: str) -> dict:
 # Main parser
 # ---------------------------------------------------------------------------
 
+def _fix_broken_fields(parsed: dict) -> dict:
+    """Post-process parsed resume to fix truncated titles and companies.
+
+    Detects cases where the title is a word fragment and the company field
+    contains the rest of the title merged with the actual company name.
+    E.g. title="Sof", company="ware Engineer | IVY Comptech"
+      → title="Software Engineer", company="IVY Comptech"
+    """
+    for exp in parsed.get("experience", []):
+        title = (exp.get("title") or "").strip()
+        company = (exp.get("company") or "").strip()
+
+        if not title or not company:
+            continue
+
+        # Heuristic: title is broken if it's very short AND the company field
+        # starts with lowercase or continues the word fragment
+        title_looks_broken = (
+            len(title) <= 8 and
+            not title.endswith(("er", "or", "ist", "ant", "tic")) and
+            (company[0].islower() or "|" in company)
+        )
+
+        if title_looks_broken and "|" in company:
+            # company = "ware Engineer | IVY Comptech"  or  "Stack Engineer (...) | US, UK..."
+            parts = company.split("|", 1)
+            rest_of_title = parts[0].strip()
+            actual_company = parts[1].strip() if len(parts) > 1 else ""
+
+            merged = title + rest_of_title
+            # Check if merging produces a real word (no space between fragment and continuation)
+            # e.g. "Sof" + "tware Engineer" = "Software Engineer"
+            if rest_of_title and rest_of_title[0].islower():
+                exp["title"] = merged
+            else:
+                # e.g. "Full" + " Stack Engineer" — needs hyphen or space
+                exp["title"] = (title + "-" + rest_of_title).replace("- ", "-") if title.endswith(("Full", "Co")) else title + " " + rest_of_title
+                exp["title"] = exp["title"].strip()
+
+            exp["company"] = actual_company
+
+        elif title_looks_broken and company[0].islower():
+            # No pipe — company starts with lowercase continuing the title
+            # e.g. title="Projec", company="t Engineer at Wipro"
+            merged = title + company
+            # Try to split on known separators
+            for sep in (" at ", " | ", " - "):
+                if sep in merged:
+                    parts = merged.split(sep, 1)
+                    exp["title"] = parts[0].strip()
+                    exp["company"] = parts[1].strip()
+                    break
+            else:
+                exp["title"] = merged
+
+    # Fix common misspelled words from PDF fragment merging
+    _correct_titles(parsed)
+
+    # Also fix the top-level title if it matches the first experience
+    experience = parsed.get("experience", [])
+    top_title = (parsed.get("title") or "").strip()
+    if experience and top_title and len(top_title) <= 8:
+        parsed["title"] = experience[0].get("title", top_title)
+
+    return parsed
+
+
+def _correct_titles(parsed: dict):
+    """Fix misspelled words that result from PDF fragment merging."""
+    # Common job title words — used for fuzzy correction
+    known_words = {
+        "software", "senior", "junior", "engineer", "developer", "architect",
+        "manager", "director", "lead", "staff", "principal", "freelance",
+        "full-stack", "fullstack", "frontend", "backend", "project", "product",
+        "consultant", "analyst", "specialist", "administrator", "coordinator",
+        "associate", "intern", "trainee", "applications", "platforms",
+        "solutions", "technology", "technologies", "systems", "infrastructure",
+        "devops", "security", "data", "cloud", "mobile", "remote",
+    }
+
+    def _fix_word(word: str) -> str:
+        wl = word.lower()
+        if wl in known_words:
+            return word
+        # Try inserting one letter at each position to match a known word
+        for i in range(len(wl) + 1):
+            for c in "abcdefghijklmnopqrstuvwxyz":
+                candidate = wl[:i] + c + wl[i:]
+                if candidate in known_words:
+                    # Preserve original casing of first char
+                    return (word[0] + candidate[1:]) if word[0].isupper() else candidate
+        return word
+
+    def _fix_text(text: str) -> str:
+        return " ".join(_fix_word(w) if w[0].isalpha() else w for w in text.split())
+
+    for exp in parsed.get("experience", []):
+        exp["title"] = _fix_text(exp.get("title", ""))
+        exp["company"] = _fix_text(exp.get("company", ""))
+
+
 def parse_resume(filepath: str) -> dict:
     """Parse a resume file and return structured profile data.
     Uses AI if available, falls back to regex parsing."""
@@ -475,11 +576,11 @@ def parse_resume(filepath: str) -> dict:
     ai_result = parse_resume_ai(text)
     if ai_result:
         logger.info("Resume parsed with AI")
-        return ai_result
+        return _fix_broken_fields(ai_result)
 
     # Fall back to local regex parsing
     logger.info("Resume parsed with regex (no API key)")
-    return parse_resume_local(text)
+    return _fix_broken_fields(parse_resume_local(text))
 
 
 # ---------------------------------------------------------------------------
