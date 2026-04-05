@@ -69,25 +69,17 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-        CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(score DESC);
-        CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
-        CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(user_id);
-        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     """)
     conn.commit()
 
-    # Migrate existing tables — add user_id column if missing
+    # Migrate existing tables — add user_id column if missing (must run before indexes)
     try:
         cols = [row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()]
         if "user_id" not in cols:
             conn.execute("ALTER TABLE jobs ADD COLUMN user_id INTEGER")
             logger.info("Migrated jobs table: added user_id column")
-
-        # Drop the old UNIQUE(url) constraint by allowing duplicates per user
-        # (new table already has UNIQUE(user_id, url) — old rows keep working)
     except Exception as e:
-        logger.debug(f"Migration check: {e}")
+        logger.debug(f"Migration check (jobs): {e}")
 
     try:
         cols = [row[1] for row in conn.execute("PRAGMA table_info(search_runs)").fetchall()]
@@ -95,8 +87,18 @@ def init_db():
             conn.execute("ALTER TABLE search_runs ADD COLUMN user_id INTEGER")
             logger.info("Migrated search_runs table: added user_id column")
     except Exception as e:
-        logger.debug(f"Migration check: {e}")
+        logger.debug(f"Migration check (search_runs): {e}")
 
+    conn.commit()
+
+    # Create indexes after migration ensures columns exist
+    conn.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+        CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(score DESC);
+        CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source);
+        CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(user_id);
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    """)
     conn.commit()
     conn.close()
 

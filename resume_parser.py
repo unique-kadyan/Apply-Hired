@@ -63,49 +63,63 @@ def parse_resume_ai(text: str) -> Optional[dict]:
 
     client = OpenAI(api_key=OPENAI_API_KEY)
 
-    prompt = f"""Parse this resume text and return a JSON object with exactly this structure.
-Extract all real data from the resume. Do not fabricate anything.
+    prompt = f"""You are a professional resume parser. Parse the COMPLETE resume text below and return a JSON object.
 
-Return ONLY valid JSON, no other text:
+CRITICAL RULES:
+- Extract EVERY job listed in the experience section. Do NOT skip any.
+- Extract the FULL job title (e.g. "Senior Engineer – Applications & Platforms", NOT just "Senior")
+- Extract the FULL company name
+- Extract ALL bullet points / highlights for each job — do NOT summarize or truncate them
+- Extract ALL skills mentioned anywhere in the resume
+- If the resume mentions "Open to Global Remote Roles" or similar, capture that in "open_to"
+- Do NOT fabricate or invent any data. Only extract what is actually in the resume.
+
+Return ONLY valid JSON with this exact structure:
 
 {{
-    "name": "Full Name",
-    "title": "Current Title / Role",
+    "name": "Full Name exactly as written",
+    "title": "Most recent / current job title — full title",
     "email": "email@example.com",
-    "phone": "phone number",
+    "phone": "+xx xxxxxxxxxx",
     "location": "City, Country",
     "years_of_experience": 0.0,
-    "open_to": "type of roles (e.g. Remote, Onsite, Hybrid)",
-    "summary": "Professional summary in 2-3 sentences",
+    "open_to": "e.g. Global Remote Roles",
+    "summary": "The summary/profile section from the resume, verbatim or closely paraphrased, 2-4 sentences",
     "skills": {{
-        "languages": ["list of programming languages"],
-        "backend": ["backend frameworks/tools"],
-        "frontend": ["frontend frameworks/tools"],
-        "databases": ["databases"],
-        "cloud_devops": ["cloud and devops tools"],
-        "architecture": ["architecture patterns/practices"],
-        "testing": ["testing tools/practices"]
+        "languages": ["Java", "Python", ...],
+        "backend": ["Spring Boot", "FastAPI", ...],
+        "frontend": ["React.js", "Next.js", ...],
+        "databases": ["PostgreSQL", "MongoDB", ...],
+        "cloud_devops": ["AWS", "Docker", ...],
+        "architecture": ["Microservices", "REST APIs", ...],
+        "testing": ["JUnit", "Selenium", ...],
+        "cs_fundamentals": ["DSA", "Design Patterns", ...]
     }},
     "experience": [
         {{
-            "title": "Job Title",
+            "title": "FULL Job Title exactly as written",
             "company": "Company Name",
-            "period": "Start – End",
-            "highlights": ["achievement 1", "achievement 2"]
+            "period": "Mon YYYY – Mon YYYY or Present",
+            "highlights": [
+                "Complete bullet point 1 as written in resume",
+                "Complete bullet point 2 as written in resume",
+                "... ALL bullets for this job"
+            ]
         }}
     ],
-    "education": "degree and university info",
-    "certifications": ["cert1", "cert2"]
+    "education": "Full education line: Degree | University | CGPA | Year",
+    "certifications": ["Full certification name — description"],
+    "achievements": ["achievement 1", "achievement 2"]
 }}
 
 RESUME TEXT:
-{text[:5000]}
+{text[:12000]}
 """
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            max_tokens=2000,
+            max_tokens=4000,
             messages=[{"role": "user", "content": prompt}],
         )
         result_text = response.choices[0].message.content

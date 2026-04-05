@@ -752,6 +752,26 @@
                         <h2 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>Education</h2>
                         <p style={{ color: '#cbd5e1' }}>{profile.education}</p>
                     </div>
+
+                    {/* Certifications */}
+                    {profile.certifications && profile.certifications.length > 0 && (
+                        <div style={styles.card}>
+                            <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Certifications</h2>
+                            <ul style={{ paddingLeft: '1.5rem', lineHeight: 1.8, color: '#cbd5e1' }}>
+                                {profile.certifications.map((c, i) => <li key={i}>{c}</li>)}
+                            </ul>
+                        </div>
+                    )}
+
+                    {/* Achievements */}
+                    {profile.achievements && profile.achievements.length > 0 && (
+                        <div style={styles.card}>
+                            <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Achievements</h2>
+                            <ul style={{ paddingLeft: '1.5rem', lineHeight: 1.8, color: '#cbd5e1' }}>
+                                {profile.achievements.map((a, i) => <li key={i}>{a}</li>)}
+                            </ul>
+                        </div>
+                    )}
                 </div>
             );
         }
