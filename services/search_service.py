@@ -92,6 +92,14 @@ def _run_search(params: dict, user_id: int):
 
         _update(user_id, message=f"Saving {len(ranked)} jobs...", progress=80)
 
+        # Mark all existing "new" jobs as "previous" before saving fresh results
+        from tracker import _get_db
+        db = _get_db()
+        db.jobs.update_many(
+            {"user_id": str(user_id), "status": "fresh new"},
+            {"$set": {"status": "new"}},
+        )
+
         new_count = 0
         for job, score_data in ranked:
             if save_job(job, score_data, user_id=user_id):

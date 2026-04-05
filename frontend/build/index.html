@@ -67,7 +67,7 @@
         }
 
         function StatusBadge({ status }) {
-            const colors = { new: { bg: '#164e63', fg: '#67e8f9' }, saved: { bg: '#1e3a5f', fg: '#93c5fd' }, applied: { bg: '#065f46', fg: '#6ee7b7' }, interview: { bg: '#581c87', fg: '#d8b4fe' }, rejected: { bg: '#7f1d1d', fg: '#fca5a5' }, offer: { bg: '#14532d', fg: '#86efac' } };
+            const colors = { new: { bg: '#164e63', fg: '#67e8f9' }, previous: { bg: '#334155', fg: '#94a3b8' }, saved: { bg: '#1e3a5f', fg: '#93c5fd' }, applied: { bg: '#065f46', fg: '#6ee7b7' }, interview: { bg: '#581c87', fg: '#d8b4fe' }, rejected: { bg: '#7f1d1d', fg: '#fca5a5' }, offer: { bg: '#14532d', fg: '#86efac' } };
             const c = colors[status] || colors.new;
             return <span style={{ background: c.bg, color: c.fg, padding: '0.2rem 0.6rem', borderRadius: 20, fontWeight: 600, fontSize: '0.78rem', textTransform: 'capitalize' }}>{status}</span>;
         }
@@ -545,7 +545,7 @@
                     <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
                         <select style={styles.select} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
                             <option value="">All Statuses</option>
-                            {['new', 'saved', 'applied', 'interview', 'rejected', 'offer'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                            {['new', 'previous', 'saved', 'applied', 'interview', 'rejected', 'offer'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
                         </select>
                         <select style={styles.select} value={filters.min_score} onChange={e => setFilters(f => ({ ...f, min_score: parseFloat(e.target.value) }))}>
                             <option value="0">Any Score</option>
@@ -599,7 +599,15 @@
                                                 {j.salary ? <span style={{ color: 'var(--green2)', fontWeight: 600 }}>{j.salary}</span> : <span style={{ color: '#475569' }}>Not listed</span>}
                                             </td>
                                             <td style={{ padding: '0.6rem 0.75rem' }}><StatusBadge status={j.status} /></td>
-                                            <td style={{ padding: '0.6rem 0.75rem' }}><a href={j.url} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary }}>Open</a></td>
+                                            <td style={{ padding: '0.6rem 0.75rem' }}>
+                                                <div style={{ display: 'flex', gap: '0.3rem' }}>
+                                                    <a href={j.url} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary }}>Open</a>
+                                                    {j.status !== 'applied' && (
+                                                        <button onClick={async (e) => { e.stopPropagation(); await api.put(`/api/jobs/${j.id}/status`, { status: 'applied' }); loadJobs(); showToast(`Marked "${j.title.substring(0,30)}" as applied`, 'success'); }}
+                                                            style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSuccess, fontSize: '0.72rem' }}>Applied</button>
+                                                    )}
+                                                </div>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -704,7 +712,7 @@
                         <h2 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Update Status</h2>
                         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                             <select style={styles.select} value={status} onChange={e => setStatus(e.target.value)}>
-                                {['new', 'saved', 'applied', 'interview', 'rejected', 'offer'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                                {['new', 'previous', 'saved', 'applied', 'interview', 'rejected', 'offer'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
                             </select>
                             <button style={{ ...styles.btn, ...styles.btnPrimary, ...styles.btnSm }} onClick={updateStatus}>Update</button>
                         </div>
@@ -1386,7 +1394,12 @@
             const [setupDone, setSetupDone] = useState(false);
             const isProfileComplete = (p) => {
                 if (setupDone) return true;
-                return p && p.title && p.skills && Object.keys(p.skills).length > 0 && (p.experience || []).length > 0;
+                if (!p) return false;
+                // If user has uploaded resume before (has score or experience), profile is complete
+                if (p.resume_score) return true;
+                if (p.experience && p.experience.length > 0) return true;
+                if (p.skills && Object.keys(p.skills).length > 0) return true;
+                return false;
             };
 
             // Loading state

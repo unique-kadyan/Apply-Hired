@@ -637,6 +637,15 @@ def _fix_broken_fields(parsed: dict) -> dict:
     # Fix common misspelled words from PDF fragment merging
     _correct_titles(parsed)
 
+    # Clean up garbage highlights (single numbers, very short fragments, tech tags)
+    for exp in parsed.get("experience", []):
+        if "highlights" in exp:
+            exp["highlights"] = [
+                h for h in exp["highlights"]
+                if len(h) > 5 and not re.match(r'^\d{1,2}$', h.strip())
+                and not re.match(r'^[A-Z][a-z]{0,2}$', h.strip())
+            ]
+
     # Also fix the top-level title if it matches the first experience
     experience = parsed.get("experience", [])
     top_title = (parsed.get("title") or "").strip()
