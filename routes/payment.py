@@ -20,16 +20,137 @@ logger = logging.getLogger(__name__)
 
 payment_bp = Blueprint("payment", __name__, url_prefix="/api/payment")
 
+# All pricing config from env
+_BASE_PRICE = int(os.environ.get("RESUME_PRICE_INR", 50))
+_INTL_MARKUP = float(os.environ.get("INTL_MARKUP_PERCENT", 30)) / 100 + 1  # e.g. 30 → 1.30
+_BASE_CURRENCY = os.environ.get("BASE_CURRENCY", "INR")
+
+# Currency symbols (lightweight, no rates needed — fetched live)
+_SYMBOLS = {
+    "INR": "\u20b9", "USD": "$", "EUR": "\u20ac", "GBP": "\u00a3",
+    "AED": "AED ", "SGD": "S$", "AUD": "A$", "CAD": "C$",
+    "JPY": "\u00a5", "BRL": "R$", "CHF": "CHF ", "SEK": "kr",
+    "MYR": "RM", "KRW": "\u20a9", "THB": "\u0e3f", "IDR": "Rp",
+    "PHP": "\u20b1", "NZD": "NZ$", "ZAR": "R", "HKD": "HK$",
+}
+
+# Cache for exchange rates (refreshed every hour)
+_rate_cache = {"rates": {}, "fetched_at": 0}
+
+
+def _fetch_exchange_rates() -> dict:
+    """Fetch live exchange rates from a free API. Cached for 1 hour."""
+    import time
+    now = time.time()
+    if _rate_cache["rates"] and now - _rate_cache["fetched_at"] < 3600:
+        return _rate_cache["rates"]
+
+    try:
+        import requests as req
+        # Free, no key needed, 1500 req/month
+        resp = req.get(
+            f"https://api.exchangerate-api.com/v4/latest/{_BASE_CURRENCY}",
+            timeout=5,
+        )
+        data = resp.json()
+        _rate_cache["rates"] = data.get("rates", {})
+        _rate_cache["fetched_at"] = now
+        return _rate_cache["rates"]
+    except Exception as e:
+        logger.warning(f"Exchange rate fetch failed: {e}")
+        return _rate_cache.get("rates", {})
+
+
+def _get_user_currency(user_profile: dict) -> str:
+    """Detect currency from user's location using env-configurable mapping."""
+    location = (user_profile.get("location") or "").lower()
+
+    # Load custom mapping from env: "india:INR,usa:USD,uk:GBP,..."
+    custom_map = os.environ.get("COUNTRY_CURRENCY_MAP", "")
+    mapping = {}
+    if custom_map:
+        for pair in custom_map.split(","):
+            parts = pair.strip().split(":")
+            if len(parts) == 2:
+                mapping[parts[0].strip().lower()] = parts[1].strip().upper()
+
+    # Default mapping if env not set
+    if not mapping:
+        mapping = {
+            "india": "INR", "usa": "USD", "united states": "USD",
+            "uk": "GBP", "united kingdom": "GBP", "england": "GBP",
+            "germany": "EUR", "france": "EUR", "spain": "EUR",
+            "netherlands": "EUR", "ireland": "EUR", "italy": "EUR",
+            "europe": "EUR", "uae": "AED", "dubai": "AED",
+            "singapore": "SGD", "australia": "AUD", "canada": "CAD",
+            "japan": "JPY", "brazil": "BRL", "switzerland": "CHF",
+            "sweden": "SEK", "south korea": "KRW", "malaysia": "MYR",
+            "thailand": "THB", "indonesia": "IDR", "philippines": "PHP",
+            "new zealand": "NZD", "south africa": "ZAR", "hong kong": "HKD",
+        }
+
+    for keyword, currency in mapping.items():
+        if keyword in location:
+            return currency
+    return _BASE_CURRENCY
+
+
+def _calculate_price(currency: str) -> dict:
+    """Calculate price in the user's currency using live exchange rates."""
+    symbol = _SYMBOLS.get(currency, currency + " ")
+
+    if currency == _BASE_CURRENCY:
+        return {
+            "currency": currency,
+            "symbol": symbol,
+            "display_amount": f"{symbol}{_BASE_PRICE}",
+            "razorpay_amount": _BASE_PRICE * 100,  # paise
+        }
+
+    # Fetch live rate and apply international markup
+    rates = _fetch_exchange_rates()
+    rate = rates.get(currency, 0)
+
+    if rate > 0:
+        converted = _BASE_PRICE * rate * _INTL_MARKUP
+        # Clean rounding
+        if converted >= 100:
+            converted = round(converted)
+        elif converted >= 1:
+            converted = round(converted, 1)
+        else:
+            converted = round(converted, 2)
+    else:
+        # Fallback: just show base price with markup in base currency
+        converted = round(_BASE_PRICE * _INTL_MARKUP)
+        currency = _BASE_CURRENCY
+        symbol = _SYMBOLS.get(_BASE_CURRENCY, "")
+
+    # Razorpay always charges in base currency (INR paise)
+    razorpay_amount = round(_BASE_PRICE * _INTL_MARKUP * 100)
+
+    return {
+        "currency": currency,
+        "symbol": symbol,
+        "display_amount": f"{symbol}{converted}",
+        "razorpay_amount": razorpay_amount,
+    }
+
 
 @payment_bp.route("/config", methods=["GET"])
 @login_required
 def get_config():
-    """Return Razorpay public key and price for the frontend."""
+    """Return Razorpay public key and price based on user's location."""
+    profile = get_user_profile(request.user)
+    currency = _get_user_currency(profile)
+    price = _calculate_price(currency)
+
     return jsonify({
         "key_id": _key_id(),
-        "amount": RESUME_OPTIMIZE_PRICE,
+        "amount": price["razorpay_amount"],
         "currency": "INR",
-        "display_amount": f"\u20b9{RESUME_OPTIMIZE_PRICE // 100}",
+        "user_currency": currency,
+        "display_amount": price["display_amount"],
         "configured": is_configured(),
     })
 
@@ -42,8 +163,12 @@ def create_payment_order():
         return jsonify({"error": "Payment gateway not configured"}), 500
 
     try:
+        profile = get_user_profile(request.user)
+        currency = _get_user_currency(profile)
+        price = _calculate_price(currency)
+
         order = create_order(
-            amount_paise=RESUME_OPTIMIZE_PRICE,
+            amount_paise=price["razorpay_amount"],
             receipt=f"resume_{request.user['id']}_{int(datetime.now().timestamp())}",
         )
         # Store order in DB
@@ -51,7 +176,9 @@ def create_payment_order():
         db.payments.insert_one({
             "user_id": str(request.user["id"]),
             "order_id": order["id"],
-            "amount": RESUME_OPTIMIZE_PRICE,
+            "amount": price["razorpay_amount"],
+            "user_currency": currency,
+            "display_amount": price["display_amount"],
             "status": "created",
             "created_at": datetime.now(timezone.utc).isoformat(),
         })

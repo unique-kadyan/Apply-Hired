@@ -160,9 +160,11 @@
             const [targetCompany, setTargetCompany] = useState('');
             const [jobDesc, setJobDesc] = useState('');
             const [showForm, setShowForm] = useState(false);
+            const [priceLabel, setPriceLabel] = useState('');
 
             useEffect(() => {
                 api.get('/api/payment/has-paid').then(r => setHasPaid(r.paid));
+                api.get('/api/payment/config').then(r => setPriceLabel(r.display_amount || ''));
                 if (profile.optimized_resume) setOptimized(profile.optimized_resume);
             }, [profile]);
 
@@ -344,7 +346,7 @@
                                     color: '#fff', padding: '0.75rem 2rem', fontSize: '1rem', fontWeight: 700,
                                     boxShadow: '0 4px 15px rgba(37,99,235,0.3)',
                                 }}>
-                                Optimize for \u20b950
+                                {priceLabel ? `Optimize for ${priceLabel}` : 'Optimize Resume'}
                             </button>
                             <p style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '0.5rem' }}>One-time payment. Secure checkout via Razorpay.</p>
                         </div>
@@ -1172,7 +1174,7 @@
 
                         <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', justifyContent: 'center' }}>
                             <button onClick={() => setStep(1)} style={{ ...styles.btn, ...styles.btnSecondary }}>Re-upload Resume</button>
-                            <button onClick={() => { /* profile is already saved — just let isProfileComplete pass */ setProfile({...profile}); }}
+                            <button onClick={() => setSetupDone(true)}
                                 style={{ ...styles.btn, ...styles.btnPrimary, padding: '0.7rem 2rem', fontSize: '1rem' }}>
                                 Continue to Dashboard
                             </button>
@@ -1272,7 +1274,9 @@
                 showToast('Logged out', 'success');
             };
 
+            const [setupDone, setSetupDone] = useState(false);
             const isProfileComplete = (p) => {
+                if (setupDone) return true;
                 return p && p.title && p.skills && Object.keys(p.skills).length > 0 && (p.experience || []).length > 0;
             };
 

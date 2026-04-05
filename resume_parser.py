@@ -195,8 +195,14 @@ RESUME TEXT:
 
 
 def _build_ai_providers() -> list[dict]:
-    """Build an ordered list of AI providers to try."""
+    """Build an ordered list of AI providers to try.
+
+    Priority: paid APIs first (better quality), then free APIs as fallback.
+    All use OpenAI-compatible /v1/chat/completions format.
+    """
     providers = []
+
+    # 1. OpenAI (paid, best quality)
     if OPENAI_API_KEY:
         providers.append({
             "name": "openai",
@@ -204,6 +210,8 @@ def _build_ai_providers() -> list[dict]:
             "api_key": OPENAI_API_KEY,
             "model": "gpt-4o-mini",
         })
+
+    # 2. DeepSeek (paid, cheap)
     if DEEPSEEK_API_KEY:
         providers.append({
             "name": "deepseek",
@@ -211,6 +219,15 @@ def _build_ai_providers() -> list[dict]:
             "api_key": DEEPSEEK_API_KEY,
             "model": "deepseek-chat",
         })
+
+    # 3. Pollinations.ai (free, no key needed, OpenAI-compatible)
+    providers.append({
+        "name": "pollinations",
+        "base_url": "https://text.pollinations.ai/openai",
+        "api_key": "dummy",
+        "model": "openai",
+    })
+
     return providers
 
 
