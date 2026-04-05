@@ -1,5 +1,6 @@
 """Resume parser — extracts profile data from PDF/DOCX/TXT files."""
 
+import os
 import re
 import json
 import logging
@@ -146,86 +147,124 @@ def extract_text(filepath: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# AI-powered parsing (with OpenAI API key)
+# AI-powered parsing (multi-provider with automatic failover)
 # ---------------------------------------------------------------------------
 
-def parse_resume_ai(text: str) -> Optional[dict]:
-    """Use OpenAI GPT to parse resume text into structured profile data."""
-    if not OPENAI_API_KEY:
-        return None
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 
+_RESUME_PARSE_PROMPT = """You are a professional resume parser. The text below was extracted from a PDF file using automated text extraction.
+
+PDF text extraction commonly produces artifacts: words, job titles, company names, and sentences may be split across multiple lines or truncated mid-word due to column layouts, page breaks, or formatting. You must intelligently reconstruct all fragmented text into its complete, meaningful form by inferring from surrounding context. Never return partial or truncated words — every field must contain complete, properly formed text.
+
+Parse the resume and return ONLY valid JSON with this structure:
+
+{
+    "name": "Full name",
+    "title": "Current or most recent complete job title",
+    "email": "email address",
+    "phone": "phone number",
+    "location": "City, Country",
+    "years_of_experience": 0.0,
+    "open_to": "role preferences if mentioned",
+    "summary": "Professional summary, 2-4 sentences",
+    "skills": {
+        "languages": [],
+        "backend": [],
+        "frontend": [],
+        "databases": [],
+        "cloud_devops": [],
+        "architecture": [],
+        "testing": [],
+        "cs_fundamentals": []
+    },
+    "experience": [
+        {
+            "title": "Complete job title",
+            "company": "Complete company name",
+            "period": "Start – End",
+            "highlights": ["Complete bullet points"]
+        }
+    ],
+    "education": "Degree | University | Score | Year",
+    "certifications": [],
+    "achievements": []
+}
+
+RESUME TEXT:
+"""
+
+
+def _build_ai_providers() -> list[dict]:
+    """Build an ordered list of AI providers to try."""
+    providers = []
+    if OPENAI_API_KEY:
+        providers.append({
+            "name": "openai",
+            "base_url": None,
+            "api_key": OPENAI_API_KEY,
+            "model": "gpt-4o-mini",
+        })
+    if DEEPSEEK_API_KEY:
+        providers.append({
+            "name": "deepseek",
+            "base_url": "https://api.deepseek.com",
+            "api_key": DEEPSEEK_API_KEY,
+            "model": "deepseek-chat",
+        })
+    return providers
+
+
+def _call_ai(provider: dict, prompt: str) -> Optional[str]:
+    """Call an AI provider and return the raw response text."""
     try:
         from openai import OpenAI
     except ImportError:
         return None
 
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    kwargs = {"api_key": provider["api_key"]}
+    if provider["base_url"]:
+        kwargs["base_url"] = provider["base_url"]
 
-    prompt = f"""You are a professional resume parser. Parse the COMPLETE resume text below and return a JSON object.
+    client = OpenAI(**kwargs)
+    response = client.chat.completions.create(
+        model=provider["model"],
+        max_tokens=4000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.choices[0].message.content
 
-CRITICAL RULES:
-- Extract EVERY job listed in the experience section. Do NOT skip any.
-- Extract the FULL job title completely without missing any part or letter (e.g. "Senior Engineer – Applications & Platforms", NOT just "Senior")
-- Extract the FULL company name
-- Extract ALL bullet points / highlights for each job — do NOT summarize or truncate them
-- Extract ALL skills mentioned anywhere in the resume
-- If the resume mentions "Open to Global Remote Roles" or similar, capture that in "open_to"
-- Do NOT fabricate or invent any data. Only extract what is actually in the resume.
 
-Return ONLY valid JSON with this exact structure:
+def _is_quota_error(e: Exception) -> bool:
+    """Check if an exception is a quota/rate-limit error."""
+    err = str(e).lower()
+    return any(kw in err for kw in ("quota", "rate_limit", "429", "insufficient_quota", "billing"))
 
-{{
-    "name": "Full Name exactly as written",
-    "title": "Most recent / current job title — full title",
-    "email": "email@example.com",
-    "phone": "+xx xxxxxxxxxx",
-    "location": "City, Country",
-    "years_of_experience": 0.0,
-    "open_to": "e.g. Global Remote Roles",
-    "summary": "The summary/profile section from the resume, verbatim or closely paraphrased, 2-4 sentences",
-    "skills": {{
-        "languages": ["Java", "Python", ...],
-        "backend": ["Spring Boot", "FastAPI", ...],
-        "frontend": ["React.js", "Next.js", ...],
-        "databases": ["PostgreSQL", "MongoDB", ...],
-        "cloud_devops": ["AWS", "Docker", ...],
-        "architecture": ["Microservices", "REST APIs", ...],
-        "testing": ["JUnit", "Selenium", ...],
-        "cs_fundamentals": ["DSA", "Design Patterns", ...]
-    }},
-    "experience": [
-        {{
-            "title": "FULL Job Title exactly as written",
-            "company": "Company Name",
-            "period": "Mon YYYY – Mon YYYY or Present",
-            "highlights": [
-                "Complete bullet point 1 as written in resume",
-                "Complete bullet point 2 as written in resume",
-                "... ALL bullets for this job"
-            ]
-        }}
-    ],
-    "education": "Full education line: Degree | University | CGPA | Year",
-    "certifications": ["Full certification name — description"],
-    "achievements": ["achievement 1", "achievement 2"]
-}}
 
-RESUME TEXT:
-{text[:12000]}
-"""
+def parse_resume_ai(text: str) -> Optional[dict]:
+    """Parse resume using AI providers with automatic failover."""
+    providers = _build_ai_providers()
+    if not providers:
+        return None
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=4000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        result_text = response.choices[0].message.content
-        json_match = re.search(r"\{.*\}", result_text, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
-    except Exception as e:
-        logger.error(f"AI resume parsing failed: {e}")
+    prompt = _RESUME_PARSE_PROMPT + text[:12000]
+
+    for provider in providers:
+        try:
+            logger.info(f"Trying resume parse with {provider['name']}")
+            result_text = _call_ai(provider, prompt)
+            if not result_text:
+                continue
+            json_match = re.search(r"\{.*\}", result_text, re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+                logger.info(f"Resume parsed with {provider['name']}")
+                return parsed
+        except Exception as e:
+            if _is_quota_error(e):
+                logger.warning(f"{provider['name']} quota exceeded, trying next provider")
+                continue
+            logger.error(f"{provider['name']} parsing failed: {e}")
+            continue
 
     return None
 
@@ -432,7 +471,7 @@ def parse_resume(filepath: str) -> dict:
     if not text.strip():
         raise ValueError("Could not extract text from the resume file.")
 
-    # Try AI parsing first
+    # Try AI parsing (auto-failover: OpenAI → DeepSeek)
     ai_result = parse_resume_ai(text)
     if ai_result:
         logger.info("Resume parsed with AI")

@@ -95,25 +95,14 @@
 
         function ResumeScoreCard({ score }) {
             if (!score || !score.sections) return null;
-            const [expanded, setExpanded] = useState(null); // which section is expanded
             const total = score.total_score || 0;
             const color = total >= 80 ? '#6ee7b7' : total >= 60 ? '#fcd34d' : total >= 40 ? '#fdba74' : '#fca5a5';
-            const bg = total >= 80 ? '#065f46' : total >= 60 ? '#78350f' : total >= 40 ? '#7c2d12' : '#7f1d1d';
             const label = total >= 80 ? 'Excellent' : total >= 60 ? 'Good' : total >= 40 ? 'Needs Work' : 'Weak';
-            const emoji = total >= 80 ? '\uD83C\uDF1F' : total >= 60 ? '\uD83D\uDC4D' : total >= 40 ? '\u26A0\uFE0F' : '\uD83D\uDEA8';
 
             const sectionLabels = {
                 contact_info: 'Contact Info', summary: 'Summary', skills: 'Skills',
                 experience: 'Experience', education: 'Education', formatting: 'Formatting', ats_keywords: 'ATS Keywords',
             };
-            const sectionIcons = {
-                contact_info: '\uD83D\uDCDE', summary: '\uD83D\uDCDD', skills: '\uD83D\uDEE0\uFE0F',
-                experience: '\uD83D\uDCBC', education: '\uD83C\uDF93', formatting: '\uD83D\uDCC4', ats_keywords: '\uD83D\uDD0D',
-            };
-
-            // Separate weak sections (below 60%) from strong ones
-            const weakSections = Object.entries(score.sections).filter(([, sec]) => (sec.score / sec.max) < 0.6);
-            const hasWeakAreas = weakSections.length > 0;
 
             return (
                 <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 14, padding: '1.5rem', marginBottom: '1rem' }}>
@@ -133,99 +122,29 @@
                             </div>
                         </div>
                         <div>
-                            <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Resume Score {emoji}</h2>
+                            <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Resume Score</h2>
                             <p style={{ color, fontWeight: 600, margin: '0.2rem 0 0' }}>{label}</p>
-                            <p style={{ color: 'var(--muted)', fontSize: '0.82rem', margin: '0.2rem 0 0' }}>
-                                {total >= 80 ? 'Your resume is well-optimized for ATS systems'
-                                 : total >= 60 ? 'Good foundation — a few improvements will boost your chances'
-                                 : 'Your resume needs optimization to pass ATS filters'}
-                            </p>
                         </div>
                     </div>
 
-                    {/* Low score alert */}
-                    {total < 70 && hasWeakAreas && (
-                        <div style={{
-                            background: 'rgba(220, 38, 38, 0.08)', border: '1px solid rgba(220, 38, 38, 0.25)',
-                            borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.25rem',
-                        }}>
-                            <div style={{ fontWeight: 700, color: '#fca5a5', fontSize: '0.92rem', marginBottom: '0.4rem' }}>
-                                {weakSections.length} section{weakSections.length > 1 ? 's need' : ' needs'} improvement
-                            </div>
-                            <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0, lineHeight: 1.6 }}>
-                                Tap on any red/yellow section below to see specific suggestions. Fixing these can significantly improve your ATS pass rate and recruiter response.
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Section scores — clickable for tips */}
-                    <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '1.25rem' }}>
+                    {/* Section score bars */}
+                    <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '0.5rem' }}>
                         {Object.entries(score.sections).map(([key, sec]) => {
                             const pct = Math.round((sec.score / sec.max) * 100);
                             const barColor = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : 'var(--red)';
-                            const isWeak = pct < 60;
-                            const isExpanded = expanded === key;
-                            const hasTips = sec.tips && sec.tips.length > 0;
-
                             return (
-                                <div key={key}
-                                    onClick={() => hasTips && setExpanded(isExpanded ? null : key)}
-                                    style={{
-                                        background: isExpanded ? 'var(--bg)' : 'transparent',
-                                        border: isWeak ? '1px solid rgba(239,68,68,0.15)' : '1px solid transparent',
-                                        borderRadius: 10, padding: '0.6rem 0.75rem',
-                                        cursor: hasTips ? 'pointer' : 'default',
-                                        transition: 'all 0.15s',
-                                    }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', marginBottom: '0.3rem' }}>
-                                        <span style={{ color: 'var(--text2)' }}>
-                                            {sectionIcons[key] || ''} {sectionLabels[key] || key}
-                                            {isWeak && <span style={{ color: 'var(--red2)', fontSize: '0.75rem', marginLeft: '0.4rem' }}>(needs work)</span>}
-                                        </span>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>{sec.score}/{sec.max}</span>
-                                            {hasTips && <span style={{ color: 'var(--muted)', fontSize: '0.7rem' }}>{isExpanded ? '\u25B2' : '\u25BC'}</span>}
-                                        </div>
+                                <div key={key}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '0.2rem' }}>
+                                        <span style={{ color: 'var(--text2)' }}>{sectionLabels[key] || key}</span>
+                                        <span style={{ color: 'var(--muted)' }}>{sec.score}/{sec.max}</span>
                                     </div>
                                     <div style={{ background: 'var(--bg3)', borderRadius: 6, height: 8, overflow: 'hidden' }}>
                                         <div style={{ background: barColor, height: '100%', borderRadius: 6, width: `${pct}%`, transition: 'width 0.5s' }}></div>
                                     </div>
-
-                                    {/* Inline tips when expanded */}
-                                    {isExpanded && hasTips && (
-                                        <div style={{ marginTop: '0.6rem', paddingTop: '0.6rem', borderTop: '1px solid var(--border)' }}>
-                                            <div style={{ fontSize: '0.78rem', color: 'var(--accent2)', fontWeight: 600, marginBottom: '0.3rem' }}>How to improve:</div>
-                                            <ul style={{ paddingLeft: '1.1rem', margin: 0, lineHeight: 1.7, color: '#cbd5e1', fontSize: '0.82rem' }}>
-                                                {sec.tips.map((tip, i) => <li key={i}>{tip}</li>)}
-                                            </ul>
-                                        </div>
-                                    )}
                                 </div>
                             );
                         })}
                     </div>
-
-                    {/* Overall AI tips */}
-                    {score.overall_tips && score.overall_tips.length > 0 && (
-                        <div style={{ background: 'rgba(37,99,235,0.08)', border: '1px solid rgba(37,99,235,0.2)', borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1rem' }}>
-                            <h3 style={{ fontSize: '0.9rem', color: 'var(--accent2)', margin: '0 0 0.5rem', fontWeight: 700 }}>Top Recommendations</h3>
-                            <ol style={{ paddingLeft: '1.25rem', margin: 0, lineHeight: 1.8, color: '#cbd5e1', fontSize: '0.88rem' }}>
-                                {score.overall_tips.map((tip, i) => <li key={i}>{tip}</li>)}
-                            </ol>
-                        </div>
-                    )}
-
-                    {/* Strengths */}
-                    {score.strengths && score.strengths.length > 0 && (
-                        <div style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.2)', borderRadius: 10, padding: '1rem 1.25rem' }}>
-                            <h3 style={{ fontSize: '0.9rem', color: 'var(--green2)', margin: '0 0 0.5rem', fontWeight: 700 }}>Your Strengths</h3>
-                            <ul style={{ paddingLeft: '1.25rem', margin: 0, lineHeight: 1.8, color: 'var(--green2)', fontSize: '0.88rem' }}>
-                                {score.strengths.map((s, i) => <li key={i}>{s}</li>)}
-                            </ul>
-                        </div>
-                    )}
-
-                    {score.method && <p style={{ color: '#475569', fontSize: '0.72rem', marginTop: '0.75rem', textAlign: 'right' }}>Analyzed by {score.method === 'ai' ? 'AI' : 'heuristics engine'}</p>}
                 </div>
             );
         }
