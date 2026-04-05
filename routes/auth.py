@@ -81,7 +81,7 @@ def signup():
     # Send OTP
     otp = str(random.randint(100000, 999999))
     if not send_otp_email(email, otp):
-        return jsonify({"error": "Failed to send verification email. Please try again."}), 500
+        return jsonify({"error": "Failed to send verification email. Please try again or use Google Sign-In.", "use_google": True}), 500
 
     _pending_otps[email] = {
         "otp": otp, "name": name, "password": password,

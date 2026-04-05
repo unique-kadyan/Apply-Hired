@@ -45,20 +45,21 @@ def list_jobs():
     status = request.args.get("status", "")
     min_score = float(request.args.get("min_score", 0))
     source = request.args.get("source", "")
-    limit = int(request.args.get("limit", 100))
+    page = int(request.args.get("page", 1))
+    per_page = int(request.args.get("per_page", 50))
 
-    jobs = get_jobs(
+    jobs, total = get_jobs(
         status=status or None, min_score=min_score,
-        source=source or None, limit=limit,
+        source=source or None, page=page, per_page=per_page,
         user_id=request.user["id"],
     )
     for job in jobs:
         job["tags"] = json.loads(job.get("tags", "[]"))
         job["score_details"] = json.loads(job.get("score_details", "{}"))
-    return jsonify(jobs)
+    return jsonify({"jobs": jobs, "total": total, "page": page, "per_page": per_page})
 
 
-@jobs_bp.route("/jobs/<int:job_id>", methods=["GET"])
+@jobs_bp.route("/jobs/<job_id>", methods=["GET"])
 @login_required
 def get_job(job_id):
     job = get_job_by_id(job_id, user_id=request.user["id"])
@@ -71,7 +72,7 @@ def get_job(job_id):
 
 # ---- Status & Cover Letter -------------------------------------------------
 
-@jobs_bp.route("/jobs/<int:job_id>/status", methods=["PUT"])
+@jobs_bp.route("/jobs/<job_id>/status", methods=["PUT", "POST"])
 @login_required
 def change_status(job_id):
     job = get_job_by_id(job_id, user_id=request.user["id"])
@@ -82,7 +83,7 @@ def change_status(job_id):
     return jsonify({"message": f"Job #{job_id} updated to '{data.get('status')}'"})
 
 
-@jobs_bp.route("/jobs/<int:job_id>/cover-letter", methods=["POST"])
+@jobs_bp.route("/jobs/<job_id>/cover-letter", methods=["POST"])
 @login_required
 def gen_cover_letter(job_id):
     job = get_job_by_id(job_id, user_id=request.user["id"])

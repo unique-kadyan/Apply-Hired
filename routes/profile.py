@@ -17,7 +17,7 @@ def get_profile():
     return jsonify(get_user_profile(request.user))
 
 
-@profile_bp.route("", methods=["PUT"])
+@profile_bp.route("", methods=["PUT", "POST"])
 @login_required
 def update_profile():
     data = request.get_json()
@@ -61,7 +61,9 @@ def upload_resume():
         # Score the resume
         try:
             resume_score = score_resume(filepath)
-        except Exception:
+            print(f"[Resume Score] {resume_score.get('total_score', '?')}/100 via {resume_score.get('method', '?')}")
+        except Exception as e:
+            print(f"[Resume Score] FAILED: {e}")
             resume_score = None
 
         profile["resume_score"] = resume_score

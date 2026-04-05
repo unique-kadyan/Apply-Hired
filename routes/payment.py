@@ -1,14 +1,11 @@
 """Payment routes — Razorpay order creation, verification, and resume optimization."""
 
 import os
-import re
-import json
 import logging
 from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify
 
-from config import OPENAI_API_KEY
 from middleware import login_required, get_user_profile
 from services.payment_service import (
     is_configured, create_order, verify_payment,
@@ -249,9 +246,6 @@ def optimize_resume():
     if not paid:
         return jsonify({"error": "Payment required to use this feature"}), 402
 
-    if not OPENAI_API_KEY:
-        return jsonify({"error": "AI service not available"}), 500
-
     profile = get_user_profile(request.user)
     data = request.get_json() or {}
     target_role = data.get("target_role", profile.get("title", "Software Engineer"))
@@ -332,20 +326,27 @@ Return ONLY valid JSON:
 """
 
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        from resume_parser import _build_ai_providers, _call_ai_text, _parse_ai_response, _is_quota_error
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=4000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        result_text = response.choices[0].message.content
-        json_match = re.search(r"\{.*\}", result_text, re.DOTALL)
-        if not json_match:
-            return jsonify({"error": "AI returned invalid response"}), 500
+        providers = _build_ai_providers()
+        optimized = None
 
-        optimized = json.loads(json_match.group())
+        for provider in providers:
+            try:
+                result_text = _call_ai_text(provider, prompt)
+                parsed = _parse_ai_response(result_text)
+                if parsed and "summary" in parsed:
+                    optimized = parsed
+                    logger.info(f"Resume optimized with {provider['name']}")
+                    break
+            except Exception as e:
+                if _is_quota_error(e):
+                    continue
+                logger.warning(f"Optimize failed ({provider['name']}): {e}")
+                continue
+
+        if not optimized:
+            return jsonify({"error": "All AI providers failed. Please try again later."}), 500
 
         # Save optimized version to profile
         profile["optimized_resume"] = optimized

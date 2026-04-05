@@ -6,7 +6,7 @@ import threading
 from config import LOCATION_PREFERENCES
 from scrapers import search_all_boards, ALL_SCRAPERS
 from matcher import rank_jobs
-from tracker import save_job, log_search_run
+from tracker import save_jobs_bulk, log_search_run
 
 # Per-user search status keyed by user_id
 _status_map: dict[int, dict] = {}
@@ -100,10 +100,7 @@ def _run_search(params: dict, user_id: int):
             {"$set": {"status": "new"}},
         )
 
-        new_count = 0
-        for job, score_data in ranked:
-            if save_job(job, score_data, user_id=user_id):
-                new_count += 1
+        new_count = save_jobs_bulk(ranked, user_id=user_id)
 
         log_search_run(
             queries=queries,

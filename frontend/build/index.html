@@ -361,7 +361,7 @@
         function Dashboard({ navigate }) {
             const [stats, setStats] = useState(null);
             const [jobs, setJobs] = useState([]);
-            useEffect(() => { api.get('/api/stats').then(setStats); api.get('/api/jobs?limit=10').then(setJobs); }, []);
+            useEffect(() => { api.get('/api/stats').then(setStats); api.get('/api/jobs?per_page=10').then(r => setJobs(r.jobs || [])); }, []);
 
             if (!stats) return <div style={styles.container}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>;
 
@@ -392,16 +392,6 @@
                         <button style={{ ...styles.btn, ...styles.btnSecondary }} onClick={() => navigate('profile')}>My Profile</button>
                     </div>
 
-                    {stats.by_source && Object.keys(stats.by_source).length > 0 && (
-                        <div style={styles.card}>
-                            <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Sources</h2>
-                            <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
-                                {Object.entries(stats.by_source).map(([src, cnt]) => (
-                                    <div key={src}><span style={{ fontWeight: 700, color: '#60a5fa' }}>{cnt}</span> <span style={{ color: 'var(--muted)' }}>{src}</span></div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
 
                     <div style={styles.card}>
                         <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Recent Matches</h2>
@@ -441,6 +431,9 @@
             const [selected, setSelected] = useState(new Set());
             const [filters, setFilters] = useState({ status: '', min_score: 0, source: '', salary: '' });
             const [loading, setLoading] = useState(true);
+            const [page, setPage] = useState(1);
+            const [total, setTotal] = useState(0);
+            const perPage = 50;
             const MAX_SELECT = 10;
 
             const loadJobs = useCallback(() => {
@@ -449,14 +442,17 @@
                 if (filters.status) params.set('status', filters.status);
                 if (filters.min_score) params.set('min_score', filters.min_score);
                 if (filters.source) params.set('source', filters.source);
-                api.get(`/api/jobs?${params}`).then(j => {
+                params.set('page', page);
+                params.set('per_page', perPage);
+                api.get(`/api/jobs?${params}`).then(res => {
+                    let filtered = res.jobs || [];
+                    setTotal(res.total || 0);
                     // Client-side salary filter
-                    let filtered = j;
                     if (filters.salary === 'has_salary') {
-                        filtered = j.filter(job => job.salary && job.salary.trim() && job.salary !== '-');
+                        filtered = filtered.filter(job => job.salary && job.salary.trim() && job.salary !== '-');
                     } else if (filters.salary) {
                         const minSal = parseInt(filters.salary);
-                        filtered = j.filter(job => {
+                        filtered = filtered.filter(job => {
                             if (!job.salary) return false;
                             const nums = job.salary.match(/[\d,]+/g);
                             if (!nums) return false;
@@ -467,9 +463,10 @@
                     setJobs(filtered);
                     setLoading(false);
                 });
-            }, [filters]);
+            }, [filters, page]);
 
             useEffect(() => { loadJobs(); }, [loadJobs]);
+            const totalPages = Math.ceil(total / perPage);
 
             const toggleSelect = (id) => {
                 setSelected(prev => {
@@ -538,26 +535,26 @@
                 <div style={styles.container}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                         <h1 style={{ fontSize: '1.5rem' }}>Jobs</h1>
-                        <span style={{ color: 'var(--muted)' }}>{jobs.length} results</span>
+                        <span style={{ color: 'var(--muted)' }}>{total} results {totalPages > 1 ? `(page ${page}/${totalPages})` : ''}</span>
                     </div>
 
                     {/* Filters */}
                     <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <select style={styles.select} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
+                        <select style={styles.select} value={filters.status} onChange={e => { setPage(1); setFilters(f => ({ ...f, status: e.target.value })); }}>
                             <option value="">All Statuses</option>
                             {['new', 'previous', 'saved', 'applied', 'interview', 'rejected', 'offer'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
                         </select>
-                        <select style={styles.select} value={filters.min_score} onChange={e => setFilters(f => ({ ...f, min_score: parseFloat(e.target.value) }))}>
+                        <select style={styles.select} value={filters.min_score} onChange={e => { setPage(1); setFilters(f => ({ ...f, min_score: parseFloat(e.target.value) })); }}>
                             <option value="0">Any Score</option>
                             <option value="0.3">30%+</option>
                             <option value="0.5">50%+</option>
                             <option value="0.7">70%+</option>
                         </select>
-                        <select style={styles.select} value={filters.source} onChange={e => setFilters(f => ({ ...f, source: e.target.value }))}>
+                        <select style={styles.select} value={filters.source} onChange={e => { setPage(1); setFilters(f => ({ ...f, source: e.target.value })); }}>
                             <option value="">All Sources</option>
                             {['RemoteOK', 'Remotive', 'Arbeitnow', 'JSearch', 'WeWorkRemotely', 'Jobicy', 'FindWork', 'Adzuna', 'TheMuse', 'HackerNews'].map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
-                        <select style={styles.select} value={filters.salary} onChange={e => setFilters(f => ({ ...f, salary: e.target.value }))}>
+                        <select style={styles.select} value={filters.salary} onChange={e => { setPage(1); setFilters(f => ({ ...f, salary: e.target.value })); }}>
                             <option value="">Any Salary</option>
                             <option value="has_salary">Has Salary Info</option>
                             <option value="50000">$50k+</option>
@@ -566,7 +563,7 @@
                             <option value="150000">$150k+</option>
                             <option value="200000">$200k+</option>
                         </select>
-                        <button style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }} onClick={() => setFilters({ status: '', min_score: 0, source: '', salary: '' })}>Reset</button>
+                        <button style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }} onClick={() => { setPage(1); setFilters({ status: '', min_score: 0, source: '', salary: '' }); }}>Reset</button>
                     </div>
 
                     {/* Table */}
@@ -600,13 +597,15 @@
                                             </td>
                                             <td style={{ padding: '0.6rem 0.75rem' }}><StatusBadge status={j.status} /></td>
                                             <td style={{ padding: '0.6rem 0.75rem' }}>
-                                                <div style={{ display: 'flex', gap: '0.3rem' }}>
-                                                    <a href={j.url} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary }}>Open</a>
-                                                    {j.status !== 'applied' && (
-                                                        <button onClick={async (e) => { e.stopPropagation(); await api.put(`/api/jobs/${j.id}/status`, { status: 'applied' }); loadJobs(); showToast(`Marked "${j.title.substring(0,30)}" as applied`, 'success'); }}
+                                                {j.status === 'applied' ? (
+                                                    <span style={{ ...styles.btn, ...styles.btnSm, background: '#065f46', color: '#6ee7b7', cursor: 'default', fontSize: '0.72rem' }}>Applied</span>
+                                                ) : (
+                                                    <div style={{ display: 'flex', gap: '0.3rem' }}>
+                                                        <a href={j.url} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary }}>Open</a>
+                                                        <button disabled={j._marking} onClick={async (e) => { e.stopPropagation(); j._marking = true; e.target.disabled = true; await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast(`Marked "${j.title.substring(0,30)}" as applied`, 'success'); loadJobs(); }}
                                                             style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSuccess, fontSize: '0.72rem' }}>Applied</button>
-                                                    )}
-                                                </div>
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -617,6 +616,23 @@
 
                     {loading && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>Loading...</p>}
                     {!loading && jobs.length === 0 && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}><p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>No jobs found.</p><button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => navigate('search')}>Run a Search</button></div>}
+
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', padding: '1.5rem 0' }}>
+                            <button onClick={() => setPage(1)} disabled={page === 1}
+                                style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, opacity: page === 1 ? 0.4 : 1 }}>First</button>
+                            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                                style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, opacity: page === 1 ? 0.4 : 1 }}>&larr; Prev</button>
+                            <span style={{ color: 'var(--muted)', fontSize: '0.88rem', padding: '0 0.75rem' }}>
+                                Page {page} of {totalPages}
+                            </span>
+                            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                                style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, opacity: page === totalPages ? 0.4 : 1 }}>Next &rarr;</button>
+                            <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
+                                style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, opacity: page === totalPages ? 0.4 : 1 }}>Last</button>
+                        </div>
+                    )}
 
                     {/* Floating apply bar */}
                     {selected.size > 0 && (
@@ -647,7 +663,7 @@
             if (!job) return <div style={styles.container}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>;
 
             const updateStatus = async () => {
-                await api.put(`/api/jobs/${job.id}/status`, { status });
+                await api.post(`/api/jobs/${job.id}/status`, { status });
                 showToast(`Status updated to "${status}"`, 'success');
                 setJob(j => ({ ...j, status }));
             };
@@ -1091,12 +1107,14 @@
             const [otp, setOtp] = useState('');
             const [loading, setLoading] = useState(false);
             const [otpSent, setOtpSent] = useState(false);
+            const [showGoogleBanner, setShowGoogleBanner] = useState(false);
 
             const googleLogin = () => { window.location.href = '/api/auth/google'; };
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 setLoading(true);
+                setShowGoogleBanner(false);
                 try {
                     if (otpSent) {
                         const res = await api.post('/api/auth/verify-otp', { email, otp });
@@ -1104,7 +1122,10 @@
                         else if (res.user) onAuth(res.user);
                     } else if (mode === 'signup') {
                         const res = await api.post('/api/auth/signup', { name, email, password });
-                        if (res.error) showToast(res.error, 'error');
+                        if (res.error) {
+                            showToast(res.error, 'error');
+                            if (res.use_google) setShowGoogleBanner(true);
+                        }
                         else if (res.needs_otp) { setOtpSent(true); showToast('Verification code sent to your email!', 'success'); }
                         else if (res.user) onAuth(res.user);
                     } else {
@@ -1194,6 +1215,23 @@
                                         {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
                                     </button>
                                 </form>
+
+                                {/* Google sign-in banner when email fails */}
+                                {showGoogleBanner && (
+                                    <div style={{ background: 'rgba(37,99,235,0.1)', border: '1px solid rgba(37,99,235,0.3)', borderRadius: 10, padding: '1rem', marginTop: '1rem', textAlign: 'center' }}>
+                                        <p style={{ color: 'var(--text2)', fontSize: '0.88rem', margin: '0 0 0.75rem', lineHeight: 1.5 }}>
+                                            Email verification is temporarily unavailable. Sign in with Google instead:
+                                        </p>
+                                        <button onClick={googleLogin} style={{
+                                            width: '100%', padding: '0.7rem', borderRadius: 8, border: '1px solid #475569',
+                                            background: '#fff', color: '#1f2937', fontSize: '0.9rem', fontWeight: 600,
+                                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem',
+                                        }}>
+                                            <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 019.5 24c0-1.59.28-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 000 24c0 3.77.9 7.35 2.56 10.52l7.97-5.93z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 5.93C6.51 42.62 14.62 48 24 48z"/></svg>
+                                            Continue with Google
+                                        </button>
+                                    </div>
+                                )}
 
                                 <p style={{ textAlign: 'center', marginTop: '1.25rem', color: 'var(--muted)', fontSize: '0.88rem' }}>
                                     {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}

@@ -178,31 +178,60 @@ def update_user_profile(user_id, profile_data: dict):
 def save_job(job, score_data: dict, cover_letter: str = "", user_id=None) -> bool:
     """Save a job to the database. Returns True if new, False if exists."""
     db = _get_db()
-    doc = {
-        "user_id": str(user_id) if user_id else None,
-        "title": job.title,
-        "company": job.company,
-        "location": job.location,
-        "url": job.url,
-        "source": job.source,
-        "description": job.description,
-        "salary": job.salary,
-        "tags": json.dumps(job.tags) if isinstance(job.tags, list) else job.tags,
-        "date_posted": job.date_posted,
-        "job_type": job.job_type,
-        "score": score_data.get("final_score", 0.0),
-        "score_details": json.dumps(score_data),
-        "status": "new",
-        "cover_letter": cover_letter,
-        "notes": "",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
+    doc = _build_job_doc(job, score_data, cover_letter, user_id)
     try:
         db.jobs.insert_one(doc)
         return True
     except Exception:
         return False
+
+
+def _build_job_doc(job, score_data: dict, cover_letter: str = "", user_id=None) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    # Keep only essential score fields to save DB space
+    slim_score = {
+        "local_score": score_data.get("local_score", 0),
+        "final_score": score_data.get("final_score", 0),
+    }
+    return {
+        "user_id": str(user_id) if user_id else None,
+        "title": job.title[:200],
+        "company": job.company[:100],
+        "location": job.location[:100] if job.location else "",
+        "url": job.url,
+        "source": job.source,
+        "description": (job.description or "")[:500],
+        "salary": (job.salary or "")[:50],
+        "tags": json.dumps(job.tags[:10]) if isinstance(job.tags, list) else (job.tags or "[]"),
+        "date_posted": job.date_posted,
+        "job_type": job.job_type,
+        "score": score_data.get("final_score", 0.0),
+        "score_details": json.dumps(slim_score),
+        "status": "new",
+        "cover_letter": cover_letter,
+        "notes": "",
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
+    """Save multiple jobs in one bulk operation. Returns count of new jobs inserted."""
+    db = _get_db()
+    docs = [_build_job_doc(job, score_data, user_id=user_id) for job, score_data in ranked]
+    if not docs:
+        return 0
+
+    from pymongo import InsertOne
+    from pymongo.errors import BulkWriteError
+
+    ops = [InsertOne(doc) for doc in docs]
+    try:
+        result = db.jobs.bulk_write(ops, ordered=False)
+        return result.inserted_count
+    except BulkWriteError as e:
+        # Some inserts fail due to duplicate (user_id, url) — that's expected
+        return e.details.get("nInserted", 0)
 
 
 def update_job_status(job_id, status: str, notes: str = ""):
@@ -220,11 +249,12 @@ def update_job_status(job_id, status: str, notes: str = ""):
 def get_jobs(
     status: Optional[str] = None,
     min_score: float = 0.0,
-    limit: int = 50,
+    page: int = 1,
+    per_page: int = 50,
     source: Optional[str] = None,
     user_id=None,
-) -> list[dict]:
-    """Retrieve jobs with optional filters."""
+) -> tuple[list[dict], int]:
+    """Retrieve paginated jobs with optional filters. Returns (jobs, total_count)."""
     db = _get_db()
     query: dict = {"score": {"$gte": min_score}}
 
@@ -235,8 +265,10 @@ def get_jobs(
     if source:
         query["source"] = source
 
-    cursor = db.jobs.find(query).sort("score", DESCENDING).limit(limit)
-    return [_id_str(doc) for doc in cursor]
+    total = db.jobs.count_documents(query)
+    skip = (page - 1) * per_page
+    cursor = db.jobs.find(query).sort("score", DESCENDING).skip(skip).limit(per_page)
+    return [_id_str(doc) for doc in cursor], total
 
 
 def get_job_by_id(job_id, user_id=None) -> Optional[dict]:

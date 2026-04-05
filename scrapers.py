@@ -40,6 +40,16 @@ class Job:
 # Base scraper
 # ---------------------------------------------------------------------------
 
+_DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/html, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Cache-Control": "no-cache",
+}
+
+
 class BaseScraper:
     name: str = "base"
     base_url: str = ""
@@ -48,13 +58,24 @@ class BaseScraper:
         raise NotImplementedError
 
     def _safe_get(self, url: str, params: dict = None, headers: dict = None, timeout: int = 15) -> Optional[requests.Response]:
-        try:
-            resp = requests.get(url, params=params, headers=headers, timeout=timeout)
-            resp.raise_for_status()
-            return resp
-        except requests.RequestException as e:
-            logger.warning(f"[{self.name}] Request failed: {e}")
-            return None
+        merged_headers = dict(_DEFAULT_HEADERS)
+        if headers:
+            merged_headers.update(headers)
+        for attempt in range(2):
+            try:
+                resp = requests.get(url, params=params, headers=merged_headers, timeout=timeout)
+                if resp.status_code == 429:
+                    time.sleep(2)
+                    continue
+                resp.raise_for_status()
+                return resp
+            except requests.RequestException as e:
+                if attempt == 0:
+                    time.sleep(1)
+                    continue
+                logger.warning(f"[{self.name}] Request failed for url: {url}: {e}")
+                return None
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -774,17 +795,243 @@ def _matches_location_preference(job_location: str, user_country: str) -> bool:
 # Aggregator
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Reed.co.uk — UK job board with free API (requires API key, basic auth)
+# ---------------------------------------------------------------------------
+
+class ReedScraper(BaseScraper):
+    name = "Reed"
+    base_url = "https://www.reed.co.uk/api/1.0/search"
+
+    def fetch_jobs(self, query: str) -> list[Job]:
+        api_key = os.environ.get("REED_API_KEY", "")
+        if not api_key:
+            return []
+        import base64
+        auth = base64.b64encode(f"{api_key}:".encode()).decode()
+        resp = self._safe_get(
+            self.base_url,
+            params={"keywords": query, "resultsToTake": 25},
+            headers={"Authorization": f"Basic {auth}"},
+        )
+        if not resp:
+            return []
+        jobs = []
+        for item in resp.json().get("results", []):
+            jobs.append(Job(
+                title=item.get("jobTitle", ""),
+                company=item.get("employerName", ""),
+                location=item.get("locationName", ""),
+                url=item.get("jobUrl", ""),
+                source=self.name,
+                description=item.get("jobDescription", ""),
+                salary=f"{item.get('minimumSalary', '')} - {item.get('maximumSalary', '')}" if item.get("minimumSalary") else "",
+                date_posted=item.get("date", ""),
+            ))
+        return jobs
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn Jobs (via RapidAPI — uses existing JSEARCH or separate key)
+# ---------------------------------------------------------------------------
+
+class LinkedInJobsScraper(BaseScraper):
+    name = "LinkedIn"
+    base_url = "https://linkedin-jobs-search.p.rapidapi.com/"
+
+    def fetch_jobs(self, query: str) -> list[Job]:
+        api_key = os.environ.get("RAPIDAPI_KEY", os.environ.get("JSEARCH_API_KEY", ""))
+        if not api_key:
+            return []
+        resp = self._safe_get(
+            self.base_url,
+            params={"search_terms": query, "location": "remote", "page": "1"},
+            headers={
+                "X-RapidAPI-Key": api_key,
+                "X-RapidAPI-Host": "linkedin-jobs-search.p.rapidapi.com",
+            },
+        )
+        if not resp:
+            return []
+        jobs = []
+        for item in resp.json() if isinstance(resp.json(), list) else []:
+            jobs.append(Job(
+                title=item.get("job_title", ""),
+                company=item.get("company_name", ""),
+                location=item.get("job_location", "Remote"),
+                url=item.get("job_url", ""),
+                source=self.name,
+                description=item.get("job_description", ""),
+                date_posted=item.get("posted_date", ""),
+            ))
+        return jobs
+
+
+# ---------------------------------------------------------------------------
+# Himalayas.app — remote job board with free public JSON API
+# ---------------------------------------------------------------------------
+
+class HimalayasScraper(BaseScraper):
+    name = "Himalayas"
+    base_url = "https://himalayas.app/jobs/api"
+
+    def fetch_jobs(self, query: str) -> list[Job]:
+        resp = self._safe_get(self.base_url, params={"limit": 25, "q": query})
+        if not resp:
+            return []
+        jobs = []
+        for item in resp.json().get("jobs", []):
+            tags = item.get("categories", []) or []
+            salary = ""
+            if item.get("salaryCurrency") and item.get("salaryMin"):
+                salary = f"{item['salaryCurrency']} {item.get('salaryMin', '')} - {item.get('salaryMax', '')}"
+            jobs.append(Job(
+                title=item.get("title", ""),
+                company=item.get("companyName", ""),
+                location=item.get("location", "Remote"),
+                url=f"https://himalayas.app/jobs/{item.get('slug', '')}",
+                source=self.name,
+                description=item.get("description", "")[:2000],
+                salary=salary,
+                tags=tags if isinstance(tags, list) else [],
+                date_posted=item.get("pubDate", ""),
+            ))
+        return jobs
+
+
+# ---------------------------------------------------------------------------
+# Jooble — global job aggregator with free API
+# ---------------------------------------------------------------------------
+
+class JoobleScraper(BaseScraper):
+    name = "Jooble"
+    base_url = "https://jooble.org/api/"
+
+    def fetch_jobs(self, query: str) -> list[Job]:
+        api_key = os.environ.get("JOOBLE_API_KEY", "")
+        if not api_key:
+            return []
+        try:
+            resp = requests.post(
+                f"{self.base_url}{api_key}",
+                json={"keywords": query, "location": "remote", "page": 1},
+                headers=_DEFAULT_HEADERS,
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                return []
+            jobs = []
+            for item in resp.json().get("jobs", []):
+                jobs.append(Job(
+                    title=item.get("title", ""),
+                    company=item.get("company", ""),
+                    location=item.get("location", "Remote"),
+                    url=item.get("link", ""),
+                    source=self.name,
+                    description=item.get("snippet", ""),
+                    salary=item.get("salary", ""),
+                    date_posted=item.get("updated", ""),
+                ))
+            return jobs
+        except Exception as e:
+            logger.warning(f"[{self.name}] Request failed: {e}")
+            return []
+
+
+# ---------------------------------------------------------------------------
+# Arbeitsagentur (German Federal Employment Agency) — free public API
+# ---------------------------------------------------------------------------
+
+class ArbeitsagenturScraper(BaseScraper):
+    name = "Arbeitsagentur"
+    base_url = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs"
+
+    def fetch_jobs(self, query: str) -> list[Job]:
+        resp = self._safe_get(
+            self.base_url,
+            params={"was": query, "size": 25, "page": 0},
+            headers={"X-API-Key": "jobboerse-jobsuche"},
+        )
+        if not resp:
+            return []
+        jobs = []
+        for item in resp.json().get("stellenangebote", []):
+            jobs.append(Job(
+                title=item.get("titel", ""),
+                company=item.get("arbeitgeber", ""),
+                location=item.get("arbeitsort", {}).get("ort", "Germany"),
+                url=f"https://www.arbeitsagentur.de/jobsuche/suche?id={item.get('hashId', '')}",
+                source=self.name,
+                description=item.get("titel", ""),
+                date_posted=item.get("eintrittsdatum", ""),
+            ))
+        return jobs
+
+
+# ---------------------------------------------------------------------------
+# USAJobs — US government jobs (free, public API)
+# ---------------------------------------------------------------------------
+
+class USAJobsScraper(BaseScraper):
+    name = "USAJobs"
+    base_url = "https://data.usajobs.gov/api/Search"
+
+    def fetch_jobs(self, query: str) -> list[Job]:
+        api_key = os.environ.get("USAJOBS_API_KEY", "")
+        email = os.environ.get("USAJOBS_EMAIL", "")
+        if not api_key or not email:
+            return []
+        resp = self._safe_get(
+            self.base_url,
+            params={"Keyword": query, "ResultsPerPage": 25, "RemoteIndicator": "True"},
+            headers={"Authorization-Key": api_key, "User-Agent": email, "Host": "data.usajobs.gov"},
+        )
+        if not resp:
+            return []
+        jobs = []
+        for item in resp.json().get("SearchResult", {}).get("SearchResultItems", []):
+            pos = item.get("MatchedObjectDescriptor", {})
+            salary_min = pos.get("PositionRemuneration", [{}])[0].get("MinimumRange", "") if pos.get("PositionRemuneration") else ""
+            salary_max = pos.get("PositionRemuneration", [{}])[0].get("MaximumRange", "") if pos.get("PositionRemuneration") else ""
+            jobs.append(Job(
+                title=pos.get("PositionTitle", ""),
+                company=pos.get("OrganizationName", "US Government"),
+                location=pos.get("PositionLocationDisplay", ""),
+                url=pos.get("PositionURI", ""),
+                source=self.name,
+                description=pos.get("QualificationSummary", ""),
+                salary=f"${salary_min} - ${salary_max}" if salary_min else "",
+                date_posted=pos.get("PublicationStartDate", ""),
+            ))
+        return jobs
+
+
+# ---------------------------------------------------------------------------
+# All scrapers
+# ---------------------------------------------------------------------------
+
+import os
+
 ALL_SCRAPERS: list[BaseScraper] = [
-    RemoteOKScraper(),
+    # Always work (public JSON APIs, no IP blocking)
     RemotiveScraper(),
     ArbeitnowScraper(),
-    JSearchScraper(),
-    WeWorkRemotelyScraper(),
     JobicyScraper(),
-    FindWorkScraper(),
-    AdzunaScraper(),
     TheMuseScraper(),
     HackerNewsScraper(),
+    HimalayasScraper(),
+    # API key required (reliable, no IP blocking)
+    JSearchScraper(),
+    AdzunaScraper(),
+    JoobleScraper(),
+    ReedScraper(),
+    LinkedInJobsScraper(),
+    ArbeitsagenturScraper(),
+    USAJobsScraper(),
+    # May be blocked on cloud hosting
+    RemoteOKScraper(),
+    WeWorkRemotelyScraper(),
+    FindWorkScraper(),
 ]
 
 

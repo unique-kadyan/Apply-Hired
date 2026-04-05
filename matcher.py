@@ -4,7 +4,7 @@ import re
 import logging
 from typing import Optional
 
-from config import PROFILE, SEARCH_PREFERENCES, OPENAI_API_KEY
+from config import PROFILE, SEARCH_PREFERENCES
 
 logger = logging.getLogger(__name__)
 
@@ -73,17 +73,12 @@ def score_job_local(job) -> float:
 # ---------------------------------------------------------------------------
 
 def score_job_ai(job) -> Optional[dict]:
-    """Use OpenAI GPT to deeply evaluate job fit. Returns dict with score + reasoning."""
-    if not OPENAI_API_KEY:
-        return None
+    """Evaluate job fit using free AI providers with failover."""
+    from resume_parser import _build_ai_providers, _call_ai_text, _parse_ai_response, _is_quota_error
 
-    try:
-        from openai import OpenAI
-    except ImportError:
-        logger.warning("openai package not installed — skipping AI scoring")
+    providers = _build_ai_providers()
+    if not providers:
         return None
-
-    client = OpenAI(api_key=OPENAI_API_KEY)
 
     skills_text = ", ".join(
         skill for group in PROFILE["skills"].values() for skill in group
@@ -105,23 +100,21 @@ CANDIDATE:
 JOB POSTING:
 - Title: {job.title}
 - Company: {job.company}
-- Description: {job.description[:2000]}
+- Description: {job.description[:1000]}
 - Tags: {', '.join(job.tags)}
 """
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        import json
-        text = response.choices[0].message.content
-        json_match = re.search(r"\{.*\}", text, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
-    except Exception as e:
-        logger.warning(f"AI scoring failed: {e}")
+    for provider in providers:
+        try:
+            result_text = _call_ai_text(provider, prompt)
+            parsed = _parse_ai_response(result_text)
+            if parsed and "score" in parsed:
+                return parsed
+        except Exception as e:
+            if _is_quota_error(e):
+                continue
+            logger.warning(f"AI scoring failed ({provider['name']}): {e}")
+            continue
 
     return None
 
@@ -130,7 +123,7 @@ JOB POSTING:
 # Combined scorer
 # ---------------------------------------------------------------------------
 
-def score_job(job) -> dict:
+def score_job(job, use_ai: bool = False) -> dict:
     """Score a job using local matching + optional AI. Returns scoring dict."""
     local_score = score_job_local(job)
 
@@ -143,15 +136,14 @@ def score_job(job) -> dict:
         "final_score": round(local_score, 3),
     }
 
-    # Use AI scoring for jobs that pass the minimum threshold
-    if local_score >= SEARCH_PREFERENCES["min_experience_match"]:
+    # Only use AI scoring when explicitly requested (e.g. viewing job detail)
+    if use_ai and local_score >= SEARCH_PREFERENCES["min_experience_match"]:
         ai_result = score_job_ai(job)
         if ai_result:
             result["ai_score"] = ai_result.get("score")
             result["ai_reasons"] = ai_result.get("reasons", [])
             result["ai_missing_skills"] = ai_result.get("missing_skills", [])
             result["ai_recommendation"] = ai_result.get("recommendation")
-            # Weighted average: 40% local + 60% AI
             if result["ai_score"] is not None:
                 result["final_score"] = round(
                     0.4 * local_score + 0.6 * result["ai_score"], 3
@@ -161,17 +153,21 @@ def score_job(job) -> dict:
 
 
 def rank_jobs(jobs: list, min_score: float | None = None) -> list[tuple]:
-    """Score and rank all jobs. Returns list of (job, score_dict) sorted by score desc.
+    """Score and rank all jobs using fast local scoring only.
 
-    If *min_score* is given, only jobs meeting that threshold are returned.
-    Pass ``min_score=0`` (or omit) to return **all** jobs with their scores.
+    AI scoring is skipped during bulk search for speed.
     """
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _score_one(job):
+        return (job, score_job(job, use_ai=False))
+
     scored = []
-    for job in jobs:
-        score_data = score_job(job)
-        if min_score and score_data["final_score"] < min_score:
-            continue
-        scored.append((job, score_data))
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for job, score_data in executor.map(lambda j: _score_one(j), jobs):
+            if min_score and score_data["final_score"] < min_score:
+                continue
+            scored.append((job, score_data))
 
     scored.sort(key=lambda x: x[1]["final_score"], reverse=True)
     return scored

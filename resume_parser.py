@@ -150,7 +150,6 @@ def extract_text(filepath: str) -> str:
 # AI-powered parsing (multi-provider with automatic failover)
 # ---------------------------------------------------------------------------
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 
 _RESUME_PARSE_PROMPT = """You are a professional resume parser. The text below was extracted from a PDF file using automated text extraction.
 
@@ -222,11 +221,112 @@ def _pdf_to_base64_images(filepath: str) -> list[str]:
 def _build_ai_providers() -> list[dict]:
     """Build an ordered list of AI providers to try.
 
-    Priority: paid APIs with vision first, then text-only fallbacks.
+    Strategy: free providers FIRST, paid providers LAST.
+    All use OpenAI-compatible /v1/chat/completions format.
     """
     providers = []
 
-    # 1. OpenAI (paid, supports vision — best for PDF images)
+    # --- FREE providers (confirmed working, ordered by speed/quality) ---
+
+    # 1. Groq (free, fastest inference, 70B model)
+    groq_key = os.environ.get("GROQ_API_KEY", "")
+    if groq_key:
+        providers.append({
+            "name": "groq",
+            "base_url": "https://api.groq.com/openai/v1",
+            "api_key": groq_key,
+            "model": "llama-3.3-70b-versatile",
+            "supports_vision": False,
+        })
+
+    # 2. Cerebras (free, fast, 30 req/min)
+    cerebras_key = os.environ.get("CEREBRAS_API_KEY", "")
+    if cerebras_key:
+        providers.append({
+            "name": "cerebras",
+            "base_url": "https://api.cerebras.ai/v1",
+            "api_key": cerebras_key,
+            "model": "llama3.1-8b",
+            "supports_vision": False,
+        })
+
+    # 3. Mistral (free, 1B tokens/month)
+    mistral_key = os.environ.get("MISTRAL_API_KEY", "")
+    if mistral_key:
+        providers.append({
+            "name": "mistral",
+            "base_url": "https://api.mistral.ai/v1",
+            "api_key": mistral_key,
+            "model": "mistral-small-latest",
+            "supports_vision": False,
+        })
+
+    # 4. SambaNova (free, 70B model)
+    sambanova_key = os.environ.get("SAMBANOVA_API_KEY", "")
+    if sambanova_key:
+        providers.append({
+            "name": "sambanova",
+            "base_url": "https://api.sambanova.ai/v1",
+            "api_key": sambanova_key,
+            "model": "Meta-Llama-3.3-70B-Instruct",
+            "supports_vision": False,
+        })
+
+    # 5. Novita AI (free models)
+    novita_key = os.environ.get("NOVITA_API_KEY", "")
+    if novita_key:
+        providers.append({
+            "name": "novita",
+            "base_url": "https://api.novita.ai/v3/openai",
+            "api_key": novita_key,
+            "model": "qwen/qwen-2.5-72b-instruct",
+            "supports_vision": False,
+        })
+
+    # 6. Pollinations (no key needed)
+    providers.append({
+        "name": "pollinations",
+        "base_url": "https://text.pollinations.ai/openai",
+        "api_key": "dummy",
+        "model": "openai",
+        "supports_vision": False,
+    })
+
+    # 7. GPT-OSS (no key needed)
+    gptoss_url = os.environ.get("GPTOSS_URL", "https://broken-water-d859.junioralive.workers.dev/v1")
+    providers.append({
+        "name": "gpt-oss",
+        "base_url": gptoss_url,
+        "api_key": "dummy",
+        "model": "gpt-oss-20b",
+        "supports_vision": False,
+    })
+
+    # 8. OllamaFreeAPI (no key, community nodes)
+    providers.append({
+        "name": "ollama-free",
+        "base_url": None,
+        "api_key": "dummy",
+        "model": "llama3.2:3b",
+        "supports_vision": False,
+        "custom": True,
+    })
+
+    # --- RATE-LIMITED free (may fail temporarily) ---
+
+    # 9. Google Gemini (free but rate limited on new keys)
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    if gemini_key:
+        providers.append({
+            "name": "gemini",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "api_key": gemini_key,
+            "model": "gemini-2.0-flash",
+            "supports_vision": True,
+        })
+
+    # --- PAID (last resort) ---
+
     if OPENAI_API_KEY:
         providers.append({
             "name": "openai",
@@ -235,25 +335,6 @@ def _build_ai_providers() -> list[dict]:
             "model": "gpt-4o-mini",
             "supports_vision": True,
         })
-
-    # 2. DeepSeek (paid, text-only)
-    if DEEPSEEK_API_KEY:
-        providers.append({
-            "name": "deepseek",
-            "base_url": "https://api.deepseek.com",
-            "api_key": DEEPSEEK_API_KEY,
-            "model": "deepseek-chat",
-            "supports_vision": False,
-        })
-
-    # 3. Pollinations.ai (free, no key needed)
-    providers.append({
-        "name": "pollinations",
-        "base_url": "https://text.pollinations.ai/openai",
-        "api_key": "dummy",
-        "model": "openai",
-        "supports_vision": False,
-    })
 
     return providers
 
@@ -288,6 +369,15 @@ def _call_ai_vision(provider: dict, prompt: str, images: list[str]) -> Optional[
 
 def _call_ai_text(provider: dict, prompt: str) -> Optional[str]:
     """Call an AI provider with text-only prompt."""
+    # Custom handler for OllamaFreeAPI (non-OpenAI SDK)
+    if provider.get("custom") and provider["name"] == "ollama-free":
+        try:
+            from ollamafreeapi import OllamaFreeAPI
+            client = OllamaFreeAPI()
+            return client.chat(model=provider["model"], prompt=prompt)
+        except Exception:
+            return None
+
     try:
         from openai import OpenAI
     except ImportError:
@@ -810,101 +900,67 @@ def _score_resume_local(text: str) -> dict:
     }
 
 
-def _score_resume_ai(text: str) -> Optional[dict]:
-    """Score a resume using AI for deeper analysis."""
-    if not OPENAI_API_KEY:
-        return None
-
-    try:
-        from openai import OpenAI
-    except ImportError:
-        return None
-
-    client = OpenAI(api_key=OPENAI_API_KEY)
-
-    prompt = f"""You are an expert resume reviewer and ATS (Applicant Tracking System) analyst.
+_SCORE_PROMPT_TEMPLATE = """You are an expert resume reviewer and ATS analyst.
 Score this resume on a 0-100 scale across these categories. Be strict but fair.
-
-For each category, give a score and 1-2 specific, actionable tips to improve.
 
 Return ONLY valid JSON:
 {{
     "total_score": 0-100,
     "max_score": 100,
     "sections": {{
-        "contact_info": {{
-            "score": 0-10,
-            "max": 10,
-            "tips": ["tip1"]
-        }},
-        "summary": {{
-            "score": 0-10,
-            "max": 10,
-            "tips": ["tip1"]
-        }},
-        "skills": {{
-            "score": 0-15,
-            "max": 15,
-            "tips": ["tip1"]
-        }},
-        "experience": {{
-            "score": 0-25,
-            "max": 25,
-            "tips": ["tip1"]
-        }},
-        "education": {{
-            "score": 0-10,
-            "max": 10,
-            "tips": ["tip1"]
-        }},
-        "formatting": {{
-            "score": 0-15,
-            "max": 15,
-            "tips": ["tip1"]
-        }},
-        "ats_keywords": {{
-            "score": 0-15,
-            "max": 15,
-            "tips": ["tip1"]
-        }}
-    }},
-    "overall_tips": ["top 3 most impactful improvements"],
-    "strengths": ["top 3 strengths of this resume"]
+        "contact_info": {{ "score": 0-10, "max": 10, "tips": [] }},
+        "summary": {{ "score": 0-10, "max": 10, "tips": [] }},
+        "skills": {{ "score": 0-15, "max": 15, "tips": [] }},
+        "experience": {{ "score": 0-25, "max": 25, "tips": [] }},
+        "education": {{ "score": 0-10, "max": 10, "tips": [] }},
+        "formatting": {{ "score": 0-15, "max": 15, "tips": [] }},
+        "ats_keywords": {{ "score": 0-15, "max": 15, "tips": [] }}
+    }}
 }}
 
 RESUME TEXT:
-{text[:8000]}
 """
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=1500,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        result_text = response.choices[0].message.content
-        json_match = re.search(r"\{.*\}", result_text, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
-    except Exception as e:
-        logger.error(f"AI resume scoring failed: {e}")
+
+def _score_resume_ai(text: str) -> Optional[dict]:
+    """Score a resume using AI providers with automatic failover."""
+    providers = _build_ai_providers()
+    if not providers:
+        return None
+
+    prompt = _SCORE_PROMPT_TEMPLATE + text[:8000]
+
+    for provider in providers:
+        try:
+            logger.info(f"Trying resume score with {provider['name']}")
+            result_text = _call_ai_text(provider, prompt)
+            parsed = _parse_ai_response(result_text)
+            if parsed and "total_score" in parsed:
+                logger.info(f"Resume scored with {provider['name']}")
+                return parsed
+        except Exception as e:
+            if _is_quota_error(e):
+                logger.warning(f"{provider['name']} quota exceeded, trying next")
+                continue
+            logger.error(f"{provider['name']} scoring failed: {e}")
+            continue
 
     return None
 
 
 def score_resume(filepath: str) -> dict:
-    """Score a resume file. Uses AI if available, falls back to heuristics."""
+    """Score a resume file. Uses AI providers with failover, falls back to heuristics."""
     text = extract_text(filepath)
     if not text.strip():
         raise ValueError("Could not extract text from the resume file.")
 
-    # Try AI scoring first
+    # Try AI scoring (OpenAI → Pollinations → local)
     ai_score = _score_resume_ai(text)
     if ai_score:
         ai_score["method"] = "ai"
         return ai_score
 
-    # Fall back to local scoring
+    # Fall back to local scoring — always works
     result = _score_resume_local(text)
     result["method"] = "local"
     return result
