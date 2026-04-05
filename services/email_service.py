@@ -46,11 +46,14 @@ def send_otp_email(to_email: str, otp: str) -> bool:
     msg.attach(MIMEText(html, "html"))
 
     try:
+        print(f"[SMTP] Connecting to {SMTP_HOST}:{SMTP_PORT} as {SMTP_EMAIL}")
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
             server.starttls()
             server.login(SMTP_EMAIL, SMTP_PASSWORD)
             server.sendmail(SMTP_EMAIL, to_email, msg.as_string())
+        print(f"[SMTP] OTP sent to {to_email}")
         return True
     except Exception as e:
+        print(f"[SMTP] FAILED: {e}")
         logger.error(f"Failed to send OTP email: {e}")
         return False
