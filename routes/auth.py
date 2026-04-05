@@ -71,6 +71,7 @@ def signup():
         if not user:
             return jsonify({"error": "An account with this email already exists"}), 409
         _init_profile(user["id"], name, email)
+        session.permanent = True
         session["user_id"] = user["id"]
         return jsonify({
             "message": "Account created successfully",
@@ -115,6 +116,7 @@ def verify_otp():
         return jsonify({"error": "An account with this email already exists"}), 409
 
     _init_profile(user["id"], name, email)
+    session.permanent = True
     session["user_id"] = user["id"]
     return jsonify({
         "message": "Account verified and created successfully",
@@ -135,6 +137,7 @@ def login():
     if not user:
         return jsonify({"error": "Invalid email or password"}), 401
 
+    session.permanent = True
     session["user_id"] = user["id"]
     return jsonify({
         "message": "Logged in successfully",
@@ -244,5 +247,6 @@ def google_callback():
         user_id = user["id"]
         _init_profile(user_id, name, email, {"picture": google_user.get("picture", "")})
 
+    session.permanent = True
     session["user_id"] = user_id
     return redirect("/?auth_success=1")

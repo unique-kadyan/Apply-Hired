@@ -1100,7 +1100,7 @@
         // ============================================================
         // Profile Setup (Onboarding for new users)
         // ============================================================
-        function ProfileSetup({ profile, setProfile, showToast }) {
+        function ProfileSetup({ profile, setProfile, showToast, onComplete }) {
             const fileRef = useRef(null);
             const [uploading, setUploading] = useState(false);
             const [step, setStep] = useState(1); // 1 = upload, 2 = review
@@ -1172,9 +1172,14 @@
                         {/* Resume Score */}
                         {profile.resume_score && <ResumeScoreCard score={profile.resume_score} />}
 
+                        {/* Fix Resume CTA — shown when score < 100 */}
+                        {profile.resume_score && profile.resume_score.total_score < 100 && (
+                            <ResumeOptimizer profile={profile} setProfile={setProfile} showToast={showToast} />
+                        )}
+
                         <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', justifyContent: 'center' }}>
                             <button onClick={() => setStep(1)} style={{ ...styles.btn, ...styles.btnSecondary }}>Re-upload Resume</button>
-                            <button onClick={() => setSetupDone(true)}
+                            <button onClick={onComplete}
                                 style={{ ...styles.btn, ...styles.btnPrimary, padding: '0.7rem 2rem', fontSize: '1rem' }}>
                                 Continue to Dashboard
                             </button>
@@ -1311,7 +1316,7 @@
                                 <button onClick={handleLogout} style={{ ...styles.navLink, color: '#f87171', fontSize: '0.82rem' }}>Logout</button>
                             </div>
                         </div>
-                        <ProfileSetup profile={profile} setProfile={setProfile} showToast={showToast} />
+                        <ProfileSetup profile={profile} setProfile={setProfile} showToast={showToast} onComplete={() => setSetupDone(true)} />
                         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
                         <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
                     </div>
