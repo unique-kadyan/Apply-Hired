@@ -655,6 +655,12 @@
                             <option value="200000">$200k+</option>
                         </select>
                         <button style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }} onClick={() => { setPage(1); setFilters({ status: '', min_score: 0, source: '', salary: '' }); }}>Reset</button>
+                        <button style={{ ...styles.btn, ...styles.btnSm, ...styles.btnDanger }} onClick={async () => {
+                            if (!confirm('Clear all non-applied jobs? Jobs with status Applied, Interview, and Offer will be kept.')) return;
+                            const res = await api.post('/api/jobs/clear', {});
+                            showToast(`Cleared ${res.deleted} jobs. Kept ${res.kept?.join(', ')}.`, 'success');
+                            setPage(1); loadJobs();
+                        }}>Clear Old Jobs</button>
                     </div>
 
                     {/* Table */}

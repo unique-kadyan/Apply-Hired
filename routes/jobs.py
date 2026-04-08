@@ -97,6 +97,21 @@ def gen_cover_letter(job_id):
     return jsonify({"cover_letter": letter})
 
 
+# ---- Clear jobs -----------------------------------------------------------
+
+@jobs_bp.route("/jobs/clear", methods=["POST"])
+@login_required
+def clear_jobs():
+    """Delete non-applied jobs. Keeps applied, interview, and offer jobs."""
+    keep_statuses = {"applied", "interview", "offer"}
+    db = _get_db()
+    result = db.jobs.delete_many({
+        "user_id": str(request.user["id"]),
+        "status": {"$nin": list(keep_statuses)},
+    })
+    return jsonify({"deleted": result.deleted_count, "kept": list(keep_statuses)})
+
+
 # ---- Mark applied by URL (used by Chrome Extension) ----------------------
 
 @jobs_bp.route("/mark-applied-by-url", methods=["POST"])
