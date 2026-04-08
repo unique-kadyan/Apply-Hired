@@ -5,7 +5,7 @@ from typing import Optional
 
 from jinja2 import Template
 
-from config import PROFILE, OPENAI_API_KEY
+from config import PROFILE
 
 logger = logging.getLogger(__name__)
 
@@ -97,17 +97,12 @@ def generate_cover_letter_template(job) -> str:
 # ---------------------------------------------------------------------------
 
 def generate_cover_letter_ai(job) -> Optional[str]:
-    """Generate a tailored cover letter using OpenAI GPT."""
-    if not OPENAI_API_KEY:
-        return None
+    """Generate a tailored cover letter using free AI providers with failover."""
+    from resume_parser import _build_ai_providers, _call_ai_text, _is_quota_error
 
-    try:
-        from openai import OpenAI
-    except ImportError:
-        logger.warning("openai package not installed — skipping AI cover letter")
+    providers = _build_ai_providers()
+    if not providers:
         return None
-
-    client = OpenAI(api_key=OPENAI_API_KEY)
 
     skills_text = ", ".join(
         skill for group in PROFILE["skills"].values() for skill in group
@@ -133,7 +128,7 @@ CANDIDATE PROFILE:
 JOB DETAILS:
 - Title: {job.title}
 - Company: {job.company}
-- Description: {job.description[:2000]}
+- Description: {job.description[:1000]}
 
 INSTRUCTIONS:
 1. Address "Dear Hiring Team at {job.company}"
@@ -145,16 +140,20 @@ INSTRUCTIONS:
 7. Do NOT fabricate any skills or experience not in the profile
 """
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=1000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logger.warning(f"AI cover letter generation failed: {e}")
-        return None
+    for provider in providers:
+        try:
+            result = _call_ai_text(provider, prompt)
+            if result and len(result) > 50:
+                logger.info(f"Cover letter generated with {provider['name']}")
+                return result
+        except Exception as e:
+            if _is_quota_error(e):
+                logger.warning(f"{provider['name']} quota exceeded, trying next")
+                continue
+            logger.warning(f"Cover letter failed ({provider['name']}): {e}")
+            continue
+
+    return None
 
 
 # ---------------------------------------------------------------------------
