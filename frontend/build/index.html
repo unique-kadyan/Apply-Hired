@@ -1052,8 +1052,8 @@
                 if (totalPages > 1) doc.text(`${p} / ${totalPages}`, PAGE_W - MR, PAGE_H - MB + 7, { align: 'right' });
             }
 
-            const safeName = (jobTitle || 'cover-letter').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            doc.save(`cover_letter_${safeName}.pdf`);
+            const slug = s => (s || '').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase();
+            doc.save(`cover_letter_${slug(company)}_${slug(jobTitle)}.pdf`);
         }
 
         function Jobs({ navigate, showToast }) {
@@ -1122,9 +1122,30 @@
             const [niSavedReasons, setNiSavedReasons] = useState([]);
             const [niSaving, setNiSaving] = useState(false);
 
-            // Load user's saved custom reasons + initial tab counts once
+            // Skip-filter state (derived from custom not-interested reasons)
+            const [skipKeywords, setSkipKeywords] = useState([]);
+            const [skipReasons, setSkipReasons] = useState([]);   // source custom reasons
+            const [showSkipPanel, setShowSkipPanel] = useState(false);
+
+            const loadSkipKeywords = useCallback(() => {
+                api.get('/api/jobs/skip-keywords').then(r => {
+                    setSkipKeywords(r.keywords || []);
+                    setSkipReasons(r.custom_reasons || []);
+                });
+            }, []);
+
+            const removeSkipReason = async (reason) => {
+                const res = await api.post('/api/jobs/not-interested-reasons/delete', { reason });
+                setNiSavedReasons(res.reasons || []);
+                loadSkipKeywords();
+                loadJobs();  // reload — previously hidden jobs may now appear
+                showToast(`Skip topic "${reason}" removed`, 'success');
+            };
+
+            // Load user's saved custom reasons + initial tab counts + skip keywords once
             useEffect(() => {
                 api.get('/api/jobs/not-interested-reasons').then(r => setNiSavedReasons(r.reasons || []));
+                loadSkipKeywords();
                 refreshCounts();
             }, []);
 
@@ -1150,6 +1171,7 @@
                 showToast(`Marked as Not Interested: "${finalReason}"`, 'success');
                 setNiModal(null);
                 setNiSaving(false);
+                loadSkipKeywords();  // refresh skip pills in case a new custom keyword was added
                 loadJobs();
             };
 
@@ -1342,6 +1364,51 @@
                             );
                         })}
                     </div>
+
+                    {/* Skip-filter info bar — shown on not_applied tab when keywords are active */}
+                    {tab === 'not_applied' && skipKeywords.length > 0 && (
+                        <div style={{ marginBottom: '0.75rem', background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.25)', borderRadius: 10, padding: '0.55rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.8rem', color: '#f87171', fontWeight: 600, whiteSpace: 'nowrap' }}>🚫 {skipKeywords.length} topic{skipKeywords.length !== 1 ? 's' : ''} filtered</span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', flex: 1 }}>
+                                {skipKeywords.map(kw => (
+                                    <span key={kw} style={{ background: 'rgba(220,38,38,0.15)', color: '#fca5a5', padding: '0.15rem 0.55rem', borderRadius: 20, fontSize: '0.75rem', fontWeight: 500 }}>{kw}</span>
+                                ))}
+                            </div>
+                            <button onClick={() => setShowSkipPanel(p => !p)}
+                                style={{ background: 'none', border: '1px solid rgba(220,38,38,0.35)', borderRadius: 7, color: '#f87171', cursor: 'pointer', fontSize: '0.75rem', padding: '0.25rem 0.6rem', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                {showSkipPanel ? 'Hide' : 'Manage'}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Skip-filter management panel */}
+                    {showSkipPanel && tab === 'not_applied' && (
+                        <div style={{ marginBottom: '0.75rem', background: 'var(--bg2)', border: '1px solid rgba(220,38,38,0.3)', borderRadius: 10, padding: '0.85rem 1rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                                <h4 style={{ fontSize: '0.85rem', color: '#f87171', margin: 0 }}>Skip Topics — jobs matching these won't appear in "Not Applied"</h4>
+                                <button onClick={() => setShowSkipPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1 }}>×</button>
+                            </div>
+                            {skipReasons.length === 0 ? (
+                                <p style={{ fontSize: '0.82rem', color: 'var(--muted)', margin: 0 }}>No custom skip topics yet. When you skip jobs with a custom reason, keywords are extracted automatically.</p>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                                    {skipReasons.map(reason => (
+                                        <div key={reason} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.45rem 0.75rem', gap: '0.5rem' }}>
+                                            <span style={{ fontSize: '0.85rem', color: 'var(--text2)', flex: 1 }}>{reason}</span>
+                                            <button onClick={() => removeSkipReason(reason)}
+                                                title="Remove this skip topic"
+                                                style={{ background: 'rgba(220,38,38,0.12)', border: '1px solid rgba(220,38,38,0.3)', borderRadius: 6, color: '#f87171', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.55rem', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                                ✕ Remove
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.65rem', marginBottom: 0 }}>
+                                Only custom reasons produce keywords. Predefined reasons (Salary, Location, etc.) are too generic and are not used for filtering.
+                            </p>
+                        </div>
+                    )}
 
                     {/* Global search bar */}
                     <div style={{ position: 'relative', marginBottom: '0.9rem' }}>

@@ -10,8 +10,9 @@ from scrapers import Job
 from cover_letter import generate_cover_letter, check_profile_completeness
 from tracker import (
     get_jobs, get_job_by_id, update_job_status, _get_db, _to_object_id,
-    get_not_interested_reasons, save_not_interested_reason, update_user_profile,
-    update_interview_details, update_offer_details,
+    get_not_interested_reasons, save_not_interested_reason, delete_not_interested_reason,
+    update_user_profile, update_interview_details, update_offer_details,
+    get_skip_filter_keywords,
 )
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/api")
@@ -78,6 +79,9 @@ def list_jobs():
     from tracker import VALID_SORT_FIELDS
     final_sort = sort_by if sort_by in VALID_SORT_FIELDS else default_sort
 
+    # For the not-applied tab, suppress jobs matching the user's custom skip topics
+    skip_keywords = get_skip_filter_keywords(request.user["id"]) if tab == "not_applied" else None
+
     jobs, total = get_jobs(
         status=status or None,
         status_in=status_in,
@@ -90,6 +94,7 @@ def list_jobs():
         page=page,
         per_page=per_page,
         user_id=request.user["id"],
+        exclude_title_keywords=skip_keywords,
     )
     for job in jobs:
         job["tags"] = json.loads(job.get("tags", "[]"))
@@ -144,6 +149,29 @@ def add_ni_reason():
         return jsonify({"error": "reason is required"}), 400
     updated = save_not_interested_reason(request.user["id"], reason)
     return jsonify({"reasons": updated})
+
+
+@jobs_bp.route("/jobs/not-interested-reasons/delete", methods=["POST"])
+@login_required
+def remove_ni_reason():
+    """Remove a specific not-interested reason (and its derived skip keywords)."""
+    data = request.get_json() or {}
+    reason = data.get("reason", "").strip()
+    if not reason:
+        return jsonify({"error": "reason is required"}), 400
+    updated = delete_not_interested_reason(request.user["id"], reason)
+    return jsonify({"reasons": updated})
+
+
+@jobs_bp.route("/jobs/skip-keywords", methods=["GET"])
+@login_required
+def get_skip_keywords_route():
+    """Return the derived skip keywords + the source reasons that produced them."""
+    from tracker import _PREDEFINED_REASONS
+    reasons = get_not_interested_reasons(request.user["id"])
+    custom_reasons = [r for r in reasons if r not in _PREDEFINED_REASONS]
+    keywords = get_skip_filter_keywords(request.user["id"])
+    return jsonify({"keywords": keywords, "custom_reasons": custom_reasons})
 
 
 @jobs_bp.route("/jobs/<job_id>", methods=["GET"])
