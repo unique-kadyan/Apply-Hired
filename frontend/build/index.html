@@ -161,9 +161,48 @@
             const [linkedinInput, setLinkedinInput] = useState(profile.linkedin || '');
             const [portfolioInput, setPortfolioInput] = useState(profile.website || '');
             const [loading, setLoading] = useState('');
-            const [githubRateLimit, setGithubRateLimit] = useState(false); // show token panel
+            const [githubRateLimit, setGithubRateLimit] = useState(false);
             const [githubTokenInput, setGithubTokenInput] = useState(profile.github_token ? '••••••••' : '');
             const [editingToken, setEditingToken] = useState(false);
+
+            // Gmail state
+            const [gmailStatus, setGmailStatus] = useState(null); // null = loading, {connected, last_sync}
+            const [gmailSyncing, setGmailSyncing] = useState(false);
+            const [gmailResult, setGmailResult] = useState(null); // last sync result
+
+            useEffect(() => {
+                api.get('/api/gmail/status').then(r => setGmailStatus(r)).catch(() => setGmailStatus({ connected: false }));
+            }, []);
+
+            // Handle ?gmail_connected=1 redirect from OAuth callback
+            useEffect(() => {
+                if (new URLSearchParams(window.location.search).get('gmail_connected')) {
+                    window.history.replaceState({}, '', '/');
+                    api.get('/api/gmail/status').then(r => setGmailStatus(r));
+                    showToast('Gmail connected! Click "Sync Now" to scan for interview & offer emails.', 'success');
+                }
+            }, []);
+
+            const gmailSync = async () => {
+                setGmailSyncing(true);
+                setGmailResult(null);
+                try {
+                    const res = await api.post('/api/gmail/sync', {});
+                    setGmailResult(res);
+                    api.get('/api/gmail/status').then(r => setGmailStatus(r));
+                    const total = (res.interview || 0) + (res.offer || 0);
+                    if (total > 0) showToast(`Gmail sync: ${res.interview} interview${res.interview !== 1 ? 's' : ''}, ${res.offer} offer${res.offer !== 1 ? 's' : ''} detected!`, 'success');
+                    else showToast(`Gmail sync complete — ${res.scanned} emails scanned, no new updates.`, 'success');
+                } catch { showToast('Gmail sync failed', 'error'); }
+                setGmailSyncing(false);
+            };
+
+            const gmailDisconnect = async () => {
+                await api.post('/api/gmail/disconnect', {});
+                setGmailStatus({ connected: false });
+                setGmailResult(null);
+                showToast('Gmail disconnected', 'success');
+            };
 
             // GitHub token generation URL — opens GitHub's fine-grained PAT page
             const GITHUB_TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
@@ -384,6 +423,99 @@
                             ))}
                         </div>
                     )}
+
+                    {/* ── Gmail Integration ─────────────────────────────── */}
+                    <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <div>
+                                <h3 style={{ fontSize: '0.95rem', margin: 0 }}>
+                                    <span style={{ marginRight: '0.4rem' }}>📧</span> Gmail — Auto-detect Interviews & Offers
+                                </h3>
+                                <p style={{ color: 'var(--muted)', fontSize: '0.78rem', margin: '0.2rem 0 0' }}>
+                                    Connects with <strong>read-only</strong> access. Scans for interview invitations and offer letters and automatically updates your job statuses.
+                                </p>
+                            </div>
+                            {gmailStatus?.connected && (
+                                <span style={{ background: 'rgba(5,150,105,0.15)', color: '#6ee7b7', border: '1px solid rgba(5,150,105,0.3)', padding: '0.2rem 0.65rem', borderRadius: 20, fontSize: '0.75rem', fontWeight: 600, flexShrink: 0 }}>✓ Connected</span>
+                            )}
+                        </div>
+
+                        {gmailStatus === null ? (
+                            <p style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>Checking…</p>
+                        ) : gmailStatus.connected ? (
+                            <div>
+                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.6rem' }}>
+                                    <button onClick={gmailSync} disabled={gmailSyncing}
+                                        style={{ ...styles.btn, ...styles.btnSuccess, fontSize: '0.85rem', padding: '0.45rem 1.1rem' }}>
+                                        {gmailSyncing ? '⏳ Scanning Gmail…' : '🔄 Sync Now'}
+                                    </button>
+                                    <button onClick={gmailDisconnect}
+                                        style={{ ...styles.btn, background: 'rgba(220,38,38,0.1)', color: '#f87171', border: '1px solid rgba(220,38,38,0.3)', fontSize: '0.82rem', padding: '0.45rem 0.9rem' }}>
+                                        Disconnect
+                                    </button>
+                                    {gmailStatus.last_sync && (
+                                        <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Last sync: {fmtDate(gmailStatus.last_sync)}</span>
+                                    )}
+                                </div>
+
+                                {/* Sync result */}
+                                {gmailResult && (
+                                    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '0.75rem 1rem', fontSize: '0.83rem' }}>
+                                        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', marginBottom: gmailResult.updates?.length ? '0.6rem' : 0 }}>
+                                            <span>📬 <strong>{gmailResult.scanned}</strong> emails scanned</span>
+                                            <span style={{ color: '#d8b4fe' }}>📅 <strong>{gmailResult.interview}</strong> interview{gmailResult.interview !== 1 ? 's' : ''} found</span>
+                                            <span style={{ color: '#fde68a' }}>💰 <strong>{gmailResult.offer}</strong> offer{gmailResult.offer !== 1 ? 's' : ''} found</span>
+                                        </div>
+                                        {gmailResult.updates?.length > 0 && (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.4rem' }}>
+                                                {gmailResult.updates.map((u, i) => {
+                                                    const isOffer = u.status === 'offer';
+                                                    const accent  = isOffer ? { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', tag: 'rgba(245,158,11,0.2)', tagText: '#fde68a' }
+                                                                             : { bg: 'rgba(124,58,237,0.1)', border: 'rgba(124,58,237,0.3)', tag: 'rgba(124,58,237,0.2)', tagText: '#d8b4fe' };
+                                                    const ext = u.extracted || {};
+                                                    return (
+                                                        <div key={i} style={{ background: accent.bg, border: `1px solid ${accent.border}`, borderRadius: 8, padding: '0.6rem 0.85rem' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: Object.keys(ext).length ? '0.4rem' : 0 }}>
+                                                                <span style={{ background: accent.tag, color: accent.tagText, padding: '0.1rem 0.45rem', borderRadius: 6, fontWeight: 700, fontSize: '0.72rem', textTransform: 'capitalize', flexShrink: 0 }}>{u.status}</span>
+                                                                <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{u.company}</span>
+                                                                <span style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>— {u.job_title}</span>
+                                                            </div>
+                                                            {Object.keys(ext).length > 0 && (
+                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem 1rem', fontSize: '0.78rem', color: 'var(--text2)' }}>
+                                                                    {ext.date       && <span>📅 <strong>Date:</strong> {ext.date}{ext.time ? ` at ${ext.time}` : ''}{ext.timezone ? ` ${ext.timezone}` : ''}</span>}
+                                                                    {ext.round      && <span>🎯 <strong>Round:</strong> {ext.round}</span>}
+                                                                    {ext.platform   && <span>💻 <strong>Platform:</strong> {ext.platform}</span>}
+                                                                    {ext.interviewer && <span>👤 <strong>Interviewer:</strong> {ext.interviewer}</span>}
+                                                                    {ext.meeting_link && <a href={ext.meeting_link} target="_blank" rel="noopener" style={{ color: accent.tagText }}>🔗 Join Meeting</a>}
+                                                                    {ext.salary     && <span>💰 <strong>Salary:</strong> {ext.salary}{ext.currency ? ` ${ext.currency}` : ''}</span>}
+                                                                    {ext.joining_date && <span>🗓 <strong>Joining:</strong> {ext.joining_date}</span>}
+                                                                    {ext.deadline   && <span>⏰ <strong>Deadline:</strong> {ext.deadline}</span>}
+                                                                    {ext.location   && <span>📍 <strong>Location:</strong> {ext.location}</span>}
+                                                                    {ext.benefits   && <span>🎁 <strong>Benefits:</strong> {ext.benefits}</span>}
+                                                                </div>
+                                                            )}
+                                                            <p style={{ fontSize: '0.72rem', color: 'var(--muted)', marginTop: '0.3rem', marginBottom: 0 }}>📧 {u.email_subject}</p>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div>
+                                <a href="/api/gmail/auth"
+                                    style={{ ...styles.btn, background: 'linear-gradient(135deg,#4285f4,#34a853)', color: '#fff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem', padding: '0.5rem 1.2rem' }}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4C2.9 4 2 4.9 2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 2-8 5-8-5h16zm0 12H4V8l8 5 8-5v10z"/></svg>
+                                    Connect Gmail
+                                </a>
+                                <p style={{ color: 'var(--muted)', fontSize: '0.75rem', marginTop: '0.5rem' }}>
+                                    You'll be asked to grant <strong>read-only</strong> Gmail access. JobBot never reads personal emails — only scans for subject lines containing "interview", "offer", or "congratulations".
+                                </p>
+                            </div>
+                        )}
+                    </div>
                 </div>
             );
         }
@@ -3298,7 +3430,7 @@
                 return (
                     <div>
                         <div style={styles.navbar}>
-                            <div style={styles.logo}>JobBot</div>
+                            <div style={{ ...styles.logo, cursor: 'pointer' }} onClick={() => navigate('dashboard')}>JobBot</div>
                             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                 <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{user.name}</span>
                                 <button onClick={handleLogout} style={{ ...styles.navLink, color: '#f87171', fontSize: '0.82rem' }}>Logout</button>
@@ -3316,7 +3448,7 @@
                 <div>
                     {/* Navbar */}
                     <div style={styles.navbar}>
-                        <div style={styles.logo}>JobBot</div>
+                        <div style={{ ...styles.logo, cursor: 'pointer' }} onClick={() => navigate('dashboard')}>JobBot</div>
                         <nav style={{ display: 'flex', gap: '0.25rem', flex: 1 }}>
                             {[['dashboard', 'Dashboard'], ['jobs', 'Jobs'], ['search', 'Search'], ['profile', 'Profile']].map(([key, label]) => (
                                 <button key={key} onClick={() => navigate(key)}

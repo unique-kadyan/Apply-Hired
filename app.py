@@ -10,6 +10,7 @@ from routes.profile import profile_bp
 from routes.jobs import jobs_bp
 from routes.search import search_bp
 from routes.payment import payment_bp
+from routes.gmail import gmail_bp
 
 
 def create_app() -> Flask:
@@ -26,6 +27,7 @@ def create_app() -> Flask:
     app.register_blueprint(jobs_bp)       # /api/jobs/*, /api/apply, /api/auto-apply
     app.register_blueprint(search_bp)     # /api/search/*, /api/stats
     app.register_blueprint(payment_bp)    # /api/payment/*
+    app.register_blueprint(gmail_bp)      # /api/gmail/*
 
     # Serve React SPA
     @app.route("/")
