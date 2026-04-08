@@ -77,6 +77,21 @@ class BaseScraper:
                 return None
         return None
 
+    def _safe_json(self, resp) -> Optional[dict]:
+        """Safely parse JSON from a response. Returns None if not JSON."""
+        if not resp:
+            return None
+        content_type = resp.headers.get("content-type", "")
+        if "json" not in content_type and "javascript" not in content_type:
+            # Check if body looks like JSON anyway
+            text = resp.text.strip()
+            if not text or (not text.startswith("{") and not text.startswith("[")):
+                return None
+        try:
+            return resp.json()
+        except Exception:
+            return None
+
 
 # ---------------------------------------------------------------------------
 # RemoteOK — free JSON API
@@ -162,14 +177,11 @@ class RemotiveScraper(BaseScraper):
                 break
 
         resp = self._safe_get(self.base_url, params={"category": category, "limit": 100})
-        if not resp:
+        parsed = self._safe_json(resp)
+        if not parsed:
             return []
 
-        try:
-            data = resp.json().get("jobs", [])
-        except Exception:
-            logger.warning(f"[{self.name}] Non-JSON response")
-            return []
+        data = parsed.get("jobs", [])
         jobs = []
         query_lower = query.lower()
         keywords = query_lower.split()
@@ -881,15 +893,11 @@ class HimalayasScraper(BaseScraper):
 
     def fetch_jobs(self, query: str) -> list[Job]:
         resp = self._safe_get(self.base_url, params={"limit": 25, "q": query})
-        if not resp:
-            return []
-        try:
-            data = resp.json()
-        except Exception:
-            logger.warning(f"[{self.name}] Non-JSON response")
+        parsed = self._safe_json(resp)
+        if not parsed:
             return []
         jobs = []
-        for item in data.get("jobs", []):
+        for item in parsed.get("jobs", []):
             tags = item.get("categories", []) or []
             salary = ""
             if item.get("salaryCurrency") and item.get("salaryMin"):

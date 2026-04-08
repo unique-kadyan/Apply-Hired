@@ -23,6 +23,8 @@
         a { color: #60a5fa; text-decoration: none; }
         a:hover { text-decoration: underline; }
         ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
+        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 </head>
 <body>
@@ -94,6 +96,7 @@
         }
 
         function ConnectAccounts({ profile, setProfile, showToast }) {
+            const [editing, setEditing] = useState(null); // which account is being edited
             const [githubInput, setGithubInput] = useState(profile.github_username || '');
             const [linkedinInput, setLinkedinInput] = useState(profile.linkedin || '');
             const [portfolioInput, setPortfolioInput] = useState(profile.website || '');
@@ -105,7 +108,7 @@
                 try {
                     const res = await api.post('/api/profile/connect/github', { username: githubInput });
                     if (res.error) showToast(res.error, 'error');
-                    else { setProfile(res.profile); showToast('GitHub imported! Skills & projects updated.', 'success'); }
+                    else { setProfile(res.profile); showToast('GitHub imported!', 'success'); setEditing(null); }
                 } catch (err) { showToast('Failed to import GitHub', 'error'); }
                 setLoading('');
             };
@@ -116,7 +119,7 @@
                 try {
                     const res = await api.post('/api/profile/connect/linkedin', { url: linkedinInput });
                     if (res.error) showToast(res.error, 'error');
-                    else { setProfile(res.profile); showToast('LinkedIn connected!', 'success'); }
+                    else { setProfile(res.profile); showToast('LinkedIn connected!', 'success'); setEditing(null); }
                 } catch (err) { showToast('Failed to connect LinkedIn', 'error'); }
                 setLoading('');
             };
@@ -127,49 +130,80 @@
                 try {
                     const res = await api.post('/api/profile/connect/portfolio', { url: portfolioInput });
                     if (res.error) showToast(res.error, 'error');
-                    else { setProfile(res.profile); showToast('Portfolio connected!', 'success'); }
+                    else { setProfile(res.profile); showToast('Portfolio connected!', 'success'); setEditing(null); }
                 } catch (err) { showToast('Failed to connect portfolio', 'error'); }
                 setLoading('');
             };
 
-            const rowStyle = { display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem' };
+            const accounts = [
+                { key: 'github', label: 'GitHub', value: profile.github, display: profile.github_username || profile.github, input: githubInput, setInput: setGithubInput, connect: connectGithub, placeholder: 'username or URL' },
+                { key: 'linkedin', label: 'LinkedIn', value: profile.linkedin, display: profile.linkedin, input: linkedinInput, setInput: setLinkedinInput, connect: connectLinkedin, placeholder: 'https://linkedin.com/in/yourname' },
+                { key: 'portfolio', label: 'Portfolio', value: profile.website, display: profile.website, input: portfolioInput, setInput: setPortfolioInput, connect: connectPortfolio, placeholder: 'https://yoursite.com' },
+            ];
+
+            const connectedStyle = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.6rem 0', borderBottom: '1px solid var(--border)' };
+            const editRowStyle = { display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.6rem 0', borderBottom: '1px solid var(--border)' };
 
             return (
                 <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 14, padding: '1.5rem', marginBottom: '1rem' }}>
-                    <h2 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Connect Accounts</h2>
-
-                    <div style={rowStyle}>
-                        <span style={{ color: 'var(--muted)', fontSize: '0.85rem', minWidth: 70 }}>GitHub</span>
-                        <input style={{ ...styles.input, flex: 1 }} value={githubInput} onChange={e => setGithubInput(e.target.value)}
-                               placeholder="username or https://github.com/username" />
-                        <button onClick={connectGithub} disabled={loading === 'github'}
-                            style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, whiteSpace: 'nowrap' }}>
-                            {loading === 'github' ? 'Importing...' : profile.github ? 'Update' : 'Import'}
-                        </button>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                        <h2 style={{ fontSize: '1.1rem', margin: 0 }}>Connected Accounts</h2>
+                        {profile.profile_updated_at && (
+                            <span style={{ color: '#475569', fontSize: '0.72rem' }}>
+                                Updated {new Date(profile.profile_updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                        )}
                     </div>
 
-                    <div style={rowStyle}>
-                        <span style={{ color: 'var(--muted)', fontSize: '0.85rem', minWidth: 70 }}>LinkedIn</span>
-                        <input style={{ ...styles.input, flex: 1 }} value={linkedinInput} onChange={e => setLinkedinInput(e.target.value)}
-                               placeholder="https://linkedin.com/in/yourname" />
-                        <button onClick={connectLinkedin} disabled={loading === 'linkedin'}
-                            style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, whiteSpace: 'nowrap' }}>
-                            {loading === 'linkedin' ? 'Saving...' : profile.linkedin ? 'Update' : 'Connect'}
-                        </button>
-                    </div>
-
-                    <div style={rowStyle}>
-                        <span style={{ color: 'var(--muted)', fontSize: '0.85rem', minWidth: 70 }}>Portfolio</span>
-                        <input style={{ ...styles.input, flex: 1 }} value={portfolioInput} onChange={e => setPortfolioInput(e.target.value)}
-                               placeholder="https://yoursite.com" />
-                        <button onClick={connectPortfolio} disabled={loading === 'portfolio'}
-                            style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, whiteSpace: 'nowrap' }}>
-                            {loading === 'portfolio' ? 'Saving...' : profile.website ? 'Update' : 'Connect'}
-                        </button>
-                    </div>
+                    {accounts.map(acc => (
+                        <div key={acc.key}>
+                            {editing === acc.key ? (
+                                <div style={editRowStyle}>
+                                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem', minWidth: 65 }}>{acc.label}</span>
+                                    <input style={{ ...styles.input, flex: 1, marginBottom: 0 }} value={acc.input} onChange={e => acc.setInput(e.target.value)}
+                                           placeholder={acc.placeholder} autoFocus />
+                                    <button onClick={acc.connect} disabled={loading === acc.key}
+                                        style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary }}>
+                                        {loading === acc.key ? '...' : 'Save'}
+                                    </button>
+                                    <button onClick={() => setEditing(null)}
+                                        style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }}>
+                                        Cancel
+                                    </button>
+                                </div>
+                            ) : acc.value ? (
+                                <div style={connectedStyle}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <span style={{ color: 'var(--green2)', fontSize: '0.82rem' }}>&#10003;</span>
+                                        <span style={{ color: 'var(--muted)', fontSize: '0.85rem', minWidth: 55 }}>{acc.label}</span>
+                                        <a href={acc.display && acc.display.startsWith('http') ? acc.display : '#'} target="_blank" rel="noopener"
+                                           style={{ fontSize: '0.85rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>
+                                            {acc.display}
+                                        </a>
+                                    </div>
+                                    <button onClick={() => { setEditing(acc.key); acc.setInput(acc.display || ''); }}
+                                        style={{ background: 'none', border: 'none', color: 'var(--accent2)', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>
+                                        Edit
+                                    </button>
+                                </div>
+                            ) : (
+                                <div style={connectedStyle}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <span style={{ color: '#475569', fontSize: '0.82rem' }}>&#9675;</span>
+                                        <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{acc.label}</span>
+                                        <span style={{ color: '#475569', fontSize: '0.82rem' }}>Not connected</span>
+                                    </div>
+                                    <button onClick={() => setEditing(acc.key)}
+                                        style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, fontSize: '0.78rem' }}>
+                                        Connect
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ))}
 
                     {profile.projects && profile.projects.length > 0 && (
-                        <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
+                        <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem' }}>
                             <h3 style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '0.5rem' }}>GitHub Projects</h3>
                             {profile.projects.map((p, i) => (
                                 <div key={i} style={{ marginBottom: '0.4rem' }}>
@@ -517,6 +551,51 @@
         // ============================================================
         // Jobs Page
         // ============================================================
+        // ---- Salary helpers (frontend display) ----------------------------
+        const CURRENCY_SYMBOLS = { INR:'₹', GBP:'£', EUR:'€', JPY:'¥', AUD:'A$', CAD:'C$', SGD:'S$', AED:'AED ', ZAR:'R', BRL:'R$', USD:'$', CHF:'CHF ', SEK:'SEK ', NOK:'NOK ', DKK:'DKK ', PLN:'PLN ', HUF:'HUF ', MXN:'MX$', NZD:'NZ$', HKD:'HK$' };
+        function detectCurrency(salaryStr, location) {
+            const s = salaryStr || '';
+            if (/₹|INR|Rs/i.test(s)) return 'INR';
+            if (/£|GBP/i.test(s)) return 'GBP';
+            if (/€|EUR/i.test(s)) return 'EUR';
+            if (/A\$|AUD/i.test(s)) return 'AUD';
+            if (/C\$|CAD/i.test(s)) return 'CAD';
+            if (/S\$|SGD/i.test(s)) return 'SGD';
+            if (/AED|dirham/i.test(s)) return 'AED';
+            if (/R\$|BRL/i.test(s)) return 'BRL';
+            if (/CHF/i.test(s)) return 'CHF';
+            if (/NZ\$|NZD/i.test(s)) return 'NZD';
+            if (/HK\$|HKD/i.test(s)) return 'HKD';
+            if (/\$/.test(s)) return 'USD';
+            const loc = (location || '').toLowerCase();
+            if (loc.includes('india')) return 'INR';
+            if (loc.includes('uk') || loc.includes('united kingdom') || loc.includes('london')) return 'GBP';
+            if (loc.includes('germany') || loc.includes('france') || loc.includes('netherlands') || loc.includes('europe')) return 'EUR';
+            if (loc.includes('australia')) return 'AUD';
+            if (loc.includes('canada')) return 'CAD';
+            if (loc.includes('singapore')) return 'SGD';
+            if (loc.includes('uae') || loc.includes('dubai')) return 'AED';
+            return 'USD';
+        }
+        function formatSalary(salaryStr, location) {
+            if (!salaryStr || !salaryStr.trim()) return null;
+            const currency = detectCurrency(salaryStr, location);
+            const sym = CURRENCY_SYMBOLS[currency] || '';
+            // Extract all numbers
+            const nums = (salaryStr.match(/[\d,]+/g) || []).map(n => parseInt(n.replace(/,/g, '')));
+            if (!nums.length) return salaryStr;
+            const hasK = /k/i.test(salaryStr);
+            const mult = hasK ? 1000 : 1;
+            const fmt = n => {
+                const v = n * mult;
+                if (v >= 100000) return sym + (v / 1000).toFixed(0) + 'k';
+                if (v >= 1000)   return sym + v.toLocaleString();
+                return sym + v;
+            };
+            if (nums.length === 1) return fmt(nums[0]);
+            return `${fmt(Math.min(...nums))} – ${fmt(Math.max(...nums))}`;
+        }
+
         function Jobs({ navigate, showToast }) {
             const [jobs, setJobs] = useState([]);
             const [selected, setSelected] = useState(new Set());
@@ -524,13 +603,114 @@
             const [loading, setLoading] = useState(true);
             const [page, setPage] = useState(1);
             const [total, setTotal] = useState(0);
+            const [tab, setTab] = useState('not_applied'); // 'not_applied' | 'applied' | 'not_interested'
+            const [jobPanel, setJobPanel] = useState(null); // job object for highlight panel
             const perPage = 50;
             const MAX_SELECT = 10;
+
+            const appliedStatuses = ['applied', 'interview', 'offer'];
+            const PREDEFINED_REASONS = [
+                'Salary too low',
+                'Location not suitable',
+                'Role mismatch — not what I do',
+                'Company concerns',
+                'Too senior / too junior',
+                'Already applied elsewhere',
+                'Poor job description',
+                'Contract / freelance only',
+            ];
+
+            // Not-Interested modal state
+            const [niModal, setNiModal] = useState(null); // job object or null
+            const [niReason, setNiReason] = useState('');
+            const [niOtherText, setNiOtherText] = useState('');
+            const [niSavedReasons, setNiSavedReasons] = useState([]);
+            const [niSaving, setNiSaving] = useState(false);
+
+            // Load user's saved custom reasons once
+            useEffect(() => {
+                api.get('/api/jobs/not-interested-reasons').then(r => setNiSavedReasons(r.reasons || []));
+            }, []);
+
+            const openNiModal = (job) => {
+                setNiModal(job);
+                setNiReason('');
+                setNiOtherText('');
+            };
+
+            const submitNotInterested = async () => {
+                if (!niReason) return;
+                setNiSaving(true);
+                let finalReason = niReason === '__other__' ? niOtherText.trim() : niReason;
+                if (!finalReason) { setNiSaving(false); return; }
+
+                // If custom reason, save it for future
+                if (niReason === '__other__' && finalReason) {
+                    const res = await api.post('/api/jobs/not-interested-reasons', { reason: finalReason });
+                    setNiSavedReasons(res.reasons || niSavedReasons);
+                }
+
+                await api.post(`/api/jobs/${niModal.id}/status`, { status: 'not_interested', notes: finalReason });
+                showToast(`Marked as Not Interested: "${finalReason}"`, 'success');
+                setNiModal(null);
+                setNiSaving(false);
+                loadJobs();
+            };
+
+            // Cover letter modal state
+            const [clModal, setClModal] = useState(null);   // { job, letter, loading }
+            const openCoverLetter = async (job) => {
+                setClModal({ job, letter: job.cover_letter || '', loading: !job.cover_letter });
+                if (!job.cover_letter) {
+                    const res = await api.post(`/api/jobs/${job.id}/cover-letter`);
+                    setClModal(m => m && m.job.id === job.id ? { ...m, letter: res.cover_letter || '', loading: false } : m);
+                    // Update job in list so panel shows it too
+                    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, cover_letter: res.cover_letter } : j));
+                }
+            };
+            const copyCoverLetter = (text) => {
+                navigator.clipboard.writeText(text).then(() => showToast('Cover letter copied!', 'success'));
+            };
+
+            // Missing-fields modal state (auto-apply)
+            const [missingModal, setMissingModal] = useState(null); // { missing: [], jobIds: [] }
+            const [missingValues, setMissingValues] = useState({});
+
+            const submitMissingAndApply = async () => {
+                const res = await api.post('/api/auto-apply', {
+                    job_ids: missingModal.jobIds,
+                    profile_patch: missingValues,
+                });
+                if (res.needs_info) {
+                    // Still missing more fields (shouldn't happen but handle gracefully)
+                    showToast('Please fill in all required fields.', 'error');
+                    return;
+                }
+                setMissingModal(null);
+                setMissingValues({});
+                const details = res.details || [];
+                const urls = details.filter(d => d.url).map(d => d.url);
+                urls.forEach(url => window.open(url, '_blank'));
+                const firstLetter = details.find(d => d.cover_letter);
+                if (firstLetter) {
+                    try { await navigator.clipboard.writeText(firstLetter.cover_letter); } catch(e) {}
+                }
+                showToast(`${urls.length} job page(s) opened! Cover letter copied.`, 'success');
+                setSelected(new Set());
+                loadJobs();
+            };
 
             const loadJobs = useCallback(() => {
                 setLoading(true);
                 const params = new URLSearchParams();
-                if (filters.status) params.set('status', filters.status);
+                // Pass tab to server — server handles status filtering and sort order
+                params.set('tab', tab);
+                // Within-tab status sub-filter (only for applied tab)
+                if (filters.status && tab === 'applied' && appliedStatuses.includes(filters.status)) {
+                    params.set('status', filters.status);
+                } else if (filters.status && tab === 'not_applied' && !appliedStatuses.includes(filters.status) && filters.status !== 'not_interested') {
+                    params.set('status', filters.status);
+                }
                 if (filters.min_score) params.set('min_score', filters.min_score);
                 if (filters.source) params.set('source', filters.source);
                 params.set('page', page);
@@ -538,7 +718,7 @@
                 api.get(`/api/jobs?${params}`).then(res => {
                     let filtered = res.jobs || [];
                     setTotal(res.total || 0);
-                    // Client-side salary filter
+                    // Client-side salary filter only (tab/sort handled server-side)
                     if (filters.salary === 'has_salary') {
                         filtered = filtered.filter(job => job.salary && job.salary.trim() && job.salary !== '-');
                     } else if (filters.salary) {
@@ -554,7 +734,7 @@
                     setJobs(filtered);
                     setLoading(false);
                 });
-            }, [filters, page]);
+            }, [filters, page, tab]);
 
             useEffect(() => { loadJobs(); }, [loadJobs]);
             const totalPages = Math.ceil(total / perPage);
@@ -588,31 +768,34 @@
 
             const autoApplySelected = async () => {
                 if (selected.size === 0) return;
-                if (!confirm(`Auto-apply to ${selected.size} job(s)?\n\nThis will:\n1. Generate AI cover letters for each job\n2. Open each job page in a new tab\n3. Copy the cover letter to your clipboard\n\nContinue?`)) return;
+                if (!confirm(`Auto-apply to ${selected.size} job(s)?\n\nThis will:\n1. Generate personalised AI cover letters\n2. Open each job page in a new tab\n3. Copy the cover letter to clipboard\n\nContinue?`)) return;
                 setApplying(true);
-                showToast('Generating cover letters...', 'warning');
+                showToast('Checking profile & generating cover letters...', 'warning');
                 try {
                     const res = await api.post('/api/auto-apply', { job_ids: [...selected] });
+
+                    if (res.needs_info) {
+                        // Profile is incomplete — show missing-fields modal
+                        setApplying(false);
+                        setMissingModal({ missing: res.missing || [], jobIds: [...selected] });
+                        const init = {};
+                        (res.missing || []).forEach(f => { init[f.field] = ''; });
+                        setMissingValues(init);
+                        return;
+                    }
+
                     const details = res.details || [];
                     const urls = details.filter(d => d.url).map(d => d.url);
-
-                    // Open all URLs in new tabs
                     let opened = 0;
-                    urls.forEach(url => {
-                        const w = window.open(url, '_blank');
-                        if (w) opened++;
-                    });
-
-                    // Copy the first cover letter to clipboard
+                    urls.forEach(url => { const w = window.open(url, '_blank'); if (w) opened++; });
                     const firstLetter = details.find(d => d.cover_letter);
                     if (firstLetter) {
                         try { await navigator.clipboard.writeText(firstLetter.cover_letter); } catch(e) {}
                     }
-
                     if (opened < urls.length) {
-                        showToast(`${opened}/${urls.length} tabs opened. Your browser blocked some popups — please allow popups for this site.`, 'warning');
+                        showToast(`${opened}/${urls.length} tabs opened. Allow popups for this site.`, 'warning');
                     } else {
-                        showToast(`${urls.length} job page(s) opened! Cover letter copied to clipboard.`, 'success');
+                        showToast(`${urls.length} job(s) opened! Cover letter copied to clipboard.`, 'success');
                     }
                 } catch (err) {
                     showToast('Auto-apply failed. Check console.', 'error');
@@ -626,15 +809,42 @@
                 <div style={styles.container}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                         <h1 style={{ fontSize: '1.5rem' }}>Jobs</h1>
-                        <span style={{ color: 'var(--muted)' }}>{total} results {totalPages > 1 ? `(page ${page}/${totalPages})` : ''}</span>
+                        <span style={{ color: 'var(--muted)' }}>{jobs.length} shown {totalPages > 1 ? `(page ${page}/${totalPages})` : ''}</span>
+                    </div>
+
+                    {/* Tabs */}
+                    <div style={{ display: 'flex', gap: '0', marginBottom: '1rem', borderBottom: '2px solid var(--border)' }}>
+                        {[
+                            { key: 'not_applied', label: 'Not Applied', color: 'var(--accent2)' },
+                            { key: 'applied',     label: 'Applied',      color: 'var(--green2)' },
+                            { key: 'not_interested', label: 'Not Interested', color: 'var(--red2)' },
+                        ].map(t => (
+                            <button key={t.key} onClick={() => { setTab(t.key); setPage(1); setSelected(new Set()); setFilters({ status: '', min_score: 0, source: '', salary: '' }); }}
+                                style={{
+                                    padding: '0.6rem 1.5rem', border: 'none', cursor: 'pointer', fontSize: '0.92rem', fontWeight: 600,
+                                    background: 'none', color: tab === t.key ? t.color : 'var(--muted)',
+                                    borderBottom: tab === t.key ? `2px solid ${t.color}` : '2px solid transparent',
+                                    marginBottom: '-2px',
+                                }}>
+                                {t.label}
+                            </button>
+                        ))}
                     </div>
 
                     {/* Filters */}
                     <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <select style={styles.select} value={filters.status} onChange={e => { setPage(1); setFilters(f => ({ ...f, status: e.target.value })); }}>
-                            <option value="">All Statuses</option>
-                            {['new', 'previous', 'saved', 'applied', 'interview', 'rejected', 'offer'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-                        </select>
+                        {tab === 'not_applied' && (
+                            <select style={styles.select} value={filters.status} onChange={e => { setPage(1); setFilters(f => ({ ...f, status: e.target.value })); }}>
+                                <option value="">All Statuses</option>
+                                {['new', 'previous', 'saved', 'rejected'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                            </select>
+                        )}
+                        {tab === 'applied' && (
+                            <select style={styles.select} value={filters.status} onChange={e => { setPage(1); setFilters(f => ({ ...f, status: e.target.value })); }}>
+                                <option value="">All Applied</option>
+                                {['applied', 'interview', 'offer'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                            </select>
+                        )}
                         <select style={styles.select} value={filters.min_score} onChange={e => { setPage(1); setFilters(f => ({ ...f, min_score: parseFloat(e.target.value) })); }}>
                             <option value="0">Any Score</option>
                             <option value="0.3">30%+</option>
@@ -668,20 +878,24 @@
                         <div style={{ overflowX: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead><tr>
-                                    <th style={{ padding: '0.6rem', width: 40, borderBottom: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--muted)', fontSize: '0.78rem' }}>
-                                        <input type="checkbox" checked={selected.size > 0} onChange={selectAll} style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
-                                    </th>
+                                    {tab === 'not_applied' && (
+                                        <th style={{ padding: '0.6rem', width: 40, borderBottom: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--muted)', fontSize: '0.78rem' }}>
+                                            <input type="checkbox" checked={selected.size > 0} onChange={selectAll} style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                                        </th>
+                                    )}
                                     {['Score', 'Title', 'Company', 'Location', 'Source', 'Salary', 'Status', ''].map(h =>
                                         <th key={h} style={{ padding: '0.6rem 0.75rem', textAlign: 'left', borderBottom: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                                     )}
                                 </tr></thead>
                                 <tbody>
                                     {jobs.map(j => (
-                                        <tr key={j.id} style={{ borderBottom: '1px solid var(--border)', background: selected.has(j.id) ? 'rgba(37,99,235,0.08)' : 'transparent', transition: 'background 0.1s' }}>
-                                            <td style={{ padding: '0.6rem', textAlign: 'center' }}>
-                                                <input type="checkbox" checked={selected.has(j.id)} disabled={j.status === 'applied'} onChange={() => toggleSelect(j.id)}
-                                                       style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: j.status === 'applied' ? 'not-allowed' : 'pointer' }} />
-                                            </td>
+                                        <tr key={j.id} onClick={() => setJobPanel(j)} style={{ borderBottom: '1px solid var(--border)', background: selected.has(j.id) ? 'rgba(37,99,235,0.08)' : 'transparent', transition: 'background 0.1s', cursor: 'pointer' }}>
+                                            {tab === 'not_applied' && (
+                                                <td style={{ padding: '0.6rem', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                                                    <input type="checkbox" checked={selected.has(j.id)} disabled={j.status === 'applied'} onChange={() => toggleSelect(j.id)}
+                                                           style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: j.status === 'applied' ? 'not-allowed' : 'pointer' }} />
+                                                </td>
+                                            )}
                                             <td style={{ padding: '0.6rem 0.75rem' }}><Badge score={j.score} /></td>
                                             <td style={{ padding: '0.6rem 0.75rem' }}>
                                                 <a onClick={() => navigate('job', j.id)} style={{ fontWeight: 600, cursor: 'pointer' }}>{j.title.substring(0, 45)}{j.title.length > 45 ? '...' : ''}</a>
@@ -690,17 +904,28 @@
                                             <td style={{ padding: '0.6rem 0.75rem', color: 'var(--muted)', fontSize: '0.85rem' }}>{(j.location || '').substring(0, 20)}</td>
                                             <td style={{ padding: '0.6rem 0.75rem' }}><span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.72rem' }}>{j.source}</span></td>
                                             <td style={{ padding: '0.6rem 0.75rem', fontSize: '0.85rem' }}>
-                                                {j.salary ? <span style={{ color: 'var(--green2)', fontWeight: 600 }}>{j.salary}</span> : <span style={{ color: '#475569' }}>Not listed</span>}
+                                                {(() => { const fs = formatSalary(j.salary, j.location); return fs ? <span style={{ color: 'var(--green2)', fontWeight: 600 }}>{fs}</span> : <span style={{ color: '#475569' }}>—</span>; })()}
                                             </td>
                                             <td style={{ padding: '0.6rem 0.75rem' }}><StatusBadge status={j.status} /></td>
-                                            <td style={{ padding: '0.6rem 0.75rem' }}>
-                                                {j.status === 'applied' ? (
-                                                    <span style={{ ...styles.btn, ...styles.btnSm, background: '#065f46', color: '#6ee7b7', cursor: 'default', fontSize: '0.72rem' }}>Applied</span>
+                                            <td style={{ padding: '0.6rem 0.75rem' }} onClick={e => e.stopPropagation()}>
+                                                {tab === 'applied' ? (
+                                                    <a href={j.url} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, fontSize: '0.72rem' }}>View</a>
+                                                ) : tab === 'not_interested' ? (
+                                                    <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                                                        <a href={j.url} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, fontSize: '0.72rem' }}>View</a>
+                                                        <span style={{ fontSize: '0.72rem', color: 'var(--muted)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={j.notes}>{j.notes || '—'}</span>
+                                                    </div>
                                                 ) : (
-                                                    <div style={{ display: 'flex', gap: '0.3rem' }}>
-                                                        <a href={j.url} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary }}>Open</a>
+                                                    <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                                                        <a href={j.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, fontSize: '0.72rem' }}>Open</a>
                                                         <button disabled={j._marking} onClick={async (e) => { e.stopPropagation(); j._marking = true; e.target.disabled = true; await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast(`Marked "${j.title.substring(0,30)}" as applied`, 'success'); loadJobs(); }}
                                                             style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSuccess, fontSize: '0.72rem' }}>Applied</button>
+                                                        <button onClick={e => { e.stopPropagation(); openCoverLetter(j); }}
+                                                            style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(124,58,237,0.15)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.3)', fontSize: '0.72rem' }}>
+                                                            {j.cover_letter ? '📄 CL' : '✨ CL'}
+                                                        </button>
+                                                        <button onClick={e => { e.stopPropagation(); openNiModal(j); }}
+                                                            style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(220,38,38,0.15)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.3)', fontSize: '0.72rem' }}>✕</button>
                                                     </div>
                                                 )}
                                             </td>
@@ -741,6 +966,282 @@
                                 <button style={{ ...styles.btn, background: 'linear-gradient(135deg, #059669, #2563eb)', color: '#fff', padding: '0.6rem 1.5rem', fontSize: '0.95rem' }} onClick={autoApplySelected} disabled={applying}>
                                     {applying ? 'Applying...' : `Auto-Apply ${selected.size} Job${selected.size > 1 ? 's' : ''}`}
                                 </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Job Highlight Side Panel */}
+                    {jobPanel && (() => {
+                        const j = jobPanel;
+                        const fmtSalary = formatSalary(j.salary, j.location);
+                        const currency = detectCurrency(j.salary || '', j.location || '');
+                        // Extract key sentences from description (first 3 meaningful lines)
+                        const descLines = (j.description || '').split(/[\n.!?]+/).map(s => s.trim()).filter(s => s.length > 40).slice(0, 4);
+                        return (
+                            <div style={{ position: 'fixed', inset: 0, zIndex: 150, display: 'flex' }}
+                                onClick={e => { if (e.target === e.currentTarget) setJobPanel(null); }}>
+                                {/* Backdrop */}
+                                <div style={{ flex: 1, background: 'rgba(0,0,0,0.5)' }} onClick={() => setJobPanel(null)} />
+                                {/* Drawer */}
+                                <div style={{ width: 520, maxWidth: '95vw', background: 'var(--bg2)', borderLeft: '1px solid var(--border)', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 32px rgba(0,0,0,0.5)', animation: 'slideInRight 0.2s ease' }}>
+                                    {/* Header */}
+                                    <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 1 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.2rem', lineHeight: 1.3 }}>{j.title}</h2>
+                                                <p style={{ color: '#60a5fa', fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.15rem' }}>{j.company}</p>
+                                                <p style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>{[j.location, j.source, j.date_posted].filter(Boolean).join(' · ')}</p>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem', flexShrink: 0 }}>
+                                                <Badge score={j.score} />
+                                                <StatusBadge status={j.status} />
+                                                <button onClick={() => setJobPanel(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1.3rem', lineHeight: 1, padding: 0 }}>×</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ padding: '1.25rem 1.5rem', flex: 1 }}>
+                                        {/* Salary highlight */}
+                                        {fmtSalary ? (
+                                            <div style={{ background: 'rgba(5,150,105,0.12)', border: '1px solid rgba(5,150,105,0.3)', borderRadius: 10, padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ color: 'var(--muted)', fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Salary</span>
+                                                <div style={{ textAlign: 'right' }}>
+                                                    <span style={{ color: 'var(--green2)', fontWeight: 700, fontSize: '1.1rem' }}>{fmtSalary}</span>
+                                                    {currency !== 'USD' && <span style={{ color: 'var(--muted)', fontSize: '0.75rem', display: 'block' }}>{currency}</span>}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '0.65rem 1rem', marginBottom: '1rem' }}>
+                                                <span style={{ color: '#475569', fontSize: '0.88rem' }}>Salary not listed</span>
+                                            </div>
+                                        )}
+
+                                        {/* Match score bar */}
+                                        <div style={{ marginBottom: '1rem' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Match Score</span>
+                                                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: j.score >= 0.7 ? 'var(--green2)' : j.score >= 0.4 ? 'var(--yellow2)' : 'var(--red2)' }}>{Math.round((j.score || 0) * 100)}%</span>
+                                            </div>
+                                            <div style={{ background: 'var(--bg3)', borderRadius: 6, height: 8, overflow: 'hidden' }}>
+                                                <div style={{ height: '100%', borderRadius: 6, width: `${Math.round((j.score || 0) * 100)}%`, background: j.score >= 0.7 ? 'var(--green)' : j.score >= 0.4 ? 'var(--yellow)' : 'var(--red)', transition: 'width 0.4s' }} />
+                                            </div>
+                                            {j.score_details && (
+                                                <div style={{ display: 'flex', gap: '1rem', marginTop: '0.4rem', fontSize: '0.78rem', color: 'var(--muted)' }}>
+                                                    <span>Local: {Math.round((j.score_details.local_score || 0) * 100)}%</span>
+                                                    {j.score_details.ai_score != null && <span>AI: {Math.round(j.score_details.ai_score * 100)}%</span>}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Job type / meta chips */}
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '1rem' }}>
+                                            {j.job_type && <span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.2rem 0.6rem', borderRadius: 20, fontSize: '0.78rem' }}>{j.job_type}</span>}
+                                            <span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.2rem 0.6rem', borderRadius: 20, fontSize: '0.78rem' }}>{j.source}</span>
+                                            {j.date_posted && <span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.2rem 0.6rem', borderRadius: 20, fontSize: '0.78rem' }}>Posted: {j.date_posted}</span>}
+                                        </div>
+
+                                        {/* Tags */}
+                                        {j.tags && j.tags.length > 0 && (
+                                            <div style={{ marginBottom: '1rem' }}>
+                                                <p style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>Skills & Tags</p>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                                                    {j.tags.map((t, i) => <span key={i} style={{ background: '#1e3a5f', color: '#93c5fd', padding: '0.2rem 0.6rem', borderRadius: 20, fontSize: '0.78rem' }}>{t}</span>)}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Key highlights from description */}
+                                        {descLines.length > 0 && (
+                                            <div style={{ marginBottom: '1rem' }}>
+                                                <p style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Key Highlights</p>
+                                                <ul style={{ paddingLeft: '1.2rem', lineHeight: 1.8, color: '#cbd5e1', fontSize: '0.88rem' }}>
+                                                    {descLines.map((line, i) => <li key={i}>{line}.</li>)}
+                                                </ul>
+                                            </div>
+                                        )}
+
+                                        {/* Full description (collapsible) */}
+                                        {j.description && (
+                                            <details style={{ marginBottom: '1rem' }}>
+                                                <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.5rem', userSelect: 'none' }}>Full Description</summary>
+                                                <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem', fontSize: '0.85rem', lineHeight: 1.75, color: '#cbd5e1', whiteSpace: 'pre-wrap', maxHeight: 320, overflowY: 'auto' }}>
+                                                    {j.description}
+                                                </div>
+                                            </details>
+                                        )}
+
+                                        {/* Notes (if any) */}
+                                        {j.notes && <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '0.6rem 0.9rem', fontSize: '0.85rem', color: 'var(--yellow2)', marginBottom: '1rem' }}>{j.notes}</div>}
+                                    </div>
+
+                                    {/* Action bar */}
+                                    <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', background: 'var(--bg2)', position: 'sticky', bottom: 0 }}>
+                                        <a href={j.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ ...styles.btn, ...styles.btnPrimary, fontSize: '0.88rem' }}>Open Job ↗</a>
+                                        <button onClick={() => openCoverLetter(j)} style={{ ...styles.btn, background: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)', fontSize: '0.88rem' }}>
+                                            {j.cover_letter ? 'View Cover Letter' : '✨ Generate Cover Letter'}
+                                        </button>
+                                        {tab !== 'applied' && tab !== 'not_interested' && (
+                                            <>
+                                                <button onClick={async () => { await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast('Marked as Applied!', 'success'); setJobPanel(null); loadJobs(); }}
+                                                    style={{ ...styles.btn, ...styles.btnSuccess, fontSize: '0.88rem' }}>Mark Applied</button>
+                                                <button onClick={() => { setJobPanel(null); openNiModal(j); }}
+                                                    style={{ ...styles.btn, background: 'rgba(220,38,38,0.15)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.3)', fontSize: '0.88rem' }}>Not Interested</button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Cover Letter Modal */}
+                    {clModal && (
+                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                            onClick={e => { if (e.target === e.currentTarget) setClModal(null); }}>
+                            <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, width: '100%', maxWidth: 640, maxHeight: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                {/* Header */}
+                                <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <h3 style={{ fontSize: '1rem', marginBottom: '0.1rem' }}>Cover Letter</h3>
+                                        <p style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>{clModal.job.title} — {clModal.job.company}</p>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                        {!clModal.loading && clModal.letter && (
+                                            <button onClick={() => copyCoverLetter(clModal.letter)} style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }}>Copy</button>
+                                        )}
+                                        <button onClick={async () => {
+                                            setClModal(m => ({ ...m, loading: true, letter: '' }));
+                                            const res = await api.post(`/api/jobs/${clModal.job.id}/cover-letter`);
+                                            setClModal(m => m ? { ...m, letter: res.cover_letter || '', loading: false } : m);
+                                            setJobs(prev => prev.map(j => j.id === clModal.job.id ? { ...j, cover_letter: res.cover_letter } : j));
+                                        }} disabled={clModal.loading} style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)' }}>
+                                            {clModal.loading ? 'Generating...' : 'Regenerate'}
+                                        </button>
+                                        <button onClick={() => setClModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1.4rem', lineHeight: 1, padding: '0 0.25rem' }}>×</button>
+                                    </div>
+                                </div>
+                                {/* Body */}
+                                <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem' }}>
+                                    {clModal.loading ? (
+                                        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
+                                            <p style={{ marginBottom: '0.5rem' }}>Generating personalised cover letter with AI...</p>
+                                            <p style={{ fontSize: '0.8rem' }}>Using your profile + job description</p>
+                                        </div>
+                                    ) : clModal.letter ? (
+                                        <pre style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, fontSize: '0.9rem', color: '#e2e8f0', fontFamily: 'inherit' }}>{clModal.letter}</pre>
+                                    ) : (
+                                        <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>No cover letter yet — click Regenerate above.</p>
+                                    )}
+                                </div>
+                                {/* Footer */}
+                                {!clModal.loading && clModal.letter && (
+                                    <div style={{ padding: '0.75rem 1.5rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '0.5rem' }}>
+                                        <button onClick={() => copyCoverLetter(clModal.letter)} style={{ ...styles.btn, ...styles.btnPrimary, flex: 1 }}>Copy to Clipboard</button>
+                                        <button onClick={() => setClModal(null)} style={{ ...styles.btn, ...styles.btnSecondary }}>Close</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Missing Profile Fields Modal (auto-apply) */}
+                    {missingModal && (
+                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+                            <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, width: '100%', maxWidth: 480, overflow: 'hidden' }}>
+                                <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', background: 'rgba(245,158,11,0.08)' }}>
+                                    <h3 style={{ fontSize: '1rem', marginBottom: '0.25rem', color: 'var(--yellow2)' }}>⚠ Profile Incomplete</h3>
+                                    <p style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Please fill in the missing details so we can generate a personalised cover letter and auto-apply on your behalf.</p>
+                                </div>
+                                <div style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '0.9rem', maxHeight: '55vh', overflowY: 'auto' }}>
+                                    {missingModal.missing.map(f => (
+                                        <div key={f.field}>
+                                            <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '0.3rem', fontWeight: 600 }}>{f.label} <span style={{ color: 'var(--red2)' }}>*</span></label>
+                                            <input
+                                                type={f.type || 'text'}
+                                                placeholder={f.label}
+                                                value={missingValues[f.field] || ''}
+                                                onChange={e => setMissingValues(v => ({ ...v, [f.field]: e.target.value }))}
+                                                style={{ ...styles.input, marginBottom: 0 }}
+                                            />
+                                            {f.field === 'skills_text' && <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.25rem' }}>Comma-separated, e.g. Java, Spring Boot, AWS</p>}
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                                    <button onClick={() => { setMissingModal(null); setMissingValues({}); }} style={{ ...styles.btn, ...styles.btnSecondary }}>Cancel</button>
+                                    <button
+                                        disabled={missingModal.missing.some(f => !missingValues[f.field]?.trim())}
+                                        onClick={submitMissingAndApply}
+                                        style={{ ...styles.btn, background: 'linear-gradient(135deg,#059669,#2563eb)', color: '#fff', opacity: missingModal.missing.some(f => !missingValues[f.field]?.trim()) ? 0.45 : 1 }}>
+                                        Save & Auto-Apply
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Not Interested Modal */}
+                    {niModal && (
+                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                            onClick={e => { if (e.target === e.currentTarget) setNiModal(null); }}>
+                            <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, padding: '1.75rem', width: '100%', maxWidth: 480, maxHeight: '85vh', overflowY: 'auto' }}>
+                                <h3 style={{ marginBottom: '0.25rem', fontSize: '1.1rem' }}>Not Interested</h3>
+                                <p style={{ color: 'var(--muted)', fontSize: '0.88rem', marginBottom: '1.25rem' }}>
+                                    {niModal.title.substring(0, 50)} — {niModal.company}
+                                </p>
+
+                                <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Select a reason</p>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                    {/* Predefined reasons */}
+                                    {PREDEFINED_REASONS.map(reason => (
+                                        <label key={reason} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer', padding: '0.5rem 0.75rem', borderRadius: 8, background: niReason === reason ? 'rgba(220,38,38,0.12)' : 'transparent', border: `1px solid ${niReason === reason ? 'rgba(220,38,38,0.4)' : 'transparent'}`, transition: 'all 0.15s' }}>
+                                            <input type="radio" name="ni_reason" value={reason} checked={niReason === reason} onChange={() => { setNiReason(reason); setNiOtherText(''); }}
+                                                style={{ accentColor: 'var(--red)', width: 15, height: 15, flexShrink: 0 }} />
+                                            <span style={{ fontSize: '0.9rem' }}>{reason}</span>
+                                        </label>
+                                    ))}
+
+                                    {/* Previously saved custom reasons */}
+                                    {niSavedReasons.filter(r => !PREDEFINED_REASONS.includes(r)).map(reason => (
+                                        <label key={reason} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer', padding: '0.5rem 0.75rem', borderRadius: 8, background: niReason === reason ? 'rgba(220,38,38,0.12)' : 'rgba(255,255,255,0.03)', border: `1px solid ${niReason === reason ? 'rgba(220,38,38,0.4)' : 'rgba(255,255,255,0.06)'}`, transition: 'all 0.15s' }}>
+                                            <input type="radio" name="ni_reason" value={reason} checked={niReason === reason} onChange={() => { setNiReason(reason); setNiOtherText(''); }}
+                                                style={{ accentColor: 'var(--red)', width: 15, height: 15, flexShrink: 0 }} />
+                                            <span style={{ fontSize: '0.9rem' }}>{reason}</span>
+                                            <span style={{ marginLeft: 'auto', fontSize: '0.7rem', color: 'var(--muted)', background: 'var(--bg3)', padding: '0.1rem 0.4rem', borderRadius: 4 }}>saved</span>
+                                        </label>
+                                    ))}
+
+                                    {/* Other */}
+                                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem', cursor: 'pointer', padding: '0.5rem 0.75rem', borderRadius: 8, background: niReason === '__other__' ? 'rgba(220,38,38,0.12)' : 'transparent', border: `1px solid ${niReason === '__other__' ? 'rgba(220,38,38,0.4)' : 'transparent'}`, transition: 'all 0.15s' }}>
+                                        <input type="radio" name="ni_reason" value="__other__" checked={niReason === '__other__'} onChange={() => setNiReason('__other__')}
+                                            style={{ accentColor: 'var(--red)', width: 15, height: 15, flexShrink: 0, marginTop: 3 }} />
+                                        <div style={{ flex: 1 }}>
+                                            <span style={{ fontSize: '0.9rem' }}>Other</span>
+                                            {niReason === '__other__' && (
+                                                <input
+                                                    autoFocus
+                                                    type="text"
+                                                    placeholder="Describe your reason..."
+                                                    value={niOtherText}
+                                                    onChange={e => setNiOtherText(e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter' && niOtherText.trim()) submitNotInterested(); }}
+                                                    style={{ display: 'block', marginTop: '0.5rem', width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.4rem 0.65rem', color: 'var(--text)', fontSize: '0.88rem', outline: 'none' }}
+                                                />
+                                            )}
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+                                    <button style={{ ...styles.btn, ...styles.btnSecondary }} onClick={() => setNiModal(null)}>Cancel</button>
+                                    <button
+                                        disabled={!niReason || (niReason === '__other__' && !niOtherText.trim()) || niSaving}
+                                        onClick={submitNotInterested}
+                                        style={{ ...styles.btn, background: '#dc2626', color: '#fff', opacity: (!niReason || (niReason === '__other__' && !niOtherText.trim())) ? 0.4 : 1, cursor: (!niReason || (niReason === '__other__' && !niOtherText.trim())) ? 'not-allowed' : 'pointer' }}>
+                                        {niSaving ? 'Saving...' : 'Confirm'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -1006,7 +1507,7 @@
                         {/* Salary */}
                         <div style={{ marginBottom: '1.5rem' }}>
                             <label style={{ display: 'block', color: 'var(--muted)', fontWeight: 600, marginBottom: '0.4rem', fontSize: '0.9rem' }}>
-                                Minimum Salary: <strong style={{ color: minSalary > 0 ? 'var(--green2)' : 'var(--text)' }}>{minSalary > 0 ? `$${minSalary.toLocaleString()}+/yr` : 'Any'}</strong>
+                                Minimum Salary (USD): <strong style={{ color: minSalary > 0 ? 'var(--green2)' : 'var(--text)' }}>{minSalary > 0 ? `$${minSalary.toLocaleString()}+/yr` : 'Any'}</strong>
                             </label>
                             <input type="range" min="0" max="300000" step="10000" value={minSalary} onChange={e => setMinSalary(Number(e.target.value))} style={{ width: '100%', accentColor: 'var(--accent)' }} />
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
@@ -1017,6 +1518,11 @@
                                 <span>$200k</span>
                                 <span>$300k</span>
                             </div>
+                            {minSalary > 0 && (
+                                <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.3rem' }}>
+                                    Auto-converts to job's local currency (₹{Math.round(minSalary * 83.5).toLocaleString()} INR · £{Math.round(minSalary * 0.79).toLocaleString()} GBP · €{Math.round(minSalary * 0.92).toLocaleString()} EUR)
+                                </p>
+                            )}
                         </div>
 
                         {/* Skills */}
@@ -1042,8 +1548,27 @@
                         {/* Experience Level */}
                         <div style={{ marginBottom: '1.5rem' }}>
                             <label style={{ display: 'block', color: 'var(--muted)', fontWeight: 600, marginBottom: '0.4rem', fontSize: '0.9rem' }}>Experience Level</label>
-                            <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                                {['Junior', 'Mid-Level', 'Senior', 'Lead', 'Staff', 'Principal'].map(l => <SkillChip key={l} label={l} selected={levels.has(l)} onClick={() => toggleLevel(l)} />)}
+                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                {[
+                                    { label: 'Junior',    years: '0–2 yrs' },
+                                    { label: 'Mid-Level', years: '2–5 yrs' },
+                                    { label: 'Senior',    years: '5–8 yrs' },
+                                    { label: 'Lead',      years: '7–12 yrs' },
+                                    { label: 'Staff',     years: '10–15 yrs' },
+                                    { label: 'Principal', years: '12+ yrs' },
+                                ].map(({ label, years }) => (
+                                    <button key={label} onClick={() => toggleLevel(label)}
+                                        style={{
+                                            display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                            padding: '0.4rem 0.85rem', borderRadius: 20, border: `1px solid ${levels.has(label) ? 'var(--accent2)' : 'var(--border)'}`,
+                                            background: levels.has(label) ? 'rgba(37,99,235,0.18)' : 'transparent',
+                                            color: levels.has(label) ? 'var(--accent2)' : 'var(--muted)',
+                                            cursor: 'pointer', transition: 'all 0.15s', lineHeight: 1.2,
+                                        }}>
+                                        <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>{label}</span>
+                                        <span style={{ fontSize: '0.7rem', opacity: 0.75 }}>{years}</span>
+                                    </button>
+                                ))}
                             </div>
                         </div>
 
@@ -1064,11 +1589,25 @@
                     {/* Progress */}
                     {searchStatus && (searchStatus.running || searchStatus.progress > 0) && (
                         <div style={styles.card}>
-                            <h2 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Search Progress</h2>
-                            <div style={{ background: 'var(--bg3)', borderRadius: 10, height: 18, overflow: 'hidden', marginBottom: '0.75rem' }}>
-                                <div style={{ background: 'var(--accent)', height: '100%', borderRadius: 10, transition: 'width 0.4s', width: `${searchStatus.progress}%` }}></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                <h2 style={{ fontSize: '1rem', margin: 0 }}>Search Progress</h2>
+                                <span style={{ fontSize: '1rem', fontWeight: 700, color: searchStatus.progress >= 100 ? 'var(--green2)' : 'var(--accent2)' }}>
+                                    {searchStatus.progress}%
+                                </span>
                             </div>
-                            <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{searchStatus.message}</p>
+                            <div style={{ background: 'var(--bg3)', borderRadius: 10, height: 22, overflow: 'hidden', marginBottom: '0.75rem', position: 'relative' }}>
+                                <div style={{
+                                    background: searchStatus.progress >= 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--accent), var(--accent2))',
+                                    height: '100%', borderRadius: 10, transition: 'width 0.4s ease',
+                                    width: `${searchStatus.progress}%`,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                    {searchStatus.progress >= 15 && (
+                                        <span style={{ color: '#fff', fontSize: '0.72rem', fontWeight: 700 }}>{searchStatus.progress}%</span>
+                                    )}
+                                </div>
+                            </div>
+                            <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>{searchStatus.message}</p>
                         </div>
                     )}
 

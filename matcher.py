@@ -50,21 +50,80 @@ def _title_relevance(job_title: str) -> float:
     return min(matches * 0.05, 0.15)
 
 
-def _seniority_check(job_title: str, job_description: str) -> float:
-    """Penalize junior roles, reward senior-level matches."""
+# Experience level → (min_years, max_years).  max_years=None means no upper cap.
+LEVEL_YEAR_RANGES: dict[str, tuple[int, int | None]] = {
+    "Junior":     (0, 2),
+    "Mid-Level":  (2, 5),
+    "Senior":     (5, 8),
+    "Lead":       (7, 12),
+    "Staff":      (10, 15),
+    "Principal":  (12, None),
+}
+
+
+def _extract_required_years(text: str) -> int | None:
+    """
+    Parse the minimum years of experience a job requires.
+    Looks for patterns like '8+ years', '10 years of experience', 'minimum 6 years'.
+    Returns the highest number found (conservative: we want to avoid over-qualified filters).
+    """
+    patterns = [
+        r'(\d+)\s*\+\s*years?',                    # 8+ years
+        r'(\d+)\s*-\s*\d+\s*years?',               # 6-10 years → take first
+        r'minimum\s+(\d+)\s+years?',               # minimum 8 years
+        r'at\s+least\s+(\d+)\s+years?',            # at least 6 years
+        r'(\d+)\s+years?\s+of\s+(?:relevant\s+)?(?:work\s+)?experience',
+    ]
+    found = []
+    for pat in patterns:
+        for m in re.finditer(pat, text, re.IGNORECASE):
+            found.append(int(m.group(1)))
+    return max(found) if found else None
+
+
+def _seniority_check(job_title: str, job_description: str,
+                     selected_levels: list[str] | None = None) -> float:
+    """Penalize junior roles, reward senior-level matches.
+    When selected_levels is given, also penalize jobs whose required years
+    exceed the upper bound of all selected levels."""
     text = f"{job_title} {job_description}".lower()
+    score = 0.0
+
     if any(word in text for word in ["junior", "entry level", "intern", "trainee", "graduate"]):
-        return -0.3
-    if any(word in text for word in ["senior", "lead", "staff", "principal", "sde-3", "sde 3", "iii"]):
-        return 0.1
-    return 0.0
+        score -= 0.3
+    elif any(word in text for word in ["senior", "lead", "staff", "principal", "sde-3", "sde 3", "iii"]):
+        score += 0.1
+
+    # Year-based experience filter
+    if selected_levels:
+        max_years_allowed = None
+        for lvl in selected_levels:
+            rng = LEVEL_YEAR_RANGES.get(lvl)
+            if rng:
+                lvl_max = rng[1]  # None means no cap for this level
+                if lvl_max is None:
+                    max_years_allowed = None  # one level has no cap → no global cap
+                    break
+                if max_years_allowed is None:
+                    max_years_allowed = lvl_max
+                else:
+                    max_years_allowed = max(max_years_allowed, lvl_max)
+
+        if max_years_allowed is not None:
+            required = _extract_required_years(text)
+            if required is not None and required > max_years_allowed:
+                # Penalty scales with how much over: +1 yr → -0.1, +3 yr → -0.25 (capped)
+                excess = required - max_years_allowed
+                score -= min(0.1 * excess, 0.35)
+
+    return score
 
 
-def score_job_local(job) -> float:
+def score_job_local(job, selected_levels: list[str] | None = None) -> float:
     """Score a job using local keyword matching. Returns 0.0–1.0."""
     base = _keyword_score(job.title, job.description, job.tags)
     title_bonus = _title_relevance(job.title)
-    seniority = _seniority_check(job.title, job.description)
+    seniority = _seniority_check(job.title, job.description, selected_levels)
     return max(0.0, min(1.0, base + title_bonus + seniority))
 
 
@@ -125,9 +184,9 @@ JOB POSTING:
 # Combined scorer
 # ---------------------------------------------------------------------------
 
-def score_job(job, use_ai: bool = False) -> dict:
+def score_job(job, use_ai: bool = False, selected_levels: list[str] | None = None) -> dict:
     """Score a job using local matching + optional AI. Returns scoring dict."""
-    local_score = score_job_local(job)
+    local_score = score_job_local(job, selected_levels)
 
     result = {
         "local_score": round(local_score, 3),
@@ -154,7 +213,8 @@ def score_job(job, use_ai: bool = False) -> dict:
     return result
 
 
-def rank_jobs(jobs: list, min_score: float | None = None) -> list[tuple]:
+def rank_jobs(jobs: list, min_score: float | None = None,
+              selected_levels: list[str] | None = None) -> list[tuple]:
     """Score and rank all jobs using fast local scoring only.
 
     AI scoring is skipped during bulk search for speed.
@@ -162,7 +222,7 @@ def rank_jobs(jobs: list, min_score: float | None = None) -> list[tuple]:
     from concurrent.futures import ThreadPoolExecutor
 
     def _score_one(job):
-        return (job, score_job(job, use_ai=False))
+        return (job, score_job(job, use_ai=False, selected_levels=selected_levels))
 
     scored = []
     with ThreadPoolExecutor(max_workers=8) as executor:

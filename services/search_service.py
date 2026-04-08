@@ -7,6 +7,7 @@ from config import LOCATION_PREFERENCES
 from scrapers import search_all_boards, ALL_SCRAPERS
 from matcher import rank_jobs
 from tracker import save_jobs_bulk, log_search_run
+from services.currency import usd_to, detect_currency
 
 # Per-user search status keyed by user_id
 _status_map: dict[int, dict] = {}
@@ -69,25 +70,41 @@ def _run_search(params: dict, user_id: int):
 
         all_jobs = search_all_boards(queries, location=location, country=country)
 
-        # Filter by minimum salary
+        # Filter by minimum salary (min_salary is in USD).
+        # Convert the threshold to the job's native currency before comparing.
         if min_salary and min_salary > 0:
             filtered = []
             for job in all_jobs:
-                if not job.salary:
-                    filtered.append(job)
+                if not job.salary or not job.salary.strip():
+                    continue  # skip jobs with no salary info
+
+                salary_text = job.salary
+                location_hint = job.location or ""
+
+                # Detect the currency the job uses
+                currency = detect_currency(salary_text, location_hint)
+
+                # Convert user's USD threshold to that currency
+                threshold_local = usd_to(min_salary, currency)
+
+                # Extract all numbers from salary string
+                raw_nums = re.findall(r'[\d,]+', salary_text)
+                if not raw_nums:
                     continue
-                nums = re.findall(r'[\d,]+', job.salary)
-                if nums:
-                    max_num = max(int(n.replace(',', '')) for n in nums)
-                    if max_num >= min_salary:
-                        filtered.append(job)
-                else:
+
+                nums = [int(n.replace(',', '')) for n in raw_nums]
+
+                # Handle 'k' suffix (e.g. "₹80k" stored as "80")
+                multiplier = 1000 if 'k' in salary_text.lower() else 1
+                max_num = max(nums) * multiplier
+
+                if max_num >= threshold_local:
                     filtered.append(job)
             all_jobs = filtered
 
         _update(user_id, message=f"Found {len(all_jobs)} jobs. Scoring...", progress=60)
 
-        ranked = rank_jobs(all_jobs, min_score=0)
+        ranked = rank_jobs(all_jobs, min_score=0, selected_levels=levels or None)
         matched_count = sum(1 for _, sd in ranked if sd["final_score"] >= min_score)
 
         _update(user_id, message=f"Saving {len(ranked)} jobs...", progress=80)

@@ -161,7 +161,8 @@ def get_user_by_id(user_id) -> Optional[dict]:
 
 
 def update_user_profile(user_id, profile_data: dict):
-    """Save profile JSON for a user."""
+    """Save profile JSON for a user. Auto-sets updated timestamp."""
+    profile_data["profile_updated_at"] = datetime.now(timezone.utc).isoformat()
     db = _get_db()
     oid = _to_object_id(user_id)
     if oid:
@@ -169,6 +170,35 @@ def update_user_profile(user_id, profile_data: dict):
             {"_id": oid},
             {"$set": {"profile": json.dumps(profile_data)}},
         )
+
+
+def get_not_interested_reasons(user_id) -> list[str]:
+    """Return user's saved custom not-interested reasons."""
+    db = _get_db()
+    oid = _to_object_id(user_id)
+    if not oid:
+        return []
+    row = db.users.find_one({"_id": oid}, {"not_interested_reasons": 1})
+    if not row:
+        return []
+    return row.get("not_interested_reasons", [])
+
+
+def save_not_interested_reason(user_id, reason: str) -> list[str]:
+    """Add a custom not-interested reason for a user (deduped, max 20). Returns updated list."""
+    reason = reason.strip()
+    if not reason:
+        return get_not_interested_reasons(user_id)
+    db = _get_db()
+    oid = _to_object_id(user_id)
+    if not oid:
+        return []
+    # Pull current list, dedupe, cap at 20
+    current = get_not_interested_reasons(user_id)
+    if reason not in current:
+        current = ([reason] + current)[:20]
+        db.users.update_one({"_id": oid}, {"$set": {"not_interested_reasons": current}})
+    return current
 
 
 # ---------------------------------------------------------------------------
@@ -248,10 +278,13 @@ def update_job_status(job_id, status: str, notes: str = ""):
 
 def get_jobs(
     status: Optional[str] = None,
+    status_in: Optional[list] = None,
+    status_nin: Optional[list] = None,
     min_score: float = 0.0,
     page: int = 1,
     per_page: int = 50,
     source: Optional[str] = None,
+    sort_by: str = "score",
     user_id=None,
 ) -> tuple[list[dict], int]:
     """Retrieve paginated jobs with optional filters. Returns (jobs, total_count)."""
@@ -262,12 +295,17 @@ def get_jobs(
         query["user_id"] = str(user_id)
     if status:
         query["status"] = status
+    elif status_in:
+        query["status"] = {"$in": status_in}
+    elif status_nin:
+        query["status"] = {"$nin": status_nin}
     if source:
         query["source"] = source
 
     total = db.jobs.count_documents(query)
     skip = (page - 1) * per_page
-    cursor = db.jobs.find(query).sort("score", DESCENDING).skip(skip).limit(per_page)
+    sort_field = sort_by if sort_by in ("score", "date_posted", "updated_at", "created_at") else "score"
+    cursor = db.jobs.find(query).sort(sort_field, DESCENDING).skip(skip).limit(per_page)
     return [_id_str(doc) for doc in cursor], total
 
 
@@ -300,6 +338,7 @@ def get_stats(user_id=None) -> dict:
         "interview": db.jobs.count_documents({**base_filter, "status": "interview"}),
         "rejected": db.jobs.count_documents({**base_filter, "status": "rejected"}),
         "saved": db.jobs.count_documents({**base_filter, "status": "saved"}),
+        "not_interested": db.jobs.count_documents({**base_filter, "status": "not_interested"}),
     }
 
     # Average score
