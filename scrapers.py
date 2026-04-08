@@ -320,17 +320,33 @@ class JSearchScraper(BaseScraper):
             if any(ex in searchable for ex in SEARCH_PREFERENCES["exclude_keywords"]):
                 continue
 
+            # Build salary string from structured fields
             salary_parts = []
-            if item.get("job_min_salary"):
-                salary_parts.append(f"${item['job_min_salary']:,.0f}")
-            if item.get("job_max_salary"):
-                salary_parts.append(f"${item['job_max_salary']:,.0f}")
+            min_sal = item.get("job_min_salary")
+            max_sal = item.get("job_max_salary")
+            sal_currency = item.get("job_salary_currency") or "USD"
+            sal_period = (item.get("job_salary_period") or "").lower()
+            sym = {"USD": "$", "GBP": "£", "EUR": "€", "INR": "₹", "CAD": "C$", "AUD": "A$"}.get(sal_currency, "$")
+            if min_sal is not None and float(min_sal) > 0:
+                salary_parts.append(f"{sym}{float(min_sal):,.0f}")
+            if max_sal is not None and float(max_sal) > 0 and max_sal != min_sal:
+                salary_parts.append(f"{sym}{float(max_sal):,.0f}")
             salary = " – ".join(salary_parts)
+            if salary and sal_period and sal_period not in ("yearly", "annual", "year", ""):
+                period_label = {"monthly": "/mo", "monthly ": "/mo", "hourly": "/hr", "weekly": "/wk"}.get(sal_period, f"/{sal_period[:2]}")
+                salary += period_label
+
+            # Build location from city + state + country
+            city = (item.get("job_city") or "").strip()
+            state = (item.get("job_state") or "").strip()
+            country = (item.get("job_country") or "").strip()
+            loc_parts = [p for p in [city, state, country] if p]
+            location = ", ".join(loc_parts) if loc_parts else "Remote"
 
             jobs.append(Job(
                 title=title,
                 company=item.get("employer_name", ""),
-                location=item.get("job_city", "Remote"),
+                location=location,
                 url=item.get("job_apply_link", ""),
                 source=self.name,
                 description=description[:2000],
