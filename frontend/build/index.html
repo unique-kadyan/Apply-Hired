@@ -25,6 +25,26 @@
         ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
         @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* ---- Responsive ---- */
+        @media (max-width: 900px) {
+            .hide-md { display: none !important; }
+        }
+        @media (max-width: 640px) {
+            .hide-sm { display: none !important; }
+            .responsive-container { padding: 0.75rem !important; }
+            .responsive-card { padding: 0.9rem !important; }
+            .jobs-drawer { width: 100vw !important; max-width: 100vw !important; }
+            .jobs-table th, .jobs-table td { padding: 0.4rem 0.4rem !important; font-size: 0.78rem !important; }
+            .nav-label { display: none !important; }
+            .nav-bar { padding: 0 0.75rem !important; gap: 0.5rem !important; }
+            .page-title { font-size: 1.1rem !important; }
+        }
+        @media (max-width: 420px) {
+            .action-btn { padding: 0.3rem 0.5rem !important; font-size: 0.68rem !important; }
+        }
+        details summary { list-style: none; }
+        details summary::-webkit-details-marker { display: none; }
     </style>
 </head>
 <body>
@@ -46,11 +66,11 @@
         // Shared Components
         // ============================================================
         const styles = {
-            navbar: { background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '0 2rem', display: 'flex', alignItems: 'center', gap: '2rem', position: 'sticky', top: 0, zIndex: 100, height: 56, backdropFilter: 'blur(12px)' },
-            logo: { fontSize: '1.25rem', fontWeight: 700, color: '#60a5fa', letterSpacing: '-0.02em' },
-            navLink: { color: 'var(--muted)', fontWeight: 500, padding: '0.5rem 1rem', borderRadius: 8, transition: 'all 0.15s', cursor: 'pointer', fontSize: '0.9rem', border: 'none', background: 'none' },
+            navbar: { background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '0 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', position: 'sticky', top: 0, zIndex: 100, height: 52, backdropFilter: 'blur(12px)' },
+            logo: { fontSize: '1.15rem', fontWeight: 700, color: '#60a5fa', letterSpacing: '-0.02em', whiteSpace: 'nowrap' },
+            navLink: { color: 'var(--muted)', fontWeight: 500, padding: '0.4rem 0.75rem', borderRadius: 8, transition: 'all 0.15s', cursor: 'pointer', fontSize: '0.88rem', border: 'none', background: 'none', whiteSpace: 'nowrap' },
             navActive: { color: '#fff', background: 'rgba(37,99,235,0.15)' },
-            container: { maxWidth: 1400, margin: '0 auto', padding: '1.5rem 2rem', animation: 'fadeIn 0.3s ease' },
+            container: { maxWidth: 1400, margin: '0 auto', padding: 'clamp(0.75rem, 2vw, 1.5rem) clamp(0.75rem, 3vw, 2rem)', animation: 'fadeIn 0.3s ease' },
             card: { background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 14, padding: '1.5rem', marginBottom: '1rem', transition: 'border-color 0.2s' },
             btn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', padding: '0.55rem 1.1rem', border: 'none', borderRadius: 8, fontSize: '0.88rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s', textDecoration: 'none', whiteSpace: 'nowrap' },
             btnPrimary: { background: 'var(--accent)', color: '#fff' },
@@ -103,13 +123,20 @@
             const [loading, setLoading] = useState('');
 
             const connectGithub = async () => {
-                if (!githubInput.trim()) return;
+                const val = githubInput.trim();
+                if (!val) { showToast('Enter a GitHub username or URL', 'error'); return; }
                 setLoading('github');
                 try {
-                    const res = await api.post('/api/profile/connect/github', { username: githubInput });
-                    if (res.error) showToast(res.error, 'error');
-                    else { setProfile(res.profile); showToast('GitHub imported!', 'success'); setEditing(null); }
-                } catch (err) { showToast('Failed to import GitHub', 'error'); }
+                    const res = await api.post('/api/profile/connect/github', { username: val });
+                    if (res.error) {
+                        showToast(res.error, 'error');
+                    } else {
+                        setProfile(res.profile);
+                        const s = res.stats || {};
+                        showToast(`✓ GitHub connected — ${s.public_repos || 0} repos, ${s.languages_added || 0} languages, ${s.projects_added || 0} projects imported`, 'success');
+                        setEditing(null);
+                    }
+                } catch (err) { showToast('Could not reach server. Please try again.', 'error'); }
                 setLoading('');
             };
 
@@ -158,13 +185,19 @@
                     {accounts.map(acc => (
                         <div key={acc.key}>
                             {editing === acc.key ? (
-                                <div style={editRowStyle}>
-                                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem', minWidth: 65 }}>{acc.label}</span>
-                                    <input style={{ ...styles.input, flex: 1, marginBottom: 0 }} value={acc.input} onChange={e => acc.setInput(e.target.value)}
-                                           placeholder={acc.placeholder} autoFocus />
-                                    <button onClick={acc.connect} disabled={loading === acc.key}
-                                        style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary }}>
-                                        {loading === acc.key ? '...' : 'Save'}
+                                <div style={{ ...editRowStyle, flexWrap: 'wrap', gap: '0.5rem' }}>
+                                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem', minWidth: 65, fontWeight: 600 }}>{acc.label}</span>
+                                    <input
+                                        style={{ ...styles.input, flex: 1, minWidth: 180, marginBottom: 0 }}
+                                        value={acc.input}
+                                        onChange={e => acc.setInput(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') acc.connect(); if (e.key === 'Escape') setEditing(null); }}
+                                        placeholder={acc.placeholder}
+                                        autoFocus
+                                    />
+                                    <button onClick={acc.connect} disabled={loading === acc.key || !acc.input.trim()}
+                                        style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, minWidth: 80, opacity: !acc.input.trim() ? 0.5 : 1 }}>
+                                        {loading === acc.key ? '⏳ Importing…' : 'Connect'}
                                     </button>
                                     <button onClick={() => setEditing(null)}
                                         style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }}>
@@ -486,7 +519,17 @@
         function Dashboard({ navigate }) {
             const [stats, setStats] = useState(null);
             const [jobs, setJobs] = useState([]);
-            useEffect(() => { api.get('/api/stats').then(setStats); api.get('/api/jobs?per_page=10').then(r => setJobs(r.jobs || [])); }, []);
+            const APPLIED_S = ['applied', 'interview', 'offer'];
+            useEffect(() => {
+                api.get('/api/stats').then(setStats);
+                api.get('/api/jobs?per_page=20').then(r => {
+                    const all = r.jobs || [];
+                    // Not-applied / new on top, applied at the bottom
+                    const top = all.filter(j => !APPLIED_S.includes(j.status));
+                    const bot = all.filter(j =>  APPLIED_S.includes(j.status));
+                    setJobs([...top, ...bot].slice(0, 15));
+                });
+            }, []);
 
             if (!stats) return <div style={styles.container}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>;
 
@@ -524,7 +567,7 @@
                             <p style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center' }}>No jobs yet. Run a search to get started!</p>
                         ) : (
                             <div style={{ overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <table className="jobs-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                                     <thead><tr>
                                         {['Score', 'Title', 'Company', 'Source', 'Status', ''].map(h => <th key={h} style={{ padding: '0.6rem 0.8rem', textAlign: 'left', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: '0.78rem', textTransform: 'uppercase' }}>{h}</th>)}
                                     </tr></thead>
@@ -604,8 +647,44 @@
             const [page, setPage] = useState(1);
             const [total, setTotal] = useState(0);
             const [tab, setTab] = useState('not_applied'); // 'not_applied' | 'applied' | 'not_interested'
-            const [jobPanel, setJobPanel] = useState(null); // job object for highlight panel
-            const perPage = 50;
+            const [jobPanel, setJobPanel] = useState(null);
+            const [jobPanelLoading, setJobPanelLoading] = useState(false);
+            const [tabCounts, setTabCounts] = useState({ not_applied: null, applied: null, not_interested: null });
+            const [searchQ, setSearchQ] = useState('');
+            const [sortBy, setSortBy] = useState('');     // '' = tab default
+            const [sortDir, setSortDir] = useState('desc');
+            const searchTimer = useRef(null);
+            const [perPage, setPerPage] = useState(30);
+
+            // Sortable column definitions
+            const SORT_COLS = [
+                { key: 'score',       label: 'Score',    sortable: true },
+                { key: 'title',       label: 'Title',    sortable: true },
+                { key: 'company',     label: 'Company',  sortable: true, cls: 'hide-sm' },
+                { key: 'location',    label: 'Location', sortable: false, cls: 'hide-md' },
+                { key: 'source',      label: 'Source',   sortable: false, cls: 'hide-md' },
+                { key: 'salary',      label: 'Salary',   sortable: true,  cls: 'hide-sm' },
+                { key: 'updated_at',  label: 'Updated',  sortable: true },
+                { key: 'actions',     label: '',         sortable: false },
+            ];
+
+            const toggleSort = (key) => {
+                if (!key) return;
+                if (sortBy === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+                else { setSortBy(key); setSortDir('desc'); }
+                setPage(1);
+            };
+
+            // Debounce: delay API call 350ms after last keystroke
+            const [debouncedQ, setDebouncedQ] = useState('');
+            useEffect(() => {
+                const t = setTimeout(() => setDebouncedQ(searchQ), 350);
+                return () => clearTimeout(t);
+            }, [searchQ]);
+
+            const refreshCounts = useCallback(() => {
+                api.get('/api/jobs/tab-counts').then(r => setTabCounts(r));
+            }, []);
             const MAX_SELECT = 10;
 
             const appliedStatuses = ['applied', 'interview', 'offer'];
@@ -627,9 +706,10 @@
             const [niSavedReasons, setNiSavedReasons] = useState([]);
             const [niSaving, setNiSaving] = useState(false);
 
-            // Load user's saved custom reasons once
+            // Load user's saved custom reasons + initial tab counts once
             useEffect(() => {
                 api.get('/api/jobs/not-interested-reasons').then(r => setNiSavedReasons(r.reasons || []));
+                refreshCounts();
             }, []);
 
             const openNiModal = (job) => {
@@ -703,9 +783,7 @@
             const loadJobs = useCallback(() => {
                 setLoading(true);
                 const params = new URLSearchParams();
-                // Pass tab to server — server handles status filtering and sort order
                 params.set('tab', tab);
-                // Within-tab status sub-filter (only for applied tab)
                 if (filters.status && tab === 'applied' && appliedStatuses.includes(filters.status)) {
                     params.set('status', filters.status);
                 } else if (filters.status && tab === 'not_applied' && !appliedStatuses.includes(filters.status) && filters.status !== 'not_interested') {
@@ -713,6 +791,8 @@
                 }
                 if (filters.min_score) params.set('min_score', filters.min_score);
                 if (filters.source) params.set('source', filters.source);
+                if (debouncedQ.trim()) params.set('search', debouncedQ.trim());
+                if (sortBy) { params.set('sort_by', sortBy); params.set('sort_dir', sortDir); }
                 params.set('page', page);
                 params.set('per_page', perPage);
                 api.get(`/api/jobs?${params}`).then(res => {
@@ -733,8 +813,9 @@
                     }
                     setJobs(filtered);
                     setLoading(false);
+                    refreshCounts();
                 });
-            }, [filters, page, tab]);
+            }, [filters, page, perPage, tab, debouncedQ, sortBy, sortDir, refreshCounts]);
 
             useEffect(() => { loadJobs(); }, [loadJobs]);
             const totalPages = Math.ceil(total / perPage);
@@ -809,26 +890,58 @@
                 <div style={styles.container}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                         <h1 style={{ fontSize: '1.5rem' }}>Jobs</h1>
-                        <span style={{ color: 'var(--muted)' }}>{jobs.length} shown {totalPages > 1 ? `(page ${page}/${totalPages})` : ''}</span>
+                        <span style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>
+                            {total > 0 ? `${((page-1)*perPage)+1}–${Math.min(page*perPage, total)} of ${total} jobs` : '0 jobs'}
+                        </span>
                     </div>
 
                     {/* Tabs */}
                     <div style={{ display: 'flex', gap: '0', marginBottom: '1rem', borderBottom: '2px solid var(--border)' }}>
                         {[
-                            { key: 'not_applied', label: 'Not Applied', color: 'var(--accent2)' },
-                            { key: 'applied',     label: 'Applied',      color: 'var(--green2)' },
-                            { key: 'not_interested', label: 'Not Interested', color: 'var(--red2)' },
-                        ].map(t => (
-                            <button key={t.key} onClick={() => { setTab(t.key); setPage(1); setSelected(new Set()); setFilters({ status: '', min_score: 0, source: '', salary: '' }); }}
-                                style={{
-                                    padding: '0.6rem 1.5rem', border: 'none', cursor: 'pointer', fontSize: '0.92rem', fontWeight: 600,
-                                    background: 'none', color: tab === t.key ? t.color : 'var(--muted)',
-                                    borderBottom: tab === t.key ? `2px solid ${t.color}` : '2px solid transparent',
-                                    marginBottom: '-2px',
-                                }}>
-                                {t.label}
-                            </button>
-                        ))}
+                            { key: 'not_applied',    label: 'Not Applied',    color: 'var(--accent2)' },
+                            { key: 'applied',        label: 'Applied',        color: 'var(--green2)'  },
+                            { key: 'not_interested', label: 'Not Interested', color: 'var(--red2)'    },
+                        ].map(t => {
+                            const count = tabCounts[t.key];
+                            return (
+                                <button key={t.key} onClick={() => { setTab(t.key); setPage(1); setSelected(new Set()); setFilters({ status: '', min_score: 0, source: '', salary: '' }); setSortBy(''); setSortDir('desc'); }}
+                                    style={{
+                                        padding: '0.6rem 1.25rem', border: 'none', cursor: 'pointer', fontSize: '0.92rem', fontWeight: 600,
+                                        background: 'none', color: tab === t.key ? t.color : 'var(--muted)',
+                                        borderBottom: tab === t.key ? `2px solid ${t.color}` : '2px solid transparent',
+                                        marginBottom: '-2px', display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                    }}>
+                                    {t.label}
+                                    {count !== null && (
+                                        <span style={{
+                                            fontSize: '0.72rem', fontWeight: 700, lineHeight: 1,
+                                            padding: '0.15rem 0.45rem', borderRadius: 20,
+                                            background: tab === t.key ? t.color : 'var(--bg3)',
+                                            color: tab === t.key ? 'var(--bg)' : 'var(--muted)',
+                                            minWidth: 20, textAlign: 'center',
+                                        }}>
+                                            {count}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Global search bar */}
+                    <div style={{ position: 'relative', marginBottom: '0.9rem' }}>
+                        <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.95rem', pointerEvents: 'none', color: 'var(--muted)' }}>🔍</span>
+                        <input
+                            type="text"
+                            value={searchQ}
+                            onChange={e => { setSearchQ(e.target.value); setPage(1); }}
+                            placeholder="Search jobs by title, company, location, or skill…"
+                            style={{ ...styles.input, paddingLeft: '2.2rem', paddingRight: searchQ ? '2.2rem' : '0.75rem', marginBottom: 0, width: '100%', fontSize: '0.92rem' }}
+                        />
+                        {searchQ && (
+                            <button onClick={() => { setSearchQ(''); setPage(1); }}
+                                style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: '0.15rem' }}>×</button>
+                        )}
                     </div>
 
                     {/* Filters */}
@@ -865,6 +978,9 @@
                             <option value="200000">$200k+</option>
                         </select>
                         <button style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }} onClick={() => { setPage(1); setFilters({ status: '', min_score: 0, source: '', salary: '' }); }}>Reset</button>
+                        <select style={{ ...styles.select, minWidth: 110 }} value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }} title="Rows per page">
+                            {[30, 40, 50, 75, 100].map(n => <option key={n} value={n}>{n} / page</option>)}
+                        </select>
                         <button style={{ ...styles.btn, ...styles.btnSm, ...styles.btnDanger }} onClick={async () => {
                             if (!confirm('Clear all non-applied jobs? Jobs with status Applied, Interview, and Offer will be kept.')) return;
                             const res = await api.post('/api/jobs/clear', {});
@@ -876,56 +992,82 @@
                     {/* Table */}
                     <div style={{ ...styles.card, padding: 0, overflow: 'hidden', marginBottom: selected.size > 0 ? 70 : 0 }}>
                         <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <table className="jobs-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead><tr>
                                     {tab === 'not_applied' && (
                                         <th style={{ padding: '0.6rem', width: 40, borderBottom: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--muted)', fontSize: '0.78rem' }}>
                                             <input type="checkbox" checked={selected.size > 0} onChange={selectAll} style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
                                         </th>
                                     )}
-                                    {['Score', 'Title', 'Company', 'Location', 'Source', 'Salary', 'Status', ''].map(h =>
-                                        <th key={h} style={{ padding: '0.6rem 0.75rem', textAlign: 'left', borderBottom: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
-                                    )}
+                                    {SORT_COLS.map(({ key, label, cls, sortable }) => {
+                                        const isActive = sortBy === key;
+                                        const arrow = !sortable ? '' : isActive ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕';
+                                        return (
+                                            <th key={key} className={cls || ''}
+                                                onClick={sortable ? () => toggleSort(key) : undefined}
+                                                style={{
+                                                    padding: '0.5rem 0.6rem', textAlign: 'left',
+                                                    borderBottom: '1px solid var(--border)',
+                                                    background: isActive ? 'var(--hover)' : 'var(--bg)',
+                                                    color: isActive ? 'var(--accent)' : 'var(--muted)',
+                                                    fontSize: '0.72rem', textTransform: 'uppercase',
+                                                    letterSpacing: '0.05em', whiteSpace: 'nowrap',
+                                                    cursor: sortable ? 'pointer' : 'default',
+                                                    userSelect: 'none',
+                                                }}>
+                                                {label}{arrow}
+                                            </th>
+                                        );
+                                    })}
                                 </tr></thead>
                                 <tbody>
                                     {jobs.map(j => (
-                                        <tr key={j.id} onClick={() => setJobPanel(j)} style={{ borderBottom: '1px solid var(--border)', background: selected.has(j.id) ? 'rgba(37,99,235,0.08)' : 'transparent', transition: 'background 0.1s', cursor: 'pointer' }}>
+                                        <tr key={j.id} onClick={async () => {
+                                            setJobPanel(j); // show immediately with list data
+                                            setJobPanelLoading(true);
+                                            try {
+                                                const full = await api.get(`/api/jobs/${j.id}`);
+                                                if (full && !full.error) setJobPanel(full);
+                                            } finally { setJobPanelLoading(false); }
+                                        }} style={{ borderBottom: '1px solid var(--border)', background: selected.has(j.id) ? 'rgba(37,99,235,0.08)' : 'transparent', transition: 'background 0.1s', cursor: 'pointer' }}>
                                             {tab === 'not_applied' && (
                                                 <td style={{ padding: '0.6rem', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                                                     <input type="checkbox" checked={selected.has(j.id)} disabled={j.status === 'applied'} onChange={() => toggleSelect(j.id)}
                                                            style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: j.status === 'applied' ? 'not-allowed' : 'pointer' }} />
                                                 </td>
                                             )}
-                                            <td style={{ padding: '0.6rem 0.75rem' }}><Badge score={j.score} /></td>
-                                            <td style={{ padding: '0.6rem 0.75rem' }}>
-                                                <a onClick={() => navigate('job', j.id)} style={{ fontWeight: 600, cursor: 'pointer' }}>{j.title.substring(0, 45)}{j.title.length > 45 ? '...' : ''}</a>
+                                            <td style={{ padding: '0.5rem 0.6rem' }}><Badge score={j.score} /></td>
+                                            <td style={{ padding: '0.5rem 0.6rem', maxWidth: 220 }}>
+                                                <span onClick={e => { e.stopPropagation(); setJobPanel(j); }} style={{ fontWeight: 600, cursor: 'pointer', color: '#93c5fd', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={j.title}>{j.title.substring(0, 40)}{j.title.length > 40 ? '…' : ''}</span>
                                             </td>
-                                            <td style={{ padding: '0.6rem 0.75rem' }}>{j.company.substring(0, 22)}</td>
-                                            <td style={{ padding: '0.6rem 0.75rem', color: 'var(--muted)', fontSize: '0.85rem' }}>{(j.location || '').substring(0, 20)}</td>
-                                            <td style={{ padding: '0.6rem 0.75rem' }}><span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.1rem 0.5rem', borderRadius: 4, fontSize: '0.72rem' }}>{j.source}</span></td>
-                                            <td style={{ padding: '0.6rem 0.75rem', fontSize: '0.85rem' }}>
+                                            <td className="hide-sm" style={{ padding: '0.5rem 0.6rem', fontSize: '0.83rem', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.company.substring(0, 20)}</td>
+                                            <td className="hide-md" style={{ padding: '0.5rem 0.6rem', color: 'var(--muted)', fontSize: '0.8rem' }}>{(j.location || '').substring(0, 18)}</td>
+                                            <td className="hide-md" style={{ padding: '0.5rem 0.6rem' }}><span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.1rem 0.45rem', borderRadius: 4, fontSize: '0.7rem' }}>{j.source}</span></td>
+                                            <td className="hide-sm" style={{ padding: '0.5rem 0.6rem', fontSize: '0.82rem' }}>
                                                 {(() => { const fs = formatSalary(j.salary, j.location); return fs ? <span style={{ color: 'var(--green2)', fontWeight: 600 }}>{fs}</span> : <span style={{ color: '#475569' }}>—</span>; })()}
                                             </td>
-                                            <td style={{ padding: '0.6rem 0.75rem' }}><StatusBadge status={j.status} /></td>
-                                            <td style={{ padding: '0.6rem 0.75rem' }} onClick={e => e.stopPropagation()}>
+                                            <td style={{ padding: '0.5rem 0.6rem' }}><StatusBadge status={j.status} /></td>
+                                            <td style={{ padding: '0.5rem 0.4rem' }} onClick={e => e.stopPropagation()}>
+                                                {/* Icon-based action buttons */}
                                                 {tab === 'applied' ? (
-                                                    <a href={j.url} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, fontSize: '0.72rem' }}>View</a>
+                                                    <a href={j.url} target="_blank" rel="noopener"
+                                                        title="View Job" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>👁</a>
                                                 ) : tab === 'not_interested' ? (
-                                                    <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
-                                                        <a href={j.url} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, fontSize: '0.72rem' }}>View</a>
-                                                        <span style={{ fontSize: '0.72rem', color: 'var(--muted)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={j.notes}>{j.notes || '—'}</span>
-                                                    </div>
+                                                    <a href={j.url} target="_blank" rel="noopener"
+                                                        title="View Job" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>👁</a>
                                                 ) : (
-                                                    <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                                                        <a href={j.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, fontSize: '0.72rem' }}>Open</a>
-                                                        <button disabled={j._marking} onClick={async (e) => { e.stopPropagation(); j._marking = true; e.target.disabled = true; await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast(`Marked "${j.title.substring(0,30)}" as applied`, 'success'); loadJobs(); }}
-                                                            style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSuccess, fontSize: '0.72rem' }}>Applied</button>
-                                                        <button onClick={e => { e.stopPropagation(); openCoverLetter(j); }}
-                                                            style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(124,58,237,0.15)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.3)', fontSize: '0.72rem' }}>
-                                                            {j.cover_letter ? '📄 CL' : '✨ CL'}
-                                                        </button>
-                                                        <button onClick={e => { e.stopPropagation(); openNiModal(j); }}
-                                                            style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(220,38,38,0.15)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.3)', fontSize: '0.72rem' }}>✕</button>
+                                                    <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                                                        <a href={j.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}
+                                                            title="Open Job" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>↗</a>
+                                                        <button title="Mark Applied" disabled={j._marking}
+                                                            onClick={async (e) => { e.stopPropagation(); j._marking = true; e.target.disabled = true; await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast(`Marked applied`, 'success'); loadJobs(); }}
+                                                            style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSuccess, padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>✓</button>
+                                                        <button title={j.cover_letter ? 'View Cover Letter' : 'Generate Cover Letter'}
+                                                            onClick={e => { e.stopPropagation(); openCoverLetter(j); }}
+                                                            style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(124,58,237,0.18)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.35)', padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>📄</button>
+                                                        <button title="Not Interested"
+                                                            onClick={e => { e.stopPropagation(); openNiModal(j); }}
+                                                            style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(220,38,38,0.12)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.3)', padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>✕</button>
                                                     </div>
                                                 )}
                                             </td>
@@ -939,22 +1081,44 @@
                     {loading && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>Loading...</p>}
                     {!loading && jobs.length === 0 && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}><p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>No jobs found.</p><button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => navigate('search')}>Run a Search</button></div>}
 
-                    {/* Pagination */}
-                    {totalPages > 1 && (
-                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', padding: '1.5rem 0' }}>
-                            <button onClick={() => setPage(1)} disabled={page === 1}
-                                style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, opacity: page === 1 ? 0.4 : 1 }}>First</button>
-                            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                                style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, opacity: page === 1 ? 0.4 : 1 }}>&larr; Prev</button>
-                            <span style={{ color: 'var(--muted)', fontSize: '0.88rem', padding: '0 0.75rem' }}>
-                                Page {page} of {totalPages}
-                            </span>
-                            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                                style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, opacity: page === totalPages ? 0.4 : 1 }}>Next &rarr;</button>
-                            <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
-                                style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, opacity: page === totalPages ? 0.4 : 1 }}>Last</button>
-                        </div>
-                    )}
+                    {/* Pagination — only when total exceeds per-page */}
+                    {total > perPage && (() => {
+                        const btnStyle = (active, disabled) => ({
+                            ...styles.btn, ...styles.btnSm,
+                            ...(active ? styles.btnPrimary : styles.btnSecondary),
+                            opacity: disabled ? 0.35 : 1,
+                            minWidth: 36, padding: '0.35rem 0.6rem',
+                            fontWeight: active ? 700 : 400,
+                        });
+                        // Build page number window: always show first, last, and ±2 around current
+                        const pageNums = [];
+                        for (let i = 1; i <= totalPages; i++) {
+                            if (i === 1 || i === totalPages || (i >= page - 2 && i <= page + 2)) pageNums.push(i);
+                            else if (pageNums[pageNums.length - 1] !== '…') pageNums.push('…');
+                        }
+                        return (
+                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.35rem', padding: '1.25rem 0', flexWrap: 'wrap' }}>
+                                <button onClick={() => setPage(1)} disabled={page === 1}
+                                    style={btnStyle(false, page === 1)}>«</button>
+                                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                                    style={btnStyle(false, page === 1)}>‹</button>
+
+                                {pageNums.map((n, i) => n === '…'
+                                    ? <span key={`ellipsis-${i}`} style={{ color: 'var(--muted)', padding: '0 0.2rem', userSelect: 'none' }}>…</span>
+                                    : <button key={n} onClick={() => setPage(n)} style={btnStyle(n === page, false)}>{n}</button>
+                                )}
+
+                                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                                    style={btnStyle(false, page === totalPages)}>›</button>
+                                <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
+                                    style={btnStyle(false, page === totalPages)}>»</button>
+
+                                <span style={{ color: 'var(--muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
+                                    {((page - 1) * perPage) + 1}–{Math.min(page * perPage, total)} of {total}
+                                </span>
+                            </div>
+                        );
+                    })()}
 
                     {/* Floating apply bar */}
                     {selected.size > 0 && (
@@ -983,7 +1147,7 @@
                                 {/* Backdrop */}
                                 <div style={{ flex: 1, background: 'rgba(0,0,0,0.5)' }} onClick={() => setJobPanel(null)} />
                                 {/* Drawer */}
-                                <div style={{ width: 520, maxWidth: '95vw', background: 'var(--bg2)', borderLeft: '1px solid var(--border)', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 32px rgba(0,0,0,0.5)', animation: 'slideInRight 0.2s ease' }}>
+                                <div className="jobs-drawer" style={{ width: 520, maxWidth: '95vw', background: 'var(--bg2)', borderLeft: '1px solid var(--border)', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 32px rgba(0,0,0,0.5)', animation: 'slideInRight 0.2s ease' }}>
                                     {/* Header */}
                                     <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 1 }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
@@ -1051,6 +1215,7 @@
                                         )}
 
                                         {/* Key highlights from description */}
+                                        {jobPanelLoading && <p style={{ color: 'var(--muted)', fontSize: '0.82rem', marginBottom: '1rem' }}>Loading full details…</p>}
                                         {descLines.length > 0 && (
                                             <div style={{ marginBottom: '1rem' }}>
                                                 <p style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Key Highlights</p>
@@ -1060,14 +1225,20 @@
                                             </div>
                                         )}
 
-                                        {/* Full description (collapsible) */}
-                                        {j.description && (
-                                            <details style={{ marginBottom: '1rem' }}>
-                                                <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.5rem', userSelect: 'none' }}>Full Description</summary>
-                                                <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem', fontSize: '0.85rem', lineHeight: 1.75, color: '#cbd5e1', whiteSpace: 'pre-wrap', maxHeight: 320, overflowY: 'auto' }}>
+                                        {/* Full description */}
+                                        {j.description ? (
+                                            <details style={{ marginBottom: '1rem' }} open={descLines.length === 0}>
+                                                <summary style={{ cursor: 'pointer', color: 'var(--accent2)', fontSize: '0.85rem', marginBottom: '0.5rem', userSelect: 'none', fontWeight: 600 }}>
+                                                    {descLines.length === 0 ? '📋 Job Description' : '📋 Full Description'}
+                                                </summary>
+                                                <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem', fontSize: '0.85rem', lineHeight: 1.75, color: '#cbd5e1', whiteSpace: 'pre-wrap', maxHeight: 340, overflowY: 'auto' }}>
                                                     {j.description}
                                                 </div>
                                             </details>
+                                        ) : !jobPanelLoading && (
+                                            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem', color: 'var(--muted)', fontSize: '0.85rem' }}>
+                                                No description available. <a href={j.url} target="_blank" rel="noopener" style={{ color: 'var(--accent2)' }}>View on job site ↗</a>
+                                            </div>
                                         )}
 
                                         {/* Notes (if any) */}
@@ -1100,24 +1271,21 @@
                             onClick={e => { if (e.target === e.currentTarget) setClModal(null); }}>
                             <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, width: '100%', maxWidth: 640, maxHeight: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                 {/* Header */}
-                                <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div>
-                                        <h3 style={{ fontSize: '1rem', marginBottom: '0.1rem' }}>Cover Letter</h3>
-                                        <p style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>{clModal.job.title} — {clModal.job.company}</p>
+                                <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                    <div style={{ minWidth: 0 }}>
+                                        <h3 style={{ fontSize: '1rem', marginBottom: '0.15rem' }}>Cover Letter</h3>
+                                        <p style={{ color: 'var(--muted)', fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clModal.job.title} — {clModal.job.company}</p>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                        {!clModal.loading && clModal.letter && (
-                                            <button onClick={() => copyCoverLetter(clModal.letter)} style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }}>Copy</button>
-                                        )}
+                                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0 }}>
                                         <button onClick={async () => {
                                             setClModal(m => ({ ...m, loading: true, letter: '' }));
                                             const res = await api.post(`/api/jobs/${clModal.job.id}/cover-letter`);
                                             setClModal(m => m ? { ...m, letter: res.cover_letter || '', loading: false } : m);
                                             setJobs(prev => prev.map(j => j.id === clModal.job.id ? { ...j, cover_letter: res.cover_letter } : j));
-                                        }} disabled={clModal.loading} style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)' }}>
-                                            {clModal.loading ? 'Generating...' : 'Regenerate'}
+                                        }} disabled={clModal.loading} style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)', fontSize: '0.8rem' }}>
+                                            {clModal.loading ? '…' : '↺ Regenerate'}
                                         </button>
-                                        <button onClick={() => setClModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1.4rem', lineHeight: 1, padding: '0 0.25rem' }}>×</button>
+                                        <button onClick={() => setClModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1.4rem', lineHeight: 1, padding: '0 0.2rem' }}>×</button>
                                     </div>
                                 </div>
                                 {/* Body */}
@@ -1134,12 +1302,22 @@
                                     )}
                                 </div>
                                 {/* Footer */}
-                                {!clModal.loading && clModal.letter && (
-                                    <div style={{ padding: '0.75rem 1.5rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '0.5rem' }}>
-                                        <button onClick={() => copyCoverLetter(clModal.letter)} style={{ ...styles.btn, ...styles.btnPrimary, flex: 1 }}>Copy to Clipboard</button>
-                                        <button onClick={() => setClModal(null)} style={{ ...styles.btn, ...styles.btnSecondary }}>Close</button>
-                                    </div>
-                                )}
+                                <div style={{ padding: '0.75rem 1.5rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    {!clModal.loading && clModal.letter && (<>
+                                        <button onClick={() => copyCoverLetter(clModal.letter)} style={{ ...styles.btn, ...styles.btnPrimary, flex: 1, minWidth: 140 }}>📋 Copy to Clipboard</button>
+                                        <button onClick={() => {
+                                            const win = window.open('', '_blank');
+                                            win.document.write(`<!DOCTYPE html><html><head><title>Cover Letter — ${clModal.job.title} at ${clModal.job.company}</title>
+                                            <style>body{font-family:Georgia,serif;max-width:680px;margin:3cm auto;line-height:1.9;color:#111;font-size:12pt}
+                                            pre{white-space:pre-wrap;font-family:inherit}h2{margin-bottom:0.5em;font-size:13pt;color:#333}
+                                            @media print{body{margin:2cm}}</style></head>
+                                            <body><pre>${clModal.letter.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre></body></html>`);
+                                            win.document.close();
+                                            setTimeout(() => win.print(), 400);
+                                        }} style={{ ...styles.btn, ...styles.btnSecondary, minWidth: 130 }}>⬇ Export PDF</button>
+                                    </>)}
+                                    <button onClick={() => setClModal(null)} style={{ ...styles.btn, ...styles.btnSecondary }}>Close</button>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -1620,7 +1798,25 @@
         // ============================================================
         function Profile({ profile, setProfile, showToast }) {
             const fileRef = useRef(null);
+            const avatarRef = useRef(null);
             const [uploading, setUploading] = useState(false);
+            const [avatarHover, setAvatarHover] = useState(false);
+            const [avatarUploading, setAvatarUploading] = useState(false);
+
+            const uploadAvatar = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setAvatarUploading(true);
+                const fd = new FormData();
+                fd.append('avatar', file);
+                try {
+                    const res = await api.upload('/api/profile/upload-avatar', fd);
+                    if (res.error) showToast(res.error, 'error');
+                    else { setProfile(res.profile); showToast('Profile picture updated!', 'success'); }
+                } catch (err) { showToast('Upload failed', 'error'); }
+                setAvatarUploading(false);
+                e.target.value = '';
+            };
 
             const uploadResume = async (e) => {
                 const file = e.target.files[0];
@@ -1642,8 +1838,38 @@
 
                     <div style={styles.card}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-                            <div style={{ width: 72, height: 72, background: 'linear-gradient(135deg, #2563eb, #7c3aed)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.8rem', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                                {(profile.name || 'U')[0]}
+                            {/* Clickable avatar */}
+                            <div
+                                role="button" title="Click to change profile picture"
+                                onClick={() => !avatarUploading && avatarRef.current.click()}
+                                onMouseEnter={() => setAvatarHover(true)}
+                                onMouseLeave={() => setAvatarHover(false)}
+                                style={{ position: 'relative', width: 82, height: 82, borderRadius: '50%', flexShrink: 0, cursor: 'pointer' }}>
+
+                                {/* Avatar image or letter */}
+                                {profile.avatar ? (
+                                    <img src={profile.avatar} alt="Profile"
+                                        style={{ width: 82, height: 82, borderRadius: '50%', objectFit: 'cover', display: 'block',
+                                            border: '3px solid ' + (avatarHover ? 'var(--accent2)' : 'transparent'),
+                                            transition: 'border-color 0.2s', filter: avatarHover ? 'brightness(0.65)' : 'none' }} />
+                                ) : (
+                                    <div style={{ width: 82, height: 82, background: 'linear-gradient(135deg, #2563eb, #7c3aed)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', fontWeight: 700, color: '#fff',
+                                        border: '3px solid ' + (avatarHover ? 'var(--accent2)' : 'transparent'),
+                                        filter: avatarHover ? 'brightness(0.7)' : 'none', transition: 'all 0.2s' }}>
+                                        {(profile.name || 'U')[0].toUpperCase()}
+                                    </div>
+                                )}
+
+                                {/* Hover overlay */}
+                                {(avatarHover || avatarUploading) && (
+                                    <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                                        <span style={{ fontSize: avatarUploading ? '1rem' : '1.4rem' }}>{avatarUploading ? '⏳' : '📷'}</span>
+                                        <span style={{ fontSize: '0.6rem', color: '#fff', fontWeight: 600, marginTop: 2 }}>{avatarUploading ? 'Uploading' : 'Change'}</span>
+                                    </div>
+                                )}
+
+                                <input ref={avatarRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+                                    onChange={uploadAvatar} style={{ display: 'none' }} />
                             </div>
                             <div>
                                 <h2 style={{ margin: 0, marginBottom: '0.2rem' }}>{profile.name || 'Your Name'}</h2>
@@ -1657,12 +1883,19 @@
 
                     {/* Upload */}
                     <div style={styles.card}>
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>Upload Resume</h2>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                            <h2 style={{ fontSize: '1.1rem', margin: 0 }}>Upload Resume</h2>
+                            {profile.profile_updated_at && (
+                                <span style={{ fontSize: '0.78rem', color: 'var(--muted)', background: 'var(--bg3)', padding: '0.2rem 0.6rem', borderRadius: 6, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                    🕐 Last updated: {new Date(profile.profile_updated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                            )}
+                        </div>
                         <p style={{ color: 'var(--muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>Upload your resume (PDF, DOCX, TXT) and your profile will be auto-parsed.</p>
                         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                             <input ref={fileRef} type="file" accept=".pdf,.docx,.txt" onChange={uploadResume} style={{ display: 'none' }} />
                             <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => fileRef.current.click()} disabled={uploading}>
-                                {uploading ? 'Parsing resume...' : 'Choose File & Upload'}
+                                {uploading ? '⏳ Parsing resume...' : '📤 Choose File & Upload'}
                             </button>
                             <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Supports PDF, DOCX, TXT</span>
                         </div>
@@ -2212,12 +2445,20 @@
                                 </button>
                             ))}
                         </nav>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{user.name}</span>
-                            <button onClick={handleLogout}
-                                style={{ ...styles.navLink, color: '#f87171', fontSize: '0.82rem' }}>
-                                Logout
-                            </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginLeft: 'auto' }}>
+                            {/* Nav avatar */}
+                            <div onClick={() => navigate('profile')} title="My Profile" style={{ cursor: 'pointer', width: 32, height: 32, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', border: '2px solid var(--bg3)', transition: 'border-color 0.15s' }}
+                                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent2)'}
+                                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--bg3)'}>
+                                {profile.avatar
+                                    ? <img src={profile.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                    : <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg,#2563eb,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700, color: '#fff' }}>
+                                        {(user.name || 'U')[0].toUpperCase()}
+                                      </div>
+                                }
+                            </div>
+                            <span className="hide-sm" style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>{user.name}</span>
+                            <button onClick={handleLogout} style={{ ...styles.navLink, color: '#f87171', fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}>Logout</button>
                         </div>
                     </div>
 

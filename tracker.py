@@ -230,7 +230,7 @@ def _build_job_doc(job, score_data: dict, cover_letter: str = "", user_id=None) 
         "location": job.location[:100] if job.location else "",
         "url": job.url,
         "source": job.source,
-        "description": (job.description or "")[:500],
+        "description": (job.description or "")[:3000],
         "salary": (job.salary or "")[:50],
         "tags": json.dumps(job.tags[:10]) if isinstance(job.tags, list) else (job.tags or "[]"),
         "date_posted": job.date_posted,
@@ -276,6 +276,9 @@ def update_job_status(job_id, status: str, notes: str = ""):
         )
 
 
+VALID_SORT_FIELDS = {"score", "date_posted", "updated_at", "created_at", "title", "company", "salary"}
+
+
 def get_jobs(
     status: Optional[str] = None,
     status_in: Optional[list] = None,
@@ -285,9 +288,12 @@ def get_jobs(
     per_page: int = 50,
     source: Optional[str] = None,
     sort_by: str = "score",
+    sort_dir: str = "desc",
+    search: Optional[str] = None,
     user_id=None,
 ) -> tuple[list[dict], int]:
-    """Retrieve paginated jobs with optional filters. Returns (jobs, total_count)."""
+    """Retrieve paginated jobs with optional filters, search, and sort."""
+    from pymongo import ASCENDING
     db = _get_db()
     query: dict = {"score": {"$gte": min_score}}
 
@@ -302,10 +308,21 @@ def get_jobs(
     if source:
         query["source"] = source
 
+    # Full-text search across title, company, location
+    if search and search.strip():
+        pattern = {"$regex": search.strip(), "$options": "i"}
+        query["$or"] = [
+            {"title": pattern},
+            {"company": pattern},
+            {"location": pattern},
+            {"tags": pattern},
+        ]
+
     total = db.jobs.count_documents(query)
     skip = (page - 1) * per_page
-    sort_field = sort_by if sort_by in ("score", "date_posted", "updated_at", "created_at") else "score"
-    cursor = db.jobs.find(query).sort(sort_field, DESCENDING).skip(skip).limit(per_page)
+    sort_field = sort_by if sort_by in VALID_SORT_FIELDS else "score"
+    direction = ASCENDING if sort_dir == "asc" else DESCENDING
+    cursor = db.jobs.find(query).sort(sort_field, direction).skip(skip).limit(per_page)
     return [_id_str(doc) for doc in cursor], total
 
 

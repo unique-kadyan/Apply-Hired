@@ -1,8 +1,11 @@
-"""Profile routes — view, update, and resume upload."""
+"""Profile routes — view, update, resume upload, and avatar upload."""
 
 import os
+import io
+import base64
 
 from flask import Blueprint, request, jsonify, current_app
+from PIL import Image
 
 from middleware import login_required, get_user_profile
 from resume_parser import parse_resume, score_resume
@@ -74,11 +77,52 @@ def upload_resume():
         return jsonify({"error": f"Failed to parse resume: {str(e)}"}), 500
 
 
+@profile_bp.route("/upload-avatar", methods=["POST"])
+@login_required
+def upload_avatar():
+    """Resize and store profile picture as base64 in the user's profile."""
+    if "avatar" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["avatar"]
+    if not file.filename:
+        return jsonify({"error": "No file selected"}), 400
+
+    allowed = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+    ext = os.path.splitext(file.filename.lower())[1]
+    if ext not in allowed:
+        return jsonify({"error": "Only JPG, PNG, WEBP, or GIF images are supported"}), 400
+
+    try:
+        img = Image.open(file.stream).convert("RGB")
+
+        # Crop to square from centre, then resize to 200×200
+        w, h = img.size
+        side = min(w, h)
+        left = (w - side) // 2
+        top  = (h - side) // 2
+        img  = img.crop((left, top, left + side, top + side))
+        img  = img.resize((200, 200), Image.LANCZOS)
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85, optimize=True)
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        data_uri = f"data:image/jpeg;base64,{b64}"
+
+        profile = get_user_profile(request.user)
+        profile["avatar"] = data_uri
+        update_user_profile(request.user["id"], profile)
+
+        return jsonify({"avatar": data_uri, "profile": profile})
+    except Exception as e:
+        return jsonify({"error": f"Image processing failed: {str(e)}"}), 500
+
+
 @profile_bp.route("/connect/github", methods=["POST"])
 @login_required
 def connect_github():
     data = request.get_json() or {}
-    username = data.get("username", "")
+    username = (data.get("username") or data.get("url") or "").strip()
     if not username:
         return jsonify({"error": "GitHub username or URL is required"}), 400
 
@@ -90,7 +134,18 @@ def connect_github():
     profile = merge_github_into_profile(profile, github_data)
     update_user_profile(request.user["id"], profile)
 
-    return jsonify({"message": "GitHub profile imported!", "profile": profile, "github": github_data})
+    stats = {
+        "username": github_data.get("github_username"),
+        "public_repos": github_data.get("public_repos", 0),
+        "languages_added": len(github_data.get("languages", [])),
+        "topics_added": len(github_data.get("topics", [])),
+        "projects_added": len(github_data.get("top_repos", [])),
+    }
+    return jsonify({
+        "message": f"GitHub imported: {stats['public_repos']} repos, {stats['languages_added']} languages, {stats['projects_added']} projects",
+        "profile": profile,
+        "stats": stats,
+    })
 
 
 @profile_bp.route("/connect/linkedin", methods=["POST"])

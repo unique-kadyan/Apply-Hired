@@ -1,5 +1,6 @@
 """Import profile data from GitHub and LinkedIn."""
 
+import os
 import re
 import logging
 import requests
@@ -7,30 +8,64 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def _github_headers() -> dict:
+    """Return GitHub API headers, with token if available for higher rate limits."""
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _extract_github_username(raw: str) -> str:
+    """Extract bare username from a URL or plain username string."""
+    raw = raw.strip().rstrip("/")
+    # Handle URLs like https://github.com/username or github.com/username
+    if "github.com" in raw:
+        parts = raw.split("github.com/")
+        if len(parts) > 1:
+            # Take the first path segment only (ignore /repos, /starred, etc.)
+            return parts[1].split("/")[0].strip()
+    return raw.split("/")[-1].strip()
+
+
 def import_github(username: str) -> dict:
     """Fetch public profile + repos from GitHub. Returns enrichment dict."""
     if not username:
-        return {}
+        return {"error": "GitHub username or URL is required"}
 
-    username = username.strip().strip("/").split("/")[-1]  # handle full URLs
+    username = _extract_github_username(username)
+    if not username:
+        return {"error": "Could not extract GitHub username from the provided input"}
+
+    headers = _github_headers()
 
     try:
         # User profile
-        user = requests.get(
+        resp = requests.get(
             f"https://api.github.com/users/{username}",
-            headers={"Accept": "application/vnd.github.v3+json"},
-            timeout=10,
-        ).json()
+            headers=headers,
+            timeout=15,
+        )
+        user = resp.json()
 
-        if user.get("message") == "Not Found":
-            return {"error": "GitHub user not found"}
+        # Detect API errors
+        msg = user.get("message", "")
+        if "Not Found" in msg or resp.status_code == 404:
+            return {"error": f"GitHub user '{username}' not found. Check the username/URL."}
+        if "rate limit" in msg.lower() or resp.status_code == 403:
+            hint = " Add a GITHUB_TOKEN to your .env to increase the limit." if not os.environ.get("GITHUB_TOKEN") else ""
+            return {"error": f"GitHub API rate limit exceeded.{hint}"}
+        if resp.status_code != 200:
+            return {"error": f"GitHub API error {resp.status_code}: {msg}"}
 
         # Top repos (by stars)
-        repos = requests.get(
+        repos_resp = requests.get(
             f"https://api.github.com/users/{username}/repos?sort=stars&per_page=20",
-            headers={"Accept": "application/vnd.github.v3+json"},
-            timeout=10,
-        ).json()
+            headers=headers,
+            timeout=15,
+        )
+        repos = repos_resp.json() if repos_resp.status_code == 200 else []
 
         # Extract languages from repos
         languages = {}
@@ -60,23 +95,28 @@ def import_github(username: str) -> dict:
             all_topics.extend(repo.get("topics", []))
         unique_topics = list(dict.fromkeys(all_topics))[:20]
 
+        github_url = user.get("html_url") or f"https://github.com/{username}"
         return {
             "github_username": username,
-            "github_url": user.get("html_url", ""),
-            "name": user.get("name", ""),
-            "bio": user.get("bio", ""),
-            "location": user.get("location", ""),
-            "company": user.get("company", ""),
-            "blog": user.get("blog", ""),
+            "github_url": github_url,
+            "name": user.get("name") or "",
+            "bio": user.get("bio") or "",
+            "location": user.get("location") or "",
+            "company": user.get("company") or "",
+            "blog": user.get("blog") or "",
             "public_repos": user.get("public_repos", 0),
             "followers": user.get("followers", 0),
             "languages": top_languages,
             "topics": unique_topics,
             "top_repos": top_repos,
         }
+    except requests.exceptions.Timeout:
+        return {"error": "GitHub API timed out. Please try again."}
+    except requests.exceptions.ConnectionError:
+        return {"error": "Could not reach GitHub API. Check your internet connection."}
     except Exception as e:
         logger.error(f"GitHub import failed: {e}")
-        return {"error": str(e)}
+        return {"error": f"Import failed: {str(e)}"}
 
 
 def import_linkedin_url(url: str) -> dict:

@@ -2,6 +2,7 @@
 
 import re
 import threading
+from datetime import datetime, timezone, timedelta
 
 from config import LOCATION_PREFERENCES
 from scrapers import search_all_boards, ALL_SCRAPERS
@@ -69,6 +70,32 @@ def _run_search(params: dict, user_id: int):
         _update(user_id, message=f"Searching for: {', '.join(queries[:3])}...", progress=20)
 
         all_jobs = search_all_boards(queries, location=location, country=country)
+
+        # Filter out jobs older than 4 months
+        cutoff = datetime.now(timezone.utc) - timedelta(days=120)
+        fresh = []
+        for job in all_jobs:
+            dp = job.date_posted or ""
+            if not dp:
+                fresh.append(job)  # no date → keep (can't tell)
+                continue
+            try:
+                # Try ISO format first, then common date-only format
+                for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"):
+                    try:
+                        dt = datetime.strptime(dp[:19], fmt[:len(dp[:19])])
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        if dt >= cutoff:
+                            fresh.append(job)
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    fresh.append(job)  # unparseable date → keep
+            except Exception:
+                fresh.append(job)
+        all_jobs = fresh
 
         # Filter by minimum salary (min_salary is in USD).
         # Convert the threshold to the job's native currency before comparing.

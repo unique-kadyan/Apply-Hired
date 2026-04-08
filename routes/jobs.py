@@ -55,19 +55,27 @@ def list_jobs():
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 50))
 
+    search = request.args.get("search", "").strip()
+    sort_by = request.args.get("sort_by", "")      # client override
+    sort_dir = request.args.get("sort_dir", "desc")
+
     status_in = None
     status_nin = None
-    sort_by = "score"
+    default_sort = "score"
 
     if tab == "not_applied":
         status_nin = _EXCLUDE_FROM_NOT_APPLIED
-        sort_by = "date_posted"
+        default_sort = "date_posted"
     elif tab == "applied":
         status_in = APPLIED_STATUSES
-        sort_by = "updated_at"
+        default_sort = "updated_at"
     elif tab == "not_interested":
         status_in = [NOT_INTERESTED_STATUS]
-        sort_by = "updated_at"
+        default_sort = "updated_at"
+
+    # Client sort_by overrides tab default only if it's a valid field
+    from tracker import VALID_SORT_FIELDS
+    final_sort = sort_by if sort_by in VALID_SORT_FIELDS else default_sort
 
     jobs, total = get_jobs(
         status=status or None,
@@ -75,7 +83,9 @@ def list_jobs():
         status_nin=status_nin,
         min_score=min_score,
         source=source or None,
-        sort_by=sort_by,
+        sort_by=final_sort,
+        sort_dir=sort_dir,
+        search=search or None,
         page=page,
         per_page=per_page,
         user_id=request.user["id"],
@@ -84,6 +94,33 @@ def list_jobs():
         job["tags"] = json.loads(job.get("tags", "[]"))
         job["score_details"] = json.loads(job.get("score_details", "{}"))
     return jsonify({"jobs": jobs, "total": total, "page": page, "per_page": per_page})
+
+
+# ---- Tab counts -----------------------------------------------------------
+
+@jobs_bp.route("/jobs/tab-counts", methods=["GET"])
+@login_required
+def tab_counts():
+    """Return the total job count for each tab in one query."""
+    db = _get_db()
+    uid = str(request.user["id"])
+    not_applied = db.jobs.count_documents({
+        "user_id": uid,
+        "status": {"$nin": _EXCLUDE_FROM_NOT_APPLIED},
+    })
+    applied = db.jobs.count_documents({
+        "user_id": uid,
+        "status": {"$in": APPLIED_STATUSES},
+    })
+    not_interested = db.jobs.count_documents({
+        "user_id": uid,
+        "status": NOT_INTERESTED_STATUS,
+    })
+    return jsonify({
+        "not_applied": not_applied,
+        "applied": applied,
+        "not_interested": not_interested,
+    })
 
 
 # ---- Not-Interested Reasons -----------------------------------------------
