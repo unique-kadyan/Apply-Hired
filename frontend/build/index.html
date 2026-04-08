@@ -9,6 +9,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -49,9 +50,27 @@
             .nav-bar { padding: 0 0.75rem !important; gap: 0.5rem !important; }
             .page-title { font-size: 1.1rem !important; }
         }
+        /* Action button cell */
+        .action-cell { white-space: nowrap; }
+        .action-btns { display: flex; gap: 0.45rem; align-items: center; }
+        .action-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 34px; height: 34px;
+            border-radius: 8px; border: none; cursor: pointer;
+            font-size: 1rem; flex-shrink: 0;
+            transition: transform 0.1s, opacity 0.15s;
+        }
+        .action-btn:hover { transform: scale(1.12); opacity: 0.9; }
+        .action-btn:active { transform: scale(0.96); }
+
+        @media (max-width: 768px) {
+            .action-btn { width: 30px; height: 30px; font-size: 0.9rem; border-radius: 7px; }
+            .action-btns { gap: 0.35rem; }
+        }
         @media (max-width: 420px) {
             .jobs-table th, .jobs-table td { padding: 0.35rem 0.35rem !important; font-size: 0.73rem !important; }
-            .action-btn { padding: 0.25rem 0.4rem !important; font-size: 0.72rem !important; }
+            .action-btn { width: 28px; height: 28px; font-size: 0.82rem; border-radius: 6px; }
+            .action-btns { gap: 0.28rem; }
         }
         /* Large displays — constrain max width for readability */
         @media (min-width: 1600px) {
@@ -130,22 +149,38 @@
         }
 
         function ConnectAccounts({ profile, setProfile, showToast }) {
-            const [editing, setEditing] = useState(null); // which account is being edited
+            const [editing, setEditing] = useState(null);
             const [githubInput, setGithubInput] = useState(profile.github_username || '');
             const [linkedinInput, setLinkedinInput] = useState(profile.linkedin || '');
             const [portfolioInput, setPortfolioInput] = useState(profile.website || '');
             const [loading, setLoading] = useState('');
+            const [githubRateLimit, setGithubRateLimit] = useState(false); // show token panel
+            const [githubTokenInput, setGithubTokenInput] = useState(profile.github_token ? '••••••••' : '');
+            const [editingToken, setEditingToken] = useState(false);
 
-            const connectGithub = async () => {
+            // GitHub token generation URL — opens GitHub's fine-grained PAT page
+            const GITHUB_TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
+
+            const connectGithub = async (tokenOverride) => {
                 const val = githubInput.trim();
                 if (!val) { showToast('Enter a GitHub username or URL', 'error'); return; }
                 setLoading('github');
                 try {
-                    const res = await api.post('/api/profile/connect/github', { username: val });
+                    const body = { username: val };
+                    const token = tokenOverride || (editingToken ? githubTokenInput.trim() : '');
+                    if (token && !token.startsWith('•')) body.token = token;
+                    const res = await api.post('/api/profile/connect/github', body);
                     if (res.error) {
+                        if (res.rate_limit) {
+                            setGithubRateLimit(true);
+                            setEditingToken(true);
+                        }
                         showToast(res.error, 'error');
                     } else {
                         setProfile(res.profile);
+                        setGithubRateLimit(false);
+                        setEditingToken(false);
+                        if (res.profile?.github_token) setGithubTokenInput('••••••••');
                         const s = res.stats || {};
                         showToast(`✓ GitHub connected — ${s.public_repos || 0} repos, ${s.languages_added || 0} languages, ${s.projects_added || 0} projects imported`, 'success');
                         setEditing(null);
@@ -209,7 +244,7 @@
                                         placeholder={acc.placeholder}
                                         autoFocus
                                     />
-                                    <button onClick={acc.connect} disabled={loading === acc.key || !acc.input.trim()}
+                                    <button onClick={() => acc.connect()} disabled={loading === acc.key || !acc.input.trim()}
                                         style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, minWidth: 80, opacity: !acc.input.trim() ? 0.5 : 1 }}>
                                         {loading === acc.key ? '⏳ Importing…' : 'Connect'}
                                     </button>
@@ -248,6 +283,86 @@
                             )}
                         </div>
                     ))}
+
+                    {/* GitHub Token Panel — shown on rate-limit error OR if user wants to set/update token */}
+                    {(githubRateLimit || editingToken) && (
+                        <div style={{ marginTop: '0.75rem', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: '1rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                                <div>
+                                    <p style={{ fontWeight: 700, fontSize: '0.88rem', color: '#fcd34d', marginBottom: '0.2rem' }}>
+                                        {githubRateLimit ? '⚠ GitHub API Rate Limit Reached' : '🔑 GitHub Personal Access Token'}
+                                    </p>
+                                    <p style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
+                                        {githubRateLimit
+                                            ? 'Unauthenticated requests are limited to 60/hour. Provide a GitHub token to get 5,000/hour.'
+                                            : 'A stored token lets us import your full GitHub profile without hitting rate limits.'}
+                                    </p>
+                                </div>
+                                <button onClick={() => { setGithubRateLimit(false); setEditingToken(false); }}
+                                    style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1.2rem', padding: '0 0.2rem', lineHeight: 1 }}>×</button>
+                            </div>
+
+                            {/* Step-by-step instructions */}
+                            <ol style={{ color: 'var(--muted)', fontSize: '0.8rem', paddingLeft: '1.1rem', lineHeight: 1.9, marginBottom: '0.75rem' }}>
+                                <li>Click the button below to open GitHub → Settings → Personal Access Tokens</li>
+                                <li>Click <strong style={{ color: '#e2e8f0' }}>Generate new token</strong> (Fine-grained or Classic)</li>
+                                <li>Give it a name (e.g. <em>JobBot</em>), set expiration, select scope: <strong style={{ color: '#e2e8f0' }}>read:user</strong> (or leave default for fine-grained)</li>
+                                <li>Copy the generated token and paste it below</li>
+                            </ol>
+
+                            <a href={GITHUB_TOKEN_URL} target="_blank" rel="noopener noreferrer"
+                                style={{ ...styles.btn, ...styles.btnSm, background: '#24292f', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.75rem', textDecoration: 'none', border: '1px solid #444' }}>
+                                🐙 Open GitHub → Create Token ↗
+                            </a>
+
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <input
+                                    type="password"
+                                    style={{ ...styles.input, flex: 1, minWidth: 200, marginBottom: 0, fontFamily: 'monospace', fontSize: '0.82rem' }}
+                                    value={editingToken && !githubTokenInput.startsWith('•') ? githubTokenInput : (githubTokenInput.startsWith('•') ? '' : githubTokenInput)}
+                                    onChange={e => setGithubTokenInput(e.target.value)}
+                                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                                    autoFocus={githubRateLimit}
+                                />
+                                <button
+                                    disabled={loading === 'github' || !githubTokenInput.trim() || githubTokenInput.startsWith('•')}
+                                    onClick={async () => {
+                                        const token = githubTokenInput.trim();
+                                        if (!token || token.startsWith('•')) return;
+                                        setLoading('github');
+                                        try {
+                                            const val = githubInput.trim() || (profile.github_username || profile.github || '');
+                                            const res = await api.post('/api/profile/connect/github', { username: val, token });
+                                            if (res.error) { showToast(res.error, 'error'); }
+                                            else {
+                                                setProfile(res.profile);
+                                                setGithubRateLimit(false);
+                                                setEditingToken(false);
+                                                setGithubTokenInput('••••••••');
+                                                setEditing(null);
+                                                const s = res.stats || {};
+                                                showToast(`✓ GitHub connected — ${s.public_repos || 0} repos, ${s.languages_added || 0} languages imported`, 'success');
+                                            }
+                                        } catch { showToast('Connection failed', 'error'); }
+                                        setLoading('');
+                                    }}
+                                    style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSuccess, opacity: (!githubTokenInput.trim() || githubTokenInput.startsWith('•')) ? 0.45 : 1 }}>
+                                    {loading === 'github' ? '⏳ Connecting…' : '✓ Save & Connect'}
+                                </button>
+                            </div>
+                            {profile.github_token && <p style={{ color: '#6ee7b7', fontSize: '0.75rem', marginTop: '0.4rem' }}>✓ Token already saved — clear the input and click Save to update it.</p>}
+                        </div>
+                    )}
+
+                    {/* Show "Set token" link under GitHub row when not in error state */}
+                    {!githubRateLimit && !editingToken && (
+                        <div style={{ textAlign: 'right', marginTop: '0.2rem', marginBottom: '0.2rem' }}>
+                            <button onClick={() => setEditingToken(true)}
+                                style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: '0.72rem', textDecoration: 'underline' }}>
+                                {profile.github_token ? '🔑 Update GitHub Token' : '🔑 Set GitHub Token (optional, avoids rate limits)'}
+                            </button>
+                        </div>
+                    )}
 
                     {profile.projects && profile.projects.length > 0 && (
                         <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem' }}>
@@ -528,77 +643,283 @@
         }
 
         // ============================================================
+        // ============================================================
+        // Chart hook — mounts/destroys a Chart.js instance on a canvas
+        // ============================================================
+        function useChart(ref, config, deps) {
+            useEffect(() => {
+                if (!ref.current) return;
+                const ctx = ref.current.getContext('2d');
+                const chart = new Chart(ctx, config);
+                return () => chart.destroy();
+            }, deps);
+        }
+
+        // ============================================================
+        // Mini chart components
+        // ============================================================
+        function DonutChart({ data, labels, colors, title }) {
+            const ref = useRef();
+            useChart(ref, {
+                type: 'doughnut',
+                data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: '#1e293b', hoverOffset: 6 }] },
+                options: {
+                    responsive: true, maintainAspectRatio: false, cutout: '68%',
+                    plugins: {
+                        legend: { position: 'right', labels: { color: '#94a3b8', font: { size: 11 }, padding: 10, boxWidth: 12 } },
+                        title: { display: !!title, text: title, color: '#e2e8f0', font: { size: 13, weight: '600' }, padding: { bottom: 10 } },
+                        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw}` } },
+                    },
+                },
+            }, [JSON.stringify(data)]);
+            return <canvas ref={ref} style={{ maxHeight: 200 }} />;
+        }
+
+        function BarChart({ labels, values, color, title, horizontal }) {
+            const ref = useRef();
+            useChart(ref, {
+                type: 'bar',
+                data: { labels, datasets: [{ data: values, backgroundColor: color || '#2563eb', borderRadius: 5, borderSkipped: false }] },
+                options: {
+                    indexAxis: horizontal ? 'y' : 'x',
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: !!title, text: title, color: '#e2e8f0', font: { size: 13, weight: '600' }, padding: { bottom: 10 } },
+                    },
+                    scales: {
+                        x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(51,65,85,0.5)' } },
+                        y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(51,65,85,0.5)' } },
+                    },
+                },
+            }, [JSON.stringify(values)]);
+            return <canvas ref={ref} style={{ maxHeight: horizontal ? Math.max(160, labels.length * 28) : 180 }} />;
+        }
+
+        function LineChart({ labels, values, title }) {
+            const ref = useRef();
+            useChart(ref, {
+                type: 'line',
+                data: { labels, datasets: [{
+                    data: values, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.12)',
+                    fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#2563eb',
+                }]},
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, title: { display: !!title, text: title, color: '#e2e8f0', font: { size: 13, weight: '600' }, padding: { bottom: 10 } } },
+                    scales: {
+                        x: { ticks: { color: '#64748b', font: { size: 9 }, maxRotation: 45 }, grid: { color: 'rgba(51,65,85,0.4)' } },
+                        y: { ticks: { color: '#64748b', font: { size: 10 }, stepSize: 1 }, grid: { color: 'rgba(51,65,85,0.4)' }, beginAtZero: true },
+                    },
+                },
+            }, [JSON.stringify(values)]);
+            return <canvas ref={ref} style={{ maxHeight: 160 }} />;
+        }
+
+        // Funnel as pure SVG (Chart.js has no native funnel)
+        function FunnelChart({ stages }) {
+            if (!stages || !stages.length) return null;
+            const max = stages[0].count || 1;
+            const H = 44, GAP = 6, W = 100;
+            const COLORS = ['#2563eb','#0891b2','#059669','#d97706','#7c3aed'];
+            return (
+                <div style={{ width: '100%' }}>
+                    {stages.map((s, i) => {
+                        const pct = max > 0 ? (s.count / max) * 100 : 0;
+                        return (
+                            <div key={s.stage} style={{ marginBottom: GAP }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                                    <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>{s.stage}</span>
+                                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: COLORS[i] }}>{s.count}</span>
+                                </div>
+                                <div style={{ background: 'rgba(51,65,85,0.4)', borderRadius: 4, height: 10, width: '100%' }}>
+                                    <div style={{ width: `${pct}%`, height: '100%', background: COLORS[i], borderRadius: 4, transition: 'width 0.6s ease', minWidth: s.count > 0 ? 4 : 0 }} />
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+
+        // ============================================================
         // Dashboard Page
         // ============================================================
         function Dashboard({ navigate }) {
             const [stats, setStats] = useState(null);
-            const [jobs, setJobs] = useState([]);
-            const APPLIED_S = ['applied', 'interview', 'offer'];
+            const [recentJobs, setRecentJobs] = useState({ new: [], applied: [], interview: [] });
+
             useEffect(() => {
                 api.get('/api/stats').then(setStats);
-                api.get('/api/jobs?per_page=20').then(r => {
-                    const all = r.jobs || [];
-                    // Not-applied / new on top, applied at the bottom
-                    const top = all.filter(j => !APPLIED_S.includes(j.status));
-                    const bot = all.filter(j =>  APPLIED_S.includes(j.status));
-                    setJobs([...top, ...bot].slice(0, 15));
+                // Load recent jobs grouped by status
+                const fetches = [
+                    api.get('/api/jobs?tab=not_applied&per_page=5&sort_by=score&sort_dir=desc'),
+                    api.get('/api/jobs?tab=applied&per_page=5&sort_by=updated_at&sort_dir=desc'),
+                ];
+                Promise.all(fetches).then(([notApplied, applied]) => {
+                    const apJobs = (applied.jobs || []);
+                    setRecentJobs({
+                        new: notApplied.jobs || [],
+                        applied: apJobs.filter(j => j.status === 'applied'),
+                        interview: apJobs.filter(j => j.status === 'interview' || j.status === 'offer'),
+                    });
                 });
             }, []);
 
-            if (!stats) return <div style={styles.container}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>;
+            if (!stats) return (
+                <div style={styles.container}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--muted)', paddingTop: '3rem' }}>
+                        <span style={{ fontSize: '1.5rem' }}>⏳</span> Loading dashboard…
+                    </div>
+                </div>
+            );
+
+            const statusDonut = {
+                labels: ['New', 'Applied', 'Interview', 'Offer', 'Not Interested'],
+                values: [stats.new, stats.applied, stats.interview, stats.offer || 0, stats.not_interested],
+                colors: ['#2563eb', '#059669', '#7c3aed', '#f59e0b', '#dc2626'],
+            };
+
+            const scoreLabels = (stats.score_distribution || []).map(s => s.label);
+            const scoreValues = (stats.score_distribution || []).map(s => s.count);
+            const scoreColors = ['#dc2626','#f97316','#f59e0b','#22c55e','#2563eb'];
+
+            const topCoNames = (stats.top_companies || []).map(c => c.name.length > 18 ? c.name.slice(0, 16) + '…' : c.name);
+            const topCoCounts = (stats.top_companies || []).map(c => c.count);
+
+            const activityLabels = (stats.daily_activity || []).map(d => d.date.slice(5)); // MM-DD
+            const activityValues = (stats.daily_activity || []).map(d => d.count);
+
+            const totalActive = stats.new + stats.applied + stats.interview + (stats.offer || 0);
+
+            const cardStyle = (accent) => ({
+                ...styles.card, padding: '1rem 1.25rem', borderLeft: `3px solid ${accent}`,
+                display: 'flex', flexDirection: 'column', gap: '0.2rem',
+            });
 
             return (
-                <div style={styles.container}>
-                    <h1 style={{ marginBottom: '0.5rem', fontSize: '1.5rem' }}>Dashboard</h1>
-                    <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>Job search overview</p>
+                <div style={styles.container} className="responsive-container">
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                        <div>
+                            <h1 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Dashboard</h1>
+                            <p style={{ color: 'var(--muted)', fontSize: '0.88rem', marginTop: '0.2rem' }}>Your job search at a glance</p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => navigate('search')}>🔍 Search Jobs</button>
+                            <button style={{ ...styles.btn, ...styles.btnSuccess }} onClick={() => navigate('jobs')}>📋 All Jobs</button>
+                        </div>
+                    </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                    {/* Stat cards row */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
                         {[
-                            { n: stats.total, l: 'Total Jobs', c: '#60a5fa' },
-                            { n: stats.new, l: 'New', c: '#67e8f9' },
-                            { n: stats.saved, l: 'Saved', c: '#93c5fd' },
-                            { n: stats.applied, l: 'Applied', c: '#6ee7b7' },
-                            { n: stats.interview, l: 'Interviews', c: '#d8b4fe' },
-                            { n: `${Math.round(stats.avg_score * 100)}%`, l: 'Avg Match', c: '#fcd34d' },
+                            { n: stats.total,                          l: 'Total Found',   c: '#60a5fa', icon: '🗂' },
+                            { n: stats.new,                            l: 'New',           c: '#67e8f9', icon: '✨' },
+                            { n: stats.applied,                        l: 'Applied',       c: '#6ee7b7', icon: '📤' },
+                            { n: stats.interview,                      l: 'Interviews',    c: '#d8b4fe', icon: '🎯' },
+                            { n: stats.offer || 0,                     l: 'Offers',        c: '#fcd34d', icon: '🏆' },
+                            { n: stats.not_interested,                 l: 'Skipped',       c: '#f87171', icon: '⏭' },
+                            { n: `${Math.round(stats.avg_score * 100)}%`, l: 'Avg Match', c: '#fb923c', icon: '📊' },
                         ].map((s, i) => (
-                            <div key={i} style={{ ...styles.card, textAlign: 'center', padding: '1rem' }}>
-                                <div style={{ fontSize: '1.8rem', fontWeight: 700, color: s.c }}>{s.n}</div>
-                                <div style={{ color: 'var(--muted)', fontSize: '0.82rem', marginTop: '0.2rem' }}>{s.l}</div>
+                            <div key={i} style={{ ...styles.card, textAlign: 'center', padding: '0.9rem 0.5rem', cursor: i < 3 ? 'pointer' : 'default' }}
+                                onClick={() => { if (i === 0 || i === 1) navigate('jobs'); if (i === 2) navigate('jobs'); }}>
+                                <div style={{ fontSize: '1.3rem', marginBottom: '0.2rem' }}>{s.icon}</div>
+                                <div style={{ fontSize: '1.7rem', fontWeight: 800, color: s.c, lineHeight: 1 }}>{s.n}</div>
+                                <div style={{ color: 'var(--muted)', fontSize: '0.75rem', marginTop: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.l}</div>
                             </div>
                         ))}
                     </div>
 
-                    <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-                        <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => navigate('search')}>Search New Jobs</button>
-                        <button style={{ ...styles.btn, ...styles.btnSuccess }} onClick={() => navigate('jobs')}>View All Jobs</button>
-                        <button style={{ ...styles.btn, ...styles.btnSecondary }} onClick={() => navigate('profile')}>My Profile</button>
+                    {/* Charts row 1: Status donut + Activity line */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                        {/* Status distribution */}
+                        <div style={styles.card}>
+                            <h3 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.9rem' }}>Status Breakdown</h3>
+                            {totalActive === 0
+                                ? <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem 0', fontSize: '0.85rem' }}>No jobs yet — run a search first</p>
+                                : <div style={{ height: 200 }}><DonutChart data={statusDonut.values} labels={statusDonut.labels} colors={statusDonut.colors} /></div>
+                            }
+                        </div>
+
+                        {/* Daily activity */}
+                        <div style={styles.card}>
+                            <h3 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.9rem' }}>Jobs Added — Last 14 Days</h3>
+                            {activityValues.every(v => v === 0)
+                                ? <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem 0', fontSize: '0.85rem' }}>No recent activity</p>
+                                : <div style={{ height: 160 }}><LineChart labels={activityLabels} values={activityValues} /></div>
+                            }
+                        </div>
                     </div>
 
-
-                    <div style={styles.card}>
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Recent Matches</h2>
-                        {jobs.length === 0 ? (
-                            <p style={{ color: 'var(--muted)', padding: '2rem', textAlign: 'center' }}>No jobs yet. Run a search to get started!</p>
-                        ) : (
-                            <div style={{ overflowX: 'auto' }}>
-                                <table className="jobs-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                    <thead><tr>
-                                        {['Score', 'Title', 'Company', 'Status', ''].map(h => <th key={h} style={{ padding: '0.6rem 0.8rem', textAlign: 'left', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: '0.78rem', textTransform: 'uppercase' }}>{h}</th>)}
-                                    </tr></thead>
-                                    <tbody>
-                                        {jobs.map(j => (
-                                            <tr key={j.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.1s', cursor: 'pointer' }} onClick={() => navigate('job', j.id)}>
-                                                <td style={{ padding: '0.6rem 0.8rem' }}><Badge score={j.score} /></td>
-                                                <td style={{ padding: '0.6rem 0.8rem', fontWeight: 600, color: '#60a5fa' }}>{j.title}</td>
-                                                <td style={{ padding: '0.6rem 0.8rem' }}>{j.company}</td>
-                                                <td style={{ padding: '0.6rem 0.8rem' }}><StatusBadge status={j.status} /></td>
-                                                <td style={{ padding: '0.6rem 0.8rem' }}><a href={j.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary }}>Open</a></td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                    {/* Charts row 2: Score distribution + Application funnel */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                        {/* Score histogram */}
+                        <div style={styles.card}>
+                            <h3 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.9rem' }}>Match Score Distribution</h3>
+                            <div style={{ height: 180 }}>
+                                <BarChart labels={scoreLabels} values={scoreValues} color={scoreColors} />
                             </div>
-                        )}
+                        </div>
+
+                        {/* Application funnel */}
+                        <div style={styles.card}>
+                            <h3 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>Application Funnel</h3>
+                            <FunnelChart stages={stats.funnel} />
+                            {stats.funnel && stats.funnel[0]?.count > 0 && stats.funnel[2]?.count > 0 && (
+                                <p style={{ color: 'var(--muted)', fontSize: '0.78rem', marginTop: '0.75rem', textAlign: 'center' }}>
+                                    Application rate: <span style={{ color: '#6ee7b7', fontWeight: 700 }}>
+                                        {Math.round((stats.funnel[2].count / stats.funnel[0].count) * 100)}%
+                                    </span> of discovered jobs applied
+                                </p>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Top companies bar chart */}
+                    {topCoCounts.length > 0 && (
+                        <div style={{ ...styles.card, marginBottom: '0.75rem' }}>
+                            <h3 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.9rem' }}>Top Hiring Companies</h3>
+                            <div style={{ height: Math.max(180, topCoNames.length * 30) }}>
+                                <BarChart labels={topCoNames} values={topCoCounts} color="#2563eb" horizontal={true} />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Recent jobs grouped by status */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem' }}>
+                        {[
+                            { key: 'new',       label: 'Top New Matches',   color: '#2563eb', jobs: recentJobs.new },
+                            { key: 'applied',   label: 'Recently Applied',  color: '#059669', jobs: recentJobs.applied },
+                            { key: 'interview', label: 'Active Interviews', color: '#7c3aed', jobs: recentJobs.interview },
+                        ].map(group => (
+                            <div key={group.key} style={{ ...styles.card, padding: 0, overflow: 'hidden' }}>
+                                <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid var(--border)', borderLeft: `3px solid ${group.color}`, background: 'rgba(255,255,255,0.02)' }}>
+                                    <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>{group.label}</span>
+                                    <span style={{ color: 'var(--muted)', fontSize: '0.78rem', marginLeft: '0.5rem' }}>({group.jobs.length})</span>
+                                </div>
+                                {group.jobs.length === 0
+                                    ? <p style={{ color: 'var(--muted)', fontSize: '0.82rem', padding: '1.25rem', textAlign: 'center' }}>None yet</p>
+                                    : group.jobs.map(j => (
+                                        <div key={j.id} onClick={() => navigate('jobs')}
+                                            style={{ padding: '0.6rem 1rem', borderBottom: '1px solid rgba(51,65,85,0.5)', cursor: 'pointer', transition: 'background 0.1s' }}
+                                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                            <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#93c5fd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={j.title}>{j.title}</div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem' }}>
+                                                <span style={{ color: 'var(--muted)', fontSize: '0.76rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{j.company}</span>
+                                                <Badge score={j.score} />
+                                            </div>
+                                        </div>
+                                    ))
+                                }
+                                {group.jobs.length > 0 && (
+                                    <div style={{ padding: '0.5rem', textAlign: 'center', borderTop: '1px solid rgba(51,65,85,0.4)' }}>
+                                        <button onClick={() => navigate('jobs')} style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, fontSize: '0.76rem' }}>View All →</button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
                     </div>
                 </div>
             );
@@ -633,6 +954,15 @@
             if (loc.includes('uae') || loc.includes('dubai')) return 'AED';
             return 'USD';
         }
+        // Format ISO date string → "Apr 7, 2026"  (strips time component)
+        function fmtDate(d) {
+            if (!d) return '';
+            const s = String(d).slice(0, 10); // "2026-04-07"
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return d; // not ISO — return as-is
+            const dt = new Date(s + 'T00:00:00');
+            return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
         function formatSalary(salaryStr, location) {
             if (!salaryStr || !salaryStr.trim()) return null;
             const currency = detectCurrency(salaryStr, location);
@@ -1124,27 +1454,37 @@
                                                 })()}
                                             </td>
                                             <td style={{ padding: '0.5rem 0.6rem' }}><StatusBadge status={j.status} /></td>
-                                            <td style={{ padding: '0.5rem 0.4rem' }} onClick={e => e.stopPropagation()}>
-                                                {/* Icon-based action buttons */}
-                                                {tab === 'applied' ? (
-                                                    <a href={j.url} target="_blank" rel="noopener"
-                                                        title="View Job" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>👁</a>
-                                                ) : tab === 'not_interested' ? (
-                                                    <a href={j.url} target="_blank" rel="noopener"
-                                                        title="View Job" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>👁</a>
+                                            <td className="action-cell" style={{ padding: '0.4rem 0.6rem' }} onClick={e => e.stopPropagation()}>
+                                                {tab === 'applied' || tab === 'not_interested' ? (
+                                                    <div className="action-btns">
+                                                        <a href={j.url} target="_blank" rel="noopener"
+                                                            title="View Job"
+                                                            className="action-btn"
+                                                            style={{ background: 'var(--bg3)', color: 'var(--muted)', textDecoration: 'none' }}>👁</a>
+                                                    </div>
                                                 ) : (
-                                                    <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
-                                                        <a href={j.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}
-                                                            title="Open Job" style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>↗</a>
-                                                        <button title="Mark Applied" disabled={j._marking}
-                                                            onClick={async (e) => { e.stopPropagation(); j._marking = true; e.target.disabled = true; await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast(`Marked applied`, 'success'); loadJobs(); }}
-                                                            style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSuccess, padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>✓</button>
-                                                        <button title={j.cover_letter ? 'View Cover Letter' : 'Generate Cover Letter'}
+                                                    <div className="action-btns">
+                                                        <a href={j.url} target="_blank" rel="noopener"
+                                                            onClick={e => e.stopPropagation()}
+                                                            title="Open Job"
+                                                            className="action-btn"
+                                                            style={{ background: 'var(--accent)', color: '#fff', textDecoration: 'none' }}>↗</a>
+                                                        <button
+                                                            title="Mark Applied"
+                                                            disabled={j._marking}
+                                                            onClick={async (e) => { e.stopPropagation(); j._marking = true; e.target.disabled = true; await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast('Marked applied', 'success'); loadJobs(); }}
+                                                            className="action-btn"
+                                                            style={{ background: 'var(--green)', color: '#fff' }}>✓</button>
+                                                        <button
+                                                            title={j.cover_letter ? 'View Cover Letter' : 'Generate Cover Letter'}
                                                             onClick={e => { e.stopPropagation(); openCoverLetter(j); }}
-                                                            style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(124,58,237,0.18)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.35)', padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>📄</button>
-                                                        <button title="Not Interested"
+                                                            className="action-btn"
+                                                            style={{ background: 'rgba(124,58,237,0.22)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)' }}>📄</button>
+                                                        <button
+                                                            title="Not Interested"
                                                             onClick={e => { e.stopPropagation(); openNiModal(j); }}
-                                                            style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(220,38,38,0.12)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.3)', padding: '0.3rem 0.55rem', fontSize: '0.85rem' }}>✕</button>
+                                                            className="action-btn"
+                                                            style={{ background: 'rgba(220,38,38,0.15)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.35)' }}>✕</button>
                                                     </div>
                                                 )}
                                             </td>
@@ -1216,8 +1556,13 @@
                         const j = jobPanel;
                         const fmtSalary = formatSalary(j.salary, j.location);
                         const currency = detectCurrency(j.salary || '', j.location || '');
-                        // Extract key sentences from description (first 3 meaningful lines)
+                        // Extract key sentences from description
                         const descLines = (j.description || '').split(/[\n.!?]+/).map(s => s.trim()).filter(s => s.length > 40).slice(0, 4);
+                        // Extract required years of experience from description
+                        const expMatch = (j.description || j.title || '').match(/(\d+)\+?\s*(?:to\s*\d+\s*)?years?\s*(?:of\s*)?(?:experience|exp)/i)
+                                      || (j.description || '').match(/experience[^.]{0,20}(\d+)\+?\s*years?/i)
+                                      || (j.description || '').match(/minimum\s+(\d+)\s*years?/i);
+                        const reqYears = expMatch ? expMatch[1] : null;
                         return (
                             <div style={{ position: 'fixed', inset: 0, zIndex: 150, display: 'flex' }}
                                 onClick={e => { if (e.target === e.currentTarget) setJobPanel(null); }}>
@@ -1231,7 +1576,7 @@
                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                 <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.2rem', lineHeight: 1.3 }}>{j.title}</h2>
                                                 <p style={{ color: '#60a5fa', fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.15rem' }}>{j.company}</p>
-                                                <p style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>{[j.location, j.date_posted].filter(Boolean).join(' · ')}</p>
+                                                <p style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>{[j.location, fmtDate(j.date_posted)].filter(Boolean).join(' · ')}</p>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem', flexShrink: 0 }}>
                                                 <Badge score={j.score} />
@@ -1277,7 +1622,8 @@
                                         {/* Job type / meta chips */}
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '1rem' }}>
                                             {j.job_type && <span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.2rem 0.6rem', borderRadius: 20, fontSize: '0.78rem' }}>{j.job_type}</span>}
-                                            {j.date_posted && <span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.2rem 0.6rem', borderRadius: 20, fontSize: '0.78rem' }}>Posted: {j.date_posted}</span>}
+                                            {j.date_posted && <span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.2rem 0.6rem', borderRadius: 20, fontSize: '0.78rem' }}>📅 {fmtDate(j.date_posted)}</span>}
+                                            {reqYears && <span style={{ background: 'rgba(245,158,11,0.15)', color: '#fcd34d', padding: '0.2rem 0.6rem', borderRadius: 20, fontSize: '0.78rem', fontWeight: 600, border: '1px solid rgba(245,158,11,0.3)' }}>🎓 {reqYears}+ yrs exp required</span>}
                                         </div>
 
                                         {/* Tags */}
@@ -1321,20 +1667,20 @@
                                         {j.notes && <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '0.6rem 0.9rem', fontSize: '0.85rem', color: 'var(--yellow2)', marginBottom: '1rem' }}>{j.notes}</div>}
                                     </div>
 
-                                    {/* Action bar */}
-                                    <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', background: 'var(--bg2)', position: 'sticky', bottom: 0 }}>
-                                        <a href={j.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ ...styles.btn, ...styles.btnPrimary, fontSize: '0.88rem' }}>Open Job ↗</a>
-                                        <button onClick={() => openCoverLetter(j)} style={{ ...styles.btn, background: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)', fontSize: '0.88rem' }}>
-                                            {j.cover_letter ? 'View Cover Letter' : '✨ Generate Cover Letter'}
+                                    {/* Action bar — always single row, buttons share space equally */}
+                                    <div style={{ padding: '0.85rem 1rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '0.4rem', background: 'var(--bg2)', position: 'sticky', bottom: 0 }}>
+                                        <a href={j.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}
+                                            style={{ ...styles.btn, ...styles.btnPrimary, flex: 1, fontSize: '0.82rem', padding: '0.5rem 0.4rem', justifyContent: 'center', minWidth: 0, whiteSpace: 'nowrap' }}>↗ Open</a>
+                                        <button onClick={() => openCoverLetter(j)}
+                                            style={{ ...styles.btn, flex: 1, background: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)', fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>
+                                            {j.cover_letter ? '📄 Cover Letter' : '✨ Gen CL'}
                                         </button>
-                                        {tab !== 'applied' && tab !== 'not_interested' && (
-                                            <>
-                                                <button onClick={async () => { await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast('Marked as Applied!', 'success'); setJobPanel(null); loadJobs(); }}
-                                                    style={{ ...styles.btn, ...styles.btnSuccess, fontSize: '0.88rem' }}>Mark Applied</button>
-                                                <button onClick={() => { setJobPanel(null); openNiModal(j); }}
-                                                    style={{ ...styles.btn, background: 'rgba(220,38,38,0.15)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.3)', fontSize: '0.88rem' }}>Not Interested</button>
-                                            </>
-                                        )}
+                                        {tab !== 'applied' && tab !== 'not_interested' && (<>
+                                            <button onClick={async () => { await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast('Marked as Applied!', 'success'); setJobPanel(null); loadJobs(); }}
+                                                style={{ ...styles.btn, ...styles.btnSuccess, flex: 1, fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>✓ Applied</button>
+                                            <button onClick={() => { setJobPanel(null); openNiModal(j); }}
+                                                style={{ ...styles.btn, flex: 1, background: 'rgba(220,38,38,0.15)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.3)', fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>✕ Skip</button>
+                                        </>)}
                                     </div>
                                 </div>
                             </div>
@@ -1377,15 +1723,14 @@
                                         <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>No cover letter yet — click Regenerate above.</p>
                                     )}
                                 </div>
-                                {/* Footer */}
-                                <div style={{ padding: '0.75rem 1.5rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                    {!clModal.loading && clModal.letter && (<>
-                                        <button onClick={() => copyCoverLetter(clModal.letter)} style={{ ...styles.btn, ...styles.btnPrimary, flex: 1, minWidth: 140 }}>📋 Copy to Clipboard</button>
+                                {/* Footer — action buttons only; modal closed via × in header */}
+                                {!clModal.loading && clModal.letter && (
+                                    <div style={{ padding: '0.75rem 1.5rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '0.5rem' }}>
+                                        <button onClick={() => copyCoverLetter(clModal.letter)} style={{ ...styles.btn, ...styles.btnPrimary, flex: 1 }}>📋 Copy to Clipboard</button>
                                         <button onClick={() => exportCoverLetterPdf(clModal.letter, clModal.job?.title, clModal.job?.company)}
-                                            style={{ ...styles.btn, ...styles.btnSecondary, minWidth: 130 }}>⬇ Download PDF</button>
-                                    </>)}
-                                    <button onClick={() => setClModal(null)} style={{ ...styles.btn, ...styles.btnSecondary }}>Close</button>
-                                </div>
+                                            style={{ ...styles.btn, ...styles.btnSecondary, flex: 1 }}>⬇ Download PDF</button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -1551,7 +1896,7 @@
                         <div>
                             <h1 style={{ fontSize: '1.4rem', marginBottom: '0.3rem' }}>{job.title}</h1>
                             <p style={{ color: '#60a5fa', fontSize: '1.05rem' }}>{job.company}</p>
-                            <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginTop: '0.2rem' }}>{[job.location, job.date_posted].filter(Boolean).join(' · ')}</p>
+                            <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginTop: '0.2rem' }}>{[job.location, fmtDate(job.date_posted)].filter(Boolean).join(' · ')}</p>
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                             <Badge score={job.score} />
@@ -1862,6 +2207,211 @@
         }
 
         // ============================================================
+        // Experience Timeline Component
+        // ============================================================
+        function ExperienceSection({ experience }) {
+            const [activeIdx, setActiveIdx] = useState(null);
+
+            // Accent colours per role index
+            const COLORS = ['#2563eb','#059669','#7c3aed','#d97706','#0891b2','#dc2626','#be185d','#0d9488'];
+
+            // Parse a period string like "Jan 2022 - Feb 2022" or "Jun 2023-Present"
+            function parsePeriod(period) {
+                if (!period) return null;
+                const MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+                const parts = period.replace(/–/g,'-').split(/\s*-\s*/);
+                function parseDate(s) {
+                    s = (s || '').trim().toLowerCase();
+                    if (s === 'present' || s === 'current' || s === 'now') return new Date();
+                    const m = s.match(/([a-z]+)\s+(\d{4})/);
+                    if (m && MONTHS[m[1].slice(0,3)] !== undefined) return new Date(+m[2], MONTHS[m[1].slice(0,3)], 1);
+                    const y = s.match(/\d{4}/);
+                    return y ? new Date(+y[0], 0, 1) : null;
+                }
+                const start = parseDate(parts[0]);
+                const end   = parseDate(parts[1] || 'present');
+                return (start && end) ? { start, end } : null;
+            }
+
+            function fmtDuration(start, end) {
+                const months = Math.round((end - start) / (1000 * 60 * 60 * 24 * 30.4));
+                if (months < 1) return '< 1 mo';
+                const y = Math.floor(months / 12), m = months % 12;
+                return [y > 0 ? `${y} yr${y>1?'s':''}` : '', m > 0 ? `${m} mo` : ''].filter(Boolean).join(' ');
+            }
+
+            // Enrich experience items with parsed dates
+            const items = experience.map((exp, i) => {
+                const parsed = parsePeriod(exp.period);
+                return { ...exp, parsed, color: COLORS[i % COLORS.length] };
+            }).filter(e => e.parsed);
+
+            if (items.length === 0) {
+                // Fallback — plain list if no parseable dates
+                return (
+                    <div style={styles.card}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Work Experience</h2>
+                        {experience.map((exp, i) => (
+                            <div key={i} style={{ marginBottom: '1.25rem', paddingBottom: '1.25rem', borderBottom: i < experience.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                    <h3 style={{ color: 'var(--text)', fontSize: '1rem' }}>{exp.title}</h3>
+                                    <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{exp.period}</span>
+                                </div>
+                                <p style={{ color: '#60a5fa', marginBottom: '0.4rem', fontSize: '0.92rem' }}>{exp.company}</p>
+                                <ul style={{ paddingLeft: '1.4rem', lineHeight: 1.8, color: '#cbd5e1', fontSize: '0.88rem' }}>
+                                    {(exp.highlights || []).map((h, j) => <li key={j}>{h}</li>)}
+                                </ul>
+                            </div>
+                        ))}
+                    </div>
+                );
+            }
+
+            // Timeline bounds
+            const minDate = new Date(Math.min(...items.map(e => e.parsed.start)));
+            const maxDate = new Date(Math.max(...items.map(e => e.parsed.end)));
+            // Pad 3 months on each side
+            minDate.setMonth(minDate.getMonth() - 3);
+            maxDate.setMonth(maxDate.getMonth() + 3);
+            const totalMs = maxDate - minDate;
+            const pct = d => ((d - minDate) / totalMs) * 100;
+
+            // Year tick marks
+            const ticks = [];
+            const startYear = minDate.getFullYear();
+            const endYear   = maxDate.getFullYear() + 1;
+            for (let y = startYear; y <= endYear; y++) {
+                const p = pct(new Date(y, 0, 1));
+                if (p >= 0 && p <= 100) ticks.push({ year: y, p });
+            }
+
+            return (
+                <div style={styles.card}>
+                    <h2 style={{ fontSize: '1.1rem', marginBottom: '1.5rem' }}>Work Experience</h2>
+
+                    {/* ── Timeline chart ── */}
+                    <div style={{ position: 'relative', marginBottom: '2rem', overflowX: 'auto' }}>
+                        <div style={{ minWidth: 480, position: 'relative' }}>
+
+                            {/* Role bars */}
+                            <div style={{ position: 'relative', height: `${items.length * 52 + 8}px`, marginBottom: '0.5rem' }}>
+                                {items.map((exp, i) => {
+                                    const left  = pct(exp.parsed.start);
+                                    const right = pct(exp.parsed.end);
+                                    const width = Math.max(right - left, 0.8);
+                                    const dur   = fmtDuration(exp.parsed.start, exp.parsed.end);
+                                    const isEnd = exp.parsed.end >= new Date() - 86400000;
+                                    const isActive = activeIdx === i;
+                                    return (
+                                        <div key={i}
+                                            onMouseEnter={() => setActiveIdx(i)}
+                                            onMouseLeave={() => setActiveIdx(null)}
+                                            onClick={() => setActiveIdx(isActive ? null : i)}
+                                            style={{
+                                                position: 'absolute',
+                                                top: `${i * 52 + 4}px`,
+                                                left: `${left}%`,
+                                                width: `${width}%`,
+                                                height: 40,
+                                                borderRadius: 8,
+                                                background: isActive
+                                                    ? exp.color
+                                                    : `${exp.color}44`,
+                                                border: `2px solid ${exp.color}`,
+                                                cursor: 'pointer',
+                                                transition: 'background 0.2s, box-shadow 0.2s',
+                                                boxShadow: isActive ? `0 0 0 3px ${exp.color}55` : 'none',
+                                                display: 'flex', alignItems: 'center',
+                                                padding: '0 0.6rem',
+                                                overflow: 'hidden',
+                                                boxSizing: 'border-box',
+                                            }}>
+                                            {/* Company + title inside bar */}
+                                            <div style={{ overflow: 'hidden', flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: '0.7rem', color: isActive ? '#fff' : exp.color, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {exp.company}
+                                                </div>
+                                                <div style={{ fontSize: '0.65rem', color: isActive ? 'rgba(255,255,255,0.85)' : '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {exp.title}
+                                                </div>
+                                            </div>
+                                            {/* Duration badge */}
+                                            <span style={{ fontSize: '0.62rem', background: isActive ? 'rgba(0,0,0,0.25)' : `${exp.color}33`, color: isActive ? '#fff' : exp.color, borderRadius: 4, padding: '0.1rem 0.35rem', marginLeft: 4, flexShrink: 0, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                                {dur}{isEnd ? ' 🟢' : ''}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Year axis */}
+                            <div style={{ position: 'relative', height: 24, borderTop: '1px solid var(--border)' }}>
+                                {ticks.map(t => (
+                                    <div key={t.year} style={{ position: 'absolute', left: `${t.p}%`, top: 0, transform: 'translateX(-50%)' }}>
+                                        <div style={{ width: 1, height: 6, background: 'var(--border)', margin: '0 auto' }} />
+                                        <span style={{ fontSize: '0.68rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{t.year}</span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Today marker */}
+                            {(() => {
+                                const tp = pct(new Date());
+                                if (tp < 0 || tp > 100) return null;
+                                return (
+                                    <div style={{ position: 'absolute', top: 0, left: `${tp}%`, width: 1, height: `${items.length * 52 + 8}px`, background: 'rgba(37,99,235,0.5)', borderLeft: '1px dashed #2563eb', pointerEvents: 'none' }}>
+                                        <span style={{ position: 'absolute', top: -18, left: 3, fontSize: '0.6rem', color: '#2563eb', fontWeight: 700, whiteSpace: 'nowrap' }}>Today</span>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
+
+                    {/* ── Detail cards ── */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem' }}>
+                        {items.map((exp, i) => {
+                            const dur = fmtDuration(exp.parsed.start, exp.parsed.end);
+                            const isEnd = exp.parsed.end >= new Date() - 86400000;
+                            return (
+                                <div key={i}
+                                    onMouseEnter={() => setActiveIdx(i)}
+                                    onMouseLeave={() => setActiveIdx(null)}
+                                    style={{
+                                        background: activeIdx === i ? `${exp.color}14` : 'rgba(255,255,255,0.02)',
+                                        border: `1px solid ${activeIdx === i ? exp.color : 'var(--border)'}`,
+                                        borderLeft: `4px solid ${exp.color}`,
+                                        borderRadius: 10, padding: '0.85rem 1rem',
+                                        transition: 'border-color 0.2s, background 0.2s',
+                                        cursor: 'default',
+                                    }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.3rem' }}>
+                                        <div style={{ minWidth: 0 }}>
+                                            <p style={{ fontWeight: 700, color: 'var(--text)', fontSize: '0.92rem', marginBottom: '0.1rem' }}>{exp.title}</p>
+                                            <p style={{ color: exp.color, fontSize: '0.82rem', fontWeight: 600 }}>{exp.company}</p>
+                                        </div>
+                                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                            <span style={{ display: 'inline-block', background: `${exp.color}22`, color: exp.color, border: `1px solid ${exp.color}55`, borderRadius: 6, padding: '0.15rem 0.5rem', fontSize: '0.7rem', fontWeight: 700 }}>
+                                                {dur}
+                                            </span>
+                                            {isEnd && <span style={{ display: 'block', fontSize: '0.62rem', color: '#6ee7b7', marginTop: 2 }}>● Current</span>}
+                                        </div>
+                                    </div>
+                                    <p style={{ color: 'var(--muted)', fontSize: '0.75rem', marginBottom: '0.5rem' }}>{exp.period}</p>
+                                    {(exp.highlights || []).length > 0 && (
+                                        <ul style={{ paddingLeft: '1.1rem', margin: 0, color: '#94a3b8', fontSize: '0.8rem', lineHeight: 1.75 }}>
+                                            {exp.highlights.slice(0, 3).map((h, j) => <li key={j}>{h}</li>)}
+                                            {exp.highlights.length > 3 && <li style={{ color: '#475569' }}>+{exp.highlights.length - 3} more…</li>}
+                                        </ul>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================================
         // Profile Page
         // ============================================================
         function Profile({ profile, setProfile, showToast }) {
@@ -1994,21 +2544,7 @@
                     </div>
 
                     {/* Experience */}
-                    <div style={styles.card}>
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Experience</h2>
-                        {(profile.experience || []).map((exp, i) => (
-                            <div key={i} style={{ marginBottom: '1.25rem', paddingBottom: '1.25rem', borderBottom: i < profile.experience.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                                    <h3 style={{ color: 'var(--text)' }}>{exp.title}</h3>
-                                    <span style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>{exp.period}</span>
-                                </div>
-                                <p style={{ color: '#60a5fa', marginBottom: '0.4rem' }}>{exp.company}</p>
-                                <ul style={{ paddingLeft: '1.5rem', lineHeight: 1.8, color: '#cbd5e1' }}>
-                                    {(exp.highlights || []).map((h, j) => <li key={j}>{h}</li>)}
-                                </ul>
-                            </div>
-                        ))}
-                    </div>
+                    <ExperienceSection experience={profile.experience || []} />
 
                     <div style={styles.card}>
                         <h2 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>Education</h2>

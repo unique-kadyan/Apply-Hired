@@ -126,11 +126,18 @@ def connect_github():
     if not username:
         return jsonify({"error": "GitHub username or URL is required"}), 400
 
-    github_data = import_github(username)
-    if github_data.get("error"):
-        return jsonify({"error": github_data["error"]}), 400
-
+    # Use token from request body first, then fall back to stored profile token
     profile = get_user_profile(request.user)
+    token = (data.get("token") or "").strip() or profile.get("github_token", "")
+
+    # Save token to profile if provided (so it persists for future calls)
+    if data.get("token", "").strip():
+        profile["github_token"] = data["token"].strip()
+
+    github_data = import_github(username, token=token)
+    if github_data.get("error"):
+        return jsonify({"error": github_data["error"], "rate_limit": "rate limit" in github_data["error"].lower()}), 400
+
     profile = merge_github_into_profile(profile, github_data)
     update_user_profile(request.user["id"], profile)
 

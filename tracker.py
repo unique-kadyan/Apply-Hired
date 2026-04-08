@@ -348,37 +348,61 @@ def get_stats(user_id=None) -> dict:
     if user_id is not None:
         base_filter["user_id"] = str(user_id)
 
-    stats = {
-        "total": db.jobs.count_documents(base_filter),
-        "new": db.jobs.count_documents({**base_filter, "status": "new"}),
-        "applied": db.jobs.count_documents({**base_filter, "status": "applied"}),
-        "interview": db.jobs.count_documents({**base_filter, "status": "interview"}),
-        "rejected": db.jobs.count_documents({**base_filter, "status": "rejected"}),
-        "saved": db.jobs.count_documents({**base_filter, "status": "saved"}),
-        "not_interested": db.jobs.count_documents({**base_filter, "status": "not_interested"}),
-    }
+    # Status counts
+    all_statuses = ["new", "saved", "applied", "interview", "offer", "rejected", "not_interested"]
+    stats = {"total": db.jobs.count_documents(base_filter)}
+    for s in all_statuses:
+        stats[s] = db.jobs.count_documents({**base_filter, "status": s})
 
     # Average score
     pipeline = [{"$match": base_filter}, {"$group": {"_id": None, "avg": {"$avg": "$score"}}}]
     result = list(db.jobs.aggregate(pipeline))
     stats["avg_score"] = result[0]["avg"] if result and result[0]["avg"] else 0
 
-    # By source
-    pipeline = [
-        {"$match": base_filter},
-        {"$group": {"_id": "$source", "cnt": {"$sum": 1}}},
-        {"$sort": {"cnt": -1}},
-    ]
-    stats["by_source"] = {r["_id"]: r["cnt"] for r in db.jobs.aggregate(pipeline) if r["_id"]}
+    # Score distribution (buckets: 0-20, 20-40, 40-60, 60-80, 80-100)
+    buckets = [0, 0.2, 0.4, 0.6, 0.8, 1.01]
+    score_dist = []
+    for i in range(len(buckets) - 1):
+        cnt = db.jobs.count_documents({**base_filter, "score": {"$gte": buckets[i], "$lt": buckets[i+1]}})
+        score_dist.append({"label": f"{int(buckets[i]*100)}-{int(buckets[i+1]*100)}%", "count": cnt})
+    stats["score_distribution"] = score_dist
 
-    # Top companies
+    # Top companies by job count
     pipeline = [
         {"$match": base_filter},
-        {"$group": {"_id": "$company", "max_score": {"$max": "$score"}}},
-        {"$sort": {"max_score": -1}},
-        {"$limit": 10},
+        {"$group": {"_id": "$company", "count": {"$sum": 1}, "avg_score": {"$avg": "$score"}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 8},
     ]
-    stats["top_companies"] = [r["_id"] for r in db.jobs.aggregate(pipeline)]
+    stats["top_companies"] = [
+        {"name": r["_id"], "count": r["count"], "avg_score": round(r["avg_score"] * 100)}
+        for r in db.jobs.aggregate(pipeline) if r["_id"]
+    ]
+
+    # Daily activity — jobs added per day for last 14 days
+    from datetime import timedelta
+    today = datetime.now(timezone.utc).date()
+    daily = {}
+    for i in range(13, -1, -1):
+        d = (today - timedelta(days=i)).isoformat()
+        daily[d] = 0
+    pipeline = [
+        {"$match": {**base_filter, "created_at": {"$gte": (today - timedelta(days=13)).isoformat()}}},
+        {"$group": {"_id": {"$substr": ["$created_at", 0, 10]}, "count": {"$sum": 1}}},
+    ]
+    for r in db.jobs.aggregate(pipeline):
+        if r["_id"] in daily:
+            daily[r["_id"]] = r["count"]
+    stats["daily_activity"] = [{"date": d, "count": c} for d, c in daily.items()]
+
+    # Application funnel stages
+    stats["funnel"] = [
+        {"stage": "Discovered",    "count": stats["total"]},
+        {"stage": "New",           "count": stats["new"] + stats.get("saved", 0)},
+        {"stage": "Applied",       "count": stats["applied"] + stats["interview"] + stats.get("offer", 0)},
+        {"stage": "Interview",     "count": stats["interview"] + stats.get("offer", 0)},
+        {"stage": "Offer",         "count": stats.get("offer", 0)},
+    ]
 
     return stats
 

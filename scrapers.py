@@ -7,7 +7,9 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote_plus
+from functools import lru_cache
 
+import pycountry
 import requests
 from bs4 import BeautifulSoup
 
@@ -804,22 +806,166 @@ def _extract_salary_from_text(text: str) -> str:
     return ""
 
 
-def _matches_location_preference(job_location: str, user_country: str) -> bool:
-    """Check if a job location matches the user's remote/country preference."""
-    loc_lower = job_location.lower() if job_location else ""
 
-    # Always accept worldwide remote
-    if any(term in loc_lower for term in ["remote", "anywhere", "worldwide", "global", "distributed"]):
+# ---------------------------------------------------------------------------
+# Country lookup — powered by pycountry (ISO 3166-1)
+# ---------------------------------------------------------------------------
+
+# Terms that mean "open to the whole world" — always accept
+_GLOBAL_REMOTE_TERMS = {"worldwide", "global", "anywhere", "international", "distributed", "fully remote"}
+
+# Extra common-language names/abbreviations not in ISO that pycountry won't know
+_EXTRA_ALIASES: dict[str, str] = {
+    "usa":          "US",
+    "u.s.":         "US",
+    "america":      "US",
+    "uk":           "GB",
+    "u.k.":         "GB",
+    "great britain":"GB",
+    "england":      "GB",
+    "britain":      "GB",
+    "holland":      "NL",
+    "deutschland":  "DE",
+    "uae":          "AE",
+    "emirates":     "AE",
+    "dubai":        "AE",
+    "abu dhabi":    "AE",
+    "korea":        "KR",
+}
+
+
+@lru_cache(maxsize=512)
+def _resolve_alpha2(raw: str) -> str | None:
+    """
+    Return the ISO 3166-1 alpha-2 code for a country name / code string.
+    Returns None if not recognised.
+    """
+    s = raw.strip().lower()
+    if not s:
+        return None
+
+    # 1. Check extra aliases first
+    extra = _EXTRA_ALIASES.get(s)
+    if extra:
+        return extra
+
+    # 2. Try direct alpha-2 lookup (e.g. "us", "in", "gb")
+    try:
+        c = pycountry.countries.get(alpha_2=s.upper())
+        if c:
+            return c.alpha_2
+    except Exception:
+        pass
+
+    # 3. Try alpha-3 (e.g. "usa", "ind", "gbr")
+    try:
+        c = pycountry.countries.get(alpha_3=s.upper())
+        if c:
+            return c.alpha_2
+    except Exception:
+        pass
+
+    # 4. Fuzzy search by common / official name
+    try:
+        results = pycountry.countries.search_fuzzy(s)
+        if results:
+            return results[0].alpha_2
+    except LookupError:
+        pass
+
+    return None
+
+
+def _loc_contains_alpha2(loc_lower: str, alpha2: str) -> bool:
+    """
+    Check whether loc_lower contains a reference to the given ISO alpha-2 country.
+    Builds patterns from all known names/codes for that country + extra aliases.
+    Short codes (≤2 chars) require word-boundary isolation to avoid false matches
+    (e.g. "us" inside "business", "in" inside "engineering").
+    """
+    try:
+        country = pycountry.countries.get(alpha_2=alpha2)
+    except Exception:
+        return False
+    if not country:
+        return False
+
+    # Build candidate strings: alpha-2, alpha-3, common name, official name
+    candidates = {
+        country.alpha_2.lower(),
+        country.alpha_3.lower(),
+        country.name.lower(),
+    }
+    if hasattr(country, "common_name"):
+        candidates.add(country.common_name.lower())
+    if hasattr(country, "official_name"):
+        candidates.add(country.official_name.lower())
+
+    # Add any extra aliases that map to this alpha-2
+    for alias, a2 in _EXTRA_ALIASES.items():
+        if a2 == alpha2:
+            candidates.add(alias.lower())
+
+    for token in candidates:
+        if not token:
+            continue
+        if len(token) <= 2:
+            # Standalone token: preceded/followed by non-alpha characters
+            pattern = r'(?<![a-z])' + re.escape(token) + r'(?![a-z])'
+        else:
+            pattern = r'\b' + re.escape(token) + r'\b'
+        if re.search(pattern, loc_lower):
+            return True
+
+    return False
+
+
+def _matches_location_preference(job_location: str, user_country: str) -> bool:
+    """
+    Return True if the job's location is acceptable for the user's country preference.
+
+    Rules (in order):
+    1. Empty / placeholder → accept (assume open remote).
+    2. "Worldwide", "Global", "Anywhere", etc. → always accept.
+    3. Location contains user's country → accept.
+    4. Location contains "remote" + a DIFFERENT country → reject.
+       e.g. "Remote, USA" is rejected when user_country == "India".
+    5. Location contains "remote" with NO country qualifier → accept.
+    6. Specific foreign location → reject.
+    """
+    loc_lower = (job_location or "").lower().strip()
+
+    # Rule 1 — empty or bare "remote" placeholder
+    if not loc_lower or loc_lower in ("n/a", "not specified", "tbd", "-", "remote"):
         return True
 
-    # Accept if job is in user's country
+    # Rule 2 — globally open
+    if any(term in loc_lower for term in _GLOBAL_REMOTE_TERMS):
+        return True
+
+    user_alpha2 = _resolve_alpha2(user_country) if user_country else None
+
+    # Rule 3 — location mentions user's country
+    if user_alpha2 and _loc_contains_alpha2(loc_lower, user_alpha2):
+        return True
     if user_country and user_country.lower() in loc_lower:
         return True
 
-    # Accept if location is empty (likely remote)
-    if not loc_lower or loc_lower in ("", "n/a", "not specified"):
+    has_remote = "remote" in loc_lower
+
+    # Rule 4 — "remote" + a different country → reject
+    if has_remote and user_alpha2:
+        for country in pycountry.countries:
+            if country.alpha_2 == user_alpha2:
+                continue
+            if _loc_contains_alpha2(loc_lower, country.alpha_2):
+                return False
+
+    # Rule 5 — "remote" with no country qualifier → accept
+    if has_remote:
         return True
 
+    # Rule 6 — specific foreign location → reject
     return False
 
 
@@ -1110,11 +1256,22 @@ def search_all_boards(queries: list[str] = None, location: str = "remote", count
         for future in as_completed(futures):
             jobs = future.result()
             for job in jobs:
-                # Smart location filtering: accept remote + remote-in-country
+                # Primary location filter: uses country-aware logic
                 if not _matches_location_preference(job.location, user_country):
-                    # Also check description for remote mentions
-                    full_text = f"{job.location} {job.description}".lower()
-                    if "remote" not in full_text and user_country.lower() not in full_text:
+                    # Secondary fallback: description explicitly says "remote" AND
+                    # mentions the user's country — then accept despite ambiguous location.
+                    # We do NOT accept just because the word "remote" appears in the
+                    # description — that would let through "Remote, USA" for India users.
+                    desc_lower = job.description.lower()
+                    country_mentioned = (
+                        user_country.lower() in desc_lower
+                        or any(
+                            alias in desc_lower
+                            for alias, canon in _COUNTRY_ALIASES.items()
+                            if canon == _canonical_country(user_country)
+                        )
+                    )
+                    if not (("remote" in desc_lower) and country_mentioned):
                         continue
 
                 if job.url and job.url not in seen_urls:

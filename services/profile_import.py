@@ -8,10 +8,10 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-def _github_headers() -> dict:
-    """Return GitHub API headers, with token if available for higher rate limits."""
+def _github_headers(user_token: str = "") -> dict:
+    """Return GitHub API headers. User-supplied token takes priority over env token."""
     headers = {"Accept": "application/vnd.github.v3+json"}
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    token = (user_token or "").strip() or os.environ.get("GITHUB_TOKEN", "").strip()
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
@@ -29,7 +29,7 @@ def _extract_github_username(raw: str) -> str:
     return raw.split("/")[-1].strip()
 
 
-def import_github(username: str) -> dict:
+def import_github(username: str, token: str = "") -> dict:
     """Fetch public profile + repos from GitHub. Returns enrichment dict."""
     if not username:
         return {"error": "GitHub username or URL is required"}
@@ -38,7 +38,7 @@ def import_github(username: str) -> dict:
     if not username:
         return {"error": "Could not extract GitHub username from the provided input"}
 
-    headers = _github_headers()
+    headers = _github_headers(user_token=token)
 
     try:
         # User profile
