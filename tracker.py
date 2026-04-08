@@ -193,12 +193,101 @@ def save_not_interested_reason(user_id, reason: str) -> list[str]:
     oid = _to_object_id(user_id)
     if not oid:
         return []
-    # Pull current list, dedupe, cap at 20
     current = get_not_interested_reasons(user_id)
     if reason not in current:
         current = ([reason] + current)[:20]
         db.users.update_one({"_id": oid}, {"$set": {"not_interested_reasons": current}})
     return current
+
+
+def delete_not_interested_reason(user_id, reason: str) -> list[str]:
+    """Remove a specific not-interested reason. Returns updated list."""
+    db = _get_db()
+    oid = _to_object_id(user_id)
+    if not oid:
+        return []
+    current = get_not_interested_reasons(user_id)
+    updated = [r for r in current if r != reason]
+    db.users.update_one({"_id": oid}, {"$set": {"not_interested_reasons": updated}})
+    return updated
+
+
+# ---------------------------------------------------------------------------
+# Skip-keyword filtering
+# ---------------------------------------------------------------------------
+
+# Predefined reasons — too generic to extract actionable keywords from
+_PREDEFINED_REASONS = frozenset({
+    "Salary too low",
+    "Location not suitable",
+    "Role mismatch — not what I do",
+    "Company concerns",
+    "Too senior / too junior",
+    "Already applied elsewhere",
+    "Poor job description",
+    "Contract / freelance only",
+})
+
+# Common English stopwords + resume/job-domain words that add no signal
+_SKIP_STOPWORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "can", "need", "too", "very", "just",
+    "only", "also", "but", "and", "or", "not", "no", "nor", "so", "yet",
+    "for", "in", "on", "at", "to", "of", "with", "by", "from", "as", "into",
+    "this", "that", "these", "those", "what", "who", "when", "where", "how",
+    "why", "all", "any", "each", "some", "such", "than", "i", "me", "my",
+    "we", "us", "our", "they", "their", "role", "job", "position", "work",
+    "company", "require", "requires", "required", "want", "looking", "dont",
+    "already", "poor", "mismatch", "concerns", "issues", "type", "kind",
+    "applied", "elsewhere", "description", "suitable", "using", "about",
+    "because", "since", "while", "during", "which", "there", "here", "like",
+    "more", "less", "other", "another", "same", "different", "good", "bad",
+})
+
+
+def get_skip_filter_keywords(user_id) -> list[str]:
+    """
+    Derive keyword filters from the user's custom not-interested reasons.
+
+    Only uses custom (non-predefined) reasons — generic reasons like
+    "Salary too low" don't give actionable title-matching keywords.
+
+    Returns a sorted list of lowercase keyword strings to exclude from
+    job titles in future searches.
+    """
+    import re as _re
+    db = _get_db()
+    oid = _to_object_id(user_id)
+    if not oid:
+        return []
+
+    # Collect all custom reason texts: from profile + per-job notes
+    custom_texts: list[str] = []
+
+    user = db.users.find_one({"_id": oid}, {"not_interested_reasons": 1})
+    if user:
+        for r in user.get("not_interested_reasons", []):
+            if r not in _PREDEFINED_REASONS:
+                custom_texts.append(r)
+
+    # Per-job notes that are also non-predefined custom text
+    for doc in db.jobs.find(
+        {"user_id": str(user_id), "status": "not_interested", "notes": {"$nin": ["", *list(_PREDEFINED_REASONS)]}},
+        {"notes": 1},
+    ):
+        note = (doc.get("notes") or "").strip()
+        if note and note not in _PREDEFINED_REASONS:
+            custom_texts.append(note)
+
+    keywords: set[str] = set()
+    for text in custom_texts:
+        for word in _re.split(r"[\s\-_/,.|;:!?()\[\]\"']+", text.lower()):
+            word = word.strip("\"'.,;:")
+            if len(word) >= 4 and word not in _SKIP_STOPWORDS:
+                keywords.add(word)
+
+    return sorted(keywords)
 
 
 # ---------------------------------------------------------------------------
@@ -333,8 +422,10 @@ def get_jobs(
     sort_dir: str = "desc",
     search: Optional[str] = None,
     user_id=None,
+    exclude_title_keywords: Optional[list] = None,
 ) -> tuple[list[dict], int]:
     """Retrieve paginated jobs with optional filters, search, and sort."""
+    import re as _re
     from pymongo import ASCENDING
     db = _get_db()
     query: dict = {"score": {"$gte": min_score}}
@@ -359,6 +450,13 @@ def get_jobs(
             {"location": pattern},
             {"tags": pattern},
         ]
+
+    # Exclude jobs whose title matches any skip keyword derived from user's custom reasons
+    if exclude_title_keywords:
+        safe_kws = [kw for kw in exclude_title_keywords if kw.strip()][:40]
+        if safe_kws:
+            combined = "|".join(_re.escape(kw) for kw in safe_kws)
+            query["title"] = {"$not": _re.compile(combined, _re.IGNORECASE)}
 
     total = db.jobs.count_documents(query)
     skip = (page - 1) * per_page
