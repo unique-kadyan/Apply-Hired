@@ -165,7 +165,11 @@ class RemotiveScraper(BaseScraper):
         if not resp:
             return []
 
-        data = resp.json().get("jobs", [])
+        try:
+            data = resp.json().get("jobs", [])
+        except Exception:
+            logger.warning(f"[{self.name}] Non-JSON response")
+            return []
         jobs = []
         query_lower = query.lower()
         keywords = query_lower.split()
@@ -289,7 +293,7 @@ class JSearchScraper(BaseScraper):
             "remote_jobs_only": "true" if is_remote else "false",
         }
 
-        resp = self._safe_get(self.base_url, params=params, headers=headers)
+        resp = self._safe_get(self.base_url, params=params, headers=headers, timeout=30)
         if not resp:
             return []
 
@@ -879,8 +883,13 @@ class HimalayasScraper(BaseScraper):
         resp = self._safe_get(self.base_url, params={"limit": 25, "q": query})
         if not resp:
             return []
+        try:
+            data = resp.json()
+        except Exception:
+            logger.warning(f"[{self.name}] Non-JSON response")
+            return []
         jobs = []
-        for item in resp.json().get("jobs", []):
+        for item in data.get("jobs", []):
             tags = item.get("categories", []) or []
             salary = ""
             if item.get("salaryCurrency") and item.get("salaryMin"):
@@ -1013,25 +1022,19 @@ class USAJobsScraper(BaseScraper):
 import os
 
 ALL_SCRAPERS: list[BaseScraper] = [
-    # Always work (public JSON APIs, no IP blocking)
-    RemotiveScraper(),
+    # Reliable public APIs
     ArbeitnowScraper(),
     JobicyScraper(),
     TheMuseScraper(),
     HackerNewsScraper(),
+    RemotiveScraper(),
     HimalayasScraper(),
-    # API key required (reliable, no IP blocking)
+    # API key required
     JSearchScraper(),
     AdzunaScraper(),
     JoobleScraper(),
     ReedScraper(),
-    LinkedInJobsScraper(),
-    ArbeitsagenturScraper(),
     USAJobsScraper(),
-    # May be blocked on cloud hosting
-    RemoteOKScraper(),
-    WeWorkRemotelyScraper(),
-    FindWorkScraper(),
 ]
 
 

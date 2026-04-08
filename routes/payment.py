@@ -124,7 +124,7 @@ def create_payment_order():
 
         order = create_order(
             amount_paise=price["razorpay_amount"],
-            receipt=f"resume_{request.user['id']}_{int(datetime.now().timestamp())}",
+            receipt=f"r_{str(request.user['id'])[-8:]}_{int(datetime.now().timestamp())}",
         )
         db = _get_db()
         db.payments.insert_one({
