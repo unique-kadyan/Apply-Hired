@@ -1766,26 +1766,26 @@
                     {clModal && (
                         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
                             onClick={e => { if (e.target === e.currentTarget) setClModal(null); }}>
-                            <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, width: '100%', maxWidth: 640, maxHeight: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                            <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, width: '100%', maxWidth: 640, maxHeight: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+                                {/* Absolute close button — pinned to top-right corner of modal */}
+                                <button onClick={() => setClModal(null)} title="Close"
+                                    style={{ position: 'absolute', top: 10, right: 10, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.4)', borderRadius: 7, color: '#f87171', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, transition: 'background 0.15s' }}
+                                    onMouseEnter={e => e.currentTarget.style.background='rgba(220,38,38,0.4)'}
+                                    onMouseLeave={e => e.currentTarget.style.background='rgba(220,38,38,0.15)'}>×</button>
                                 {/* Header */}
-                                <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
-                                    <div style={{ minWidth: 0 }}>
+                                <div style={{ padding: '1rem 1.5rem', paddingRight: '3rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
                                         <h3 style={{ fontSize: '1rem', marginBottom: '0.15rem' }}>Cover Letter</h3>
                                         <p style={{ color: 'var(--muted)', fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clModal.job.title} — {clModal.job.company}</p>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexShrink: 0 }}>
-                                        <button onClick={async () => {
-                                            setClModal(m => ({ ...m, loading: true, letter: '' }));
-                                            const res = await api.post(`/api/jobs/${clModal.job.id}/cover-letter`);
-                                            setClModal(m => m ? { ...m, letter: res.cover_letter || '', loading: false } : m);
-                                            setJobs(prev => prev.map(j => j.id === clModal.job.id ? { ...j, cover_letter: res.cover_letter } : j));
-                                        }} disabled={clModal.loading} style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)', fontSize: '0.8rem' }}>
-                                            {clModal.loading ? '…' : '↺ Regenerate'}
-                                        </button>
-                                        <button onClick={() => setClModal(null)} title="Close" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.4)', borderRadius: 7, color: '#f87171', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, flexShrink: 0, transition: 'background 0.15s' }}
-                                            onMouseEnter={e => e.currentTarget.style.background='rgba(220,38,38,0.35)'}
-                                            onMouseLeave={e => e.currentTarget.style.background='rgba(220,38,38,0.15)'}>×</button>
-                                    </div>
+                                    <button onClick={async () => {
+                                        setClModal(m => ({ ...m, loading: true, letter: '' }));
+                                        const res = await api.post(`/api/jobs/${clModal.job.id}/cover-letter`);
+                                        setClModal(m => m ? { ...m, letter: res.cover_letter || '', loading: false } : m);
+                                        setJobs(prev => prev.map(j => j.id === clModal.job.id ? { ...j, cover_letter: res.cover_letter } : j));
+                                    }} disabled={clModal.loading} style={{ ...styles.btn, ...styles.btnSm, background: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)', fontSize: '0.8rem', flexShrink: 0 }}>
+                                        {clModal.loading ? '…' : '↺ Regenerate'}
+                                    </button>
                                 </div>
                                 {/* Body */}
                                 <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem' }}>
