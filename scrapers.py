@@ -1186,25 +1186,233 @@ class USAJobsScraper(BaseScraper):
 
 
 # ---------------------------------------------------------------------------
+# SerpAPI — Google Jobs (Official API · serpapi.com)
+# Aggregates Indeed, LinkedIn, Glassdoor, Naukri, Monster and more
+# Free tier: 100 searches/month  |  Paid: from $50/mo for 5,000 searches
+# Register: https://serpapi.com/users/sign_up
+# ---------------------------------------------------------------------------
+
+class SerpApiGoogleJobsScraper(BaseScraper):
+    """
+    Official SerpAPI endpoint for Google Jobs.
+    Covers Indeed, LinkedIn, Glassdoor, Naukri, ZipRecruiter and ~20 other
+    boards in a single query — all through Google's own job index.
+    """
+    name = "GoogleJobs"
+    base_url = "https://serpapi.com/search.json"
+
+    def fetch_jobs(self, query: str) -> list[Job]:
+        api_key = os.environ.get("SERPAPI_KEY", "").strip()
+        if not api_key:
+            return []
+
+        params = {
+            "engine":  "google_jobs",
+            "q":       query,
+            "api_key": api_key,
+            "num":     10,          # max per request on free tier
+            "hl":      "en",
+        }
+
+        resp = self._safe_get(self.base_url, params=params, timeout=30)
+        if not resp:
+            return []
+
+        try:
+            data = resp.json()
+        except Exception:
+            return []
+
+        if data.get("error"):
+            logger.warning(f"[{self.name}] API error: {data['error']}")
+            return []
+
+        jobs = []
+        for item in data.get("jobs_results", []):
+            title   = item.get("title", "")
+            company = item.get("company_name", "")
+            loc     = item.get("location", "Remote")
+
+            # Apply link — prefer direct, fall back to the first option
+            apply_opts = item.get("apply_options") or []
+            url = apply_opts[0].get("link", "") if apply_opts else ""
+            if not url:
+                # Google Jobs redirect link
+                url = f"https://www.google.com/search?q={quote_plus(title + ' ' + company)}&ibp=htl;jobs"
+
+            description = item.get("description", "")
+
+            # Salary + date from detected_extensions dict or extensions list
+            salary = ""
+            date_posted = ""
+            ext = item.get("detected_extensions") or {}
+            if isinstance(ext, dict):
+                salary      = ext.get("salary", "")
+                date_posted = ext.get("posted_at", "")
+            elif isinstance(ext, list):
+                for token in ext:
+                    tl = token.lower()
+                    if any(c in tl for c in ["$", "£", "€", "₹", "lpa", "salary", "salary range"]):
+                        salary = token
+                    elif any(w in tl for w in ["day", "week", "month", "hour", "ago", "just posted"]):
+                        date_posted = token
+
+            # Extensions list also carries job_type hints
+            job_type = "remote"
+            for token in (item.get("extensions") or []):
+                tl = token.lower()
+                if "full-time" in tl:
+                    job_type = "full-time"
+                elif "part-time" in tl:
+                    job_type = "part-time"
+                elif "contract" in tl:
+                    job_type = "contract"
+
+            # Tags from job highlights
+            highlights = item.get("job_highlights") or []
+            tags: list[str] = []
+            for h in highlights:
+                for line in (h.get("items") or []):
+                    tags += [w.strip() for w in line.split(",") if 3 < len(w.strip()) < 30]
+            tags = list(dict.fromkeys(tags))[:10]
+
+            if not title or not url:
+                continue
+
+            jobs.append(Job(
+                title=title,
+                company=company,
+                location=loc,
+                url=url,
+                source=self.name,
+                description=description[:3000],
+                salary=salary,
+                tags=tags,
+                date_posted=date_posted,
+                job_type=job_type,
+            ))
+
+        logger.info(f"[{self.name}] Found {len(jobs)} jobs for '{query}'")
+        return jobs
+
+
+# ---------------------------------------------------------------------------
+# CareerJet — Free Official Affiliate API (careerjet.com)
+# Covers 90+ countries including India, aggregates from 2,500+ job boards
+# Register (free): https://www.careerjet.com/partners/
+# Get affid from: https://www.careerjet.com/partners/api/
+# ---------------------------------------------------------------------------
+
+class CareerJetScraper(BaseScraper):
+    """
+    CareerJet's free official partner API.
+    No per-request cost; requires free affiliate ID registration.
+    Strong India, UK, and APAC coverage via 2,500+ aggregated job boards.
+    """
+    name = "CareerJet"
+    base_url = "http://public.api.careerjet.net/search"
+
+    # Locale codes for major supported countries
+    _LOCALE_MAP = {
+        "india": "en_IN", "in": "en_IN",
+        "united states": "en_US", "us": "en_US", "usa": "en_US",
+        "united kingdom": "en_GB", "uk": "en_GB",
+        "canada": "en_CA", "ca": "en_CA",
+        "australia": "en_AU", "au": "en_AU",
+        "germany": "de_DE", "de": "de_DE",
+        "singapore": "en_SG", "sg": "en_SG",
+        "uae": "en_AE", "ae": "en_AE",
+    }
+
+    def fetch_jobs(self, query: str) -> list[Job]:
+        affid = os.environ.get("CAREERJET_AFFID", "").strip()
+        if not affid:
+            return []
+
+        country = LOCATION_PREFERENCES.get("default_country", "India").lower()
+        locale  = self._LOCALE_MAP.get(country, "en_IN")
+
+        params = {
+            "affid":       affid,
+            "keywords":    query,
+            "location":    "remote",
+            "locale_code": locale,
+            "pagesize":    20,
+            "page":        1,
+            # Required fields per CareerJet TOS
+            "user_ip":     "1.1.1.1",          # client IP (1.1.1.1 = anonymous placeholder)
+            "url":         "https://jobbot.app",
+            "user_agent":  "JobBot/1.0",
+        }
+
+        resp = self._safe_get(self.base_url, params=params, timeout=20)
+        if not resp:
+            return []
+
+        try:
+            data = resp.json()
+        except Exception:
+            return []
+
+        if data.get("type") == "ERROR":
+            logger.warning(f"[{self.name}] API error: {data.get('status')}")
+            return []
+
+        jobs = []
+        for item in (data.get("jobs") or []):
+            title   = item.get("title", "")
+            company = item.get("company", "")
+            loc     = item.get("locations", "Remote")
+            url     = item.get("url", "")
+            desc    = item.get("description", "")
+            salary  = item.get("salary", "")
+            date_posted = item.get("date", "")
+
+            if not title or not url:
+                continue
+
+            jobs.append(Job(
+                title=title,
+                company=company,
+                location=loc,
+                url=url,
+                source=self.name,
+                description=desc[:3000],
+                salary=salary,
+                tags=[],
+                date_posted=date_posted,
+                job_type="remote",
+            ))
+
+        logger.info(f"[{self.name}] Found {len(jobs)} jobs for '{query}'")
+        return jobs
+
+
+# ---------------------------------------------------------------------------
 # All scrapers
 # ---------------------------------------------------------------------------
 
 import os
 
 ALL_SCRAPERS: list[BaseScraper] = [
-    # Reliable public APIs
-    ArbeitnowScraper(),
-    JobicyScraper(),
-    TheMuseScraper(),
-    HackerNewsScraper(),
-    RemotiveScraper(),
-    HimalayasScraper(),
-    # API key required
-    JSearchScraper(),
-    AdzunaScraper(),
-    JoobleScraper(),
-    ReedScraper(),
-    USAJobsScraper(),
+    # ── Free public APIs (no key needed) ─────────────────────────────────
+    ArbeitnowScraper(),       # remote-first, EU + global
+    JobicyScraper(),          # remote jobs aggregator
+    TheMuseScraper(),         # curated tech & creative roles
+    HackerNewsScraper(),      # HN Who's Hiring thread
+    RemotiveScraper(),        # remote-only board
+    HimalayasScraper(),       # remote-first, high quality listings
+
+    # ── API key required ─────────────────────────────────────────────────
+    JSearchScraper(),         # RapidAPI · aggregates Indeed + LinkedIn + Glassdoor
+    AdzunaScraper(),          # Adzuna official API · strong India + UK coverage
+    JoobleScraper(),          # Jooble official API · 71-country aggregator
+    ReedScraper(),            # Reed.co.uk official API · strong UK + remote
+    USAJobsScraper(),         # USAJobs.gov · US federal / remote-US roles
+
+    # ── New legitimate APIs ───────────────────────────────────────────────
+    SerpApiGoogleJobsScraper(), # SerpAPI Google Jobs · aggregates Indeed + LinkedIn + Glassdoor + Naukri (SERPAPI_KEY)
+    CareerJetScraper(),         # CareerJet official API · 2,500+ boards, strong India coverage (CAREERJET_AFFID)
 ]
 
 

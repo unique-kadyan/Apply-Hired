@@ -6,10 +6,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- API Keys (optional) ---
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-JSEARCH_API_KEY = os.getenv("JSEARCH_API_KEY", "")
-ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID", "")
-ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "")
+OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY", "")
+JSEARCH_API_KEY  = os.getenv("JSEARCH_API_KEY", "")
+ADZUNA_APP_ID    = os.getenv("ADZUNA_APP_ID", "")
+ADZUNA_APP_KEY   = os.getenv("ADZUNA_APP_KEY", "")
+SERPAPI_KEY      = os.getenv("SERPAPI_KEY", "")       # serpapi.com — Google Jobs aggregation
+CAREERJET_AFFID  = os.getenv("CAREERJET_AFFID", "")   # careerjet.com — free affiliate API
 
 # --- Database ---
 MONGO_URI = os.getenv("MONGO_URI", "")

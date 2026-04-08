@@ -276,6 +276,48 @@ def update_job_status(job_id, status: str, notes: str = ""):
         )
 
 
+def update_interview_details(job_id, details: dict, user_id=None):
+    """Save or update interview scheduling details for a job."""
+    db = _get_db()
+    oid = _to_object_id(job_id)
+    if not oid:
+        return False
+    query = {"_id": oid}
+    if user_id:
+        query["user_id"] = str(user_id)
+    now = datetime.now(timezone.utc).isoformat()
+    result = db.jobs.update_one(
+        query,
+        {"$set": {
+            "interview_details": details,
+            "status": "interview",
+            "updated_at": now,
+        }},
+    )
+    return result.modified_count > 0
+
+
+def update_offer_details(job_id, details: dict, user_id=None):
+    """Save or update offer letter details for a job."""
+    db = _get_db()
+    oid = _to_object_id(job_id)
+    if not oid:
+        return False
+    query = {"_id": oid}
+    if user_id:
+        query["user_id"] = str(user_id)
+    now = datetime.now(timezone.utc).isoformat()
+    result = db.jobs.update_one(
+        query,
+        {"$set": {
+            "offer_details": details,
+            "status": "offer",
+            "updated_at": now,
+        }},
+    )
+    return result.modified_count > 0
+
+
 VALID_SORT_FIELDS = {"score", "date_posted", "updated_at", "created_at", "title", "company", "salary"}
 
 

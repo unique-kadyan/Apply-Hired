@@ -52,25 +52,32 @@
         }
         /* Action button cell */
         .action-cell { white-space: nowrap; }
-        .action-btns { display: flex; gap: 0.45rem; align-items: center; }
+        .action-btns { display: flex; gap: 0.4rem; align-items: center; flex-wrap: nowrap; }
         .action-btn {
-            display: inline-flex; align-items: center; justify-content: center;
-            width: 34px; height: 34px;
+            display: inline-flex; align-items: center; justify-content: center; gap: 0.3rem;
+            height: 32px; padding: 0 0.7rem;
             border-radius: 8px; border: none; cursor: pointer;
-            font-size: 1rem; flex-shrink: 0;
-            transition: transform 0.1s, opacity 0.15s;
+            font-size: 0.78rem; font-weight: 600; white-space: nowrap; flex-shrink: 0;
+            transition: filter 0.15s, transform 0.1s;
+            letter-spacing: 0.01em;
         }
-        .action-btn:hover { transform: scale(1.12); opacity: 0.9; }
-        .action-btn:active { transform: scale(0.96); }
+        .action-btn:hover { filter: brightness(1.18); transform: translateY(-1px); }
+        .action-btn:active { transform: translateY(0) scale(0.97); filter: brightness(0.95); }
+        .action-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
-        @media (max-width: 768px) {
-            .action-btn { width: 30px; height: 30px; font-size: 0.9rem; border-radius: 7px; }
-            .action-btns { gap: 0.35rem; }
+        @media (max-width: 900px) {
+            .action-btn { padding: 0 0.5rem; font-size: 0.75rem; height: 30px; border-radius: 7px; }
+            .action-btns { gap: 0.3rem; }
+        }
+        @media (max-width: 600px) {
+            /* Icon-only on very small screens */
+            .action-btn .btn-label { display: none; }
+            .action-btn { padding: 0; width: 30px; height: 30px; font-size: 0.9rem; border-radius: 7px; }
+            .action-btns { gap: 0.25rem; }
         }
         @media (max-width: 420px) {
             .jobs-table th, .jobs-table td { padding: 0.35rem 0.35rem !important; font-size: 0.73rem !important; }
             .action-btn { width: 28px; height: 28px; font-size: 0.82rem; border-radius: 6px; }
-            .action-btns { gap: 0.28rem; }
         }
         /* Large displays — constrain max width for readability */
         @media (min-width: 1600px) {
@@ -174,6 +181,7 @@
                         if (res.rate_limit) {
                             setGithubRateLimit(true);
                             setEditingToken(true);
+                            return; // token panel already explains the situation — no toast needed
                         }
                         showToast(res.error, 'error');
                     } else {
@@ -1067,13 +1075,13 @@
 
             // Sortable column definitions
             const SORT_COLS = [
-                { key: 'score',       label: 'Score',    sortable: true },
+                { key: 'score',       label: 'Score',    sortable: true,  width: '64px' },
                 { key: 'title',       label: 'Title',    sortable: true },
                 { key: 'company',     label: 'Company',  sortable: true,  cls: 'hide-sm' },
                 { key: 'location',    label: 'Location', sortable: false, cls: 'hide-md' },
                 { key: 'salary',      label: 'Salary',   sortable: true,  cls: 'hide-sm' },
                 { key: 'updated_at',  label: 'Updated',  sortable: true,  cls: 'hide-sm' },
-                { key: 'actions',     label: '',         sortable: false },
+                { key: 'actions',     label: '',         sortable: false, width: '1%' },
             ];
 
             const toggleSort = (key) => {
@@ -1402,7 +1410,7 @@
                                             <input type="checkbox" checked={selected.size > 0} onChange={selectAll} style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }} />
                                         </th>
                                     )}
-                                    {SORT_COLS.map(({ key, label, cls, sortable }) => {
+                                    {SORT_COLS.map(({ key, label, cls, sortable, width }) => {
                                         const isActive = sortBy === key;
                                         const arrow = !sortable ? '' : isActive ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕';
                                         return (
@@ -1417,6 +1425,7 @@
                                                     letterSpacing: '0.05em', whiteSpace: 'nowrap',
                                                     cursor: sortable ? 'pointer' : 'default',
                                                     userSelect: 'none',
+                                                    ...(width ? { width } : {}),
                                                 }}>
                                                 {label}{arrow}
                                             </th>
@@ -1453,38 +1462,68 @@
                                                     return <span style={{ color: '#475569' }}>—</span>;
                                                 })()}
                                             </td>
-                                            <td style={{ padding: '0.5rem 0.6rem' }}><StatusBadge status={j.status} /></td>
-                                            <td className="action-cell" style={{ padding: '0.4rem 0.6rem' }} onClick={e => e.stopPropagation()}>
+                                            <td style={{ padding: '0.5rem 0.6rem' }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
+                                                    <StatusBadge status={j.status} />
+                                                    {j.interview_details?.date && <span title={`Interview: ${j.interview_details.round || 'Scheduled'} on ${j.interview_details.date}`} style={{ fontSize: '0.68rem', color: '#d8b4fe', background: '#2d1b4e', padding: '0.1rem 0.4rem', borderRadius: 8, whiteSpace: 'nowrap' }}>📅 {j.interview_details.date}</span>}
+                                                    {j.offer_details?.salary && <span title={`Offer: ${j.offer_details.salary}`} style={{ fontSize: '0.68rem', color: '#86efac', background: '#14532d', padding: '0.1rem 0.4rem', borderRadius: 8, whiteSpace: 'nowrap' }}>💰 {j.offer_details.salary}</span>}
+                                                </div>
+                                            </td>
+                                            <td className="action-cell" style={{ padding: '0.4rem 0.6rem', width: '1%' }} onClick={e => e.stopPropagation()}>
                                                 {tab === 'applied' || tab === 'not_interested' ? (
                                                     <div className="action-btns">
                                                         <a href={j.url} target="_blank" rel="noopener"
                                                             title="View Job"
                                                             className="action-btn"
-                                                            style={{ background: 'var(--bg3)', color: 'var(--muted)', textDecoration: 'none' }}>👁</a>
+                                                            style={{ background: 'var(--bg3)', color: 'var(--muted)', textDecoration: 'none' }}>
+                                                            ↗<span className="btn-label">View</span>
+                                                        </a>
+                                                        <button
+                                                            title="Track Interview / Offer"
+                                                            onClick={e => { e.stopPropagation(); navigate(`job/${j.id}`); }}
+                                                            className="action-btn"
+                                                            style={{ background: j.status === 'offer' ? 'rgba(245,158,11,0.18)' : 'rgba(124,58,237,0.18)', color: j.status === 'offer' ? '#fde68a' : '#c4b5fd', border: `1px solid ${j.status === 'offer' ? 'rgba(245,158,11,0.35)' : 'rgba(124,58,237,0.35)'}` }}>
+                                                            {j.status === 'offer' ? '💰' : '📅'}<span className="btn-label">{j.status === 'offer' ? 'Offer' : 'Interview'}</span>
+                                                        </button>
+                                                        <button
+                                                            title={j.cover_letter ? 'View Cover Letter' : 'Generate Cover Letter'}
+                                                            onClick={e => { e.stopPropagation(); openCoverLetter(j); }}
+                                                            className="action-btn"
+                                                            style={{ background: 'rgba(124,58,237,0.22)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)' }}>
+                                                            📄<span className="btn-label">Cover Letter</span>
+                                                        </button>
                                                     </div>
                                                 ) : (
                                                     <div className="action-btns">
                                                         <a href={j.url} target="_blank" rel="noopener"
                                                             onClick={e => e.stopPropagation()}
-                                                            title="Open Job"
+                                                            title="Open Job Posting"
                                                             className="action-btn"
-                                                            style={{ background: 'var(--accent)', color: '#fff', textDecoration: 'none' }}>↗</a>
+                                                            style={{ background: 'var(--accent)', color: '#fff', textDecoration: 'none' }}>
+                                                            ↗<span className="btn-label">Open</span>
+                                                        </a>
                                                         <button
-                                                            title="Mark Applied"
+                                                            title="Mark as Applied"
                                                             disabled={j._marking}
                                                             onClick={async (e) => { e.stopPropagation(); j._marking = true; e.target.disabled = true; await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast('Marked applied', 'success'); loadJobs(); }}
                                                             className="action-btn"
-                                                            style={{ background: 'var(--green)', color: '#fff' }}>✓</button>
+                                                            style={{ background: 'var(--green)', color: '#fff' }}>
+                                                            ✓<span className="btn-label">Applied</span>
+                                                        </button>
                                                         <button
                                                             title={j.cover_letter ? 'View Cover Letter' : 'Generate Cover Letter'}
                                                             onClick={e => { e.stopPropagation(); openCoverLetter(j); }}
                                                             className="action-btn"
-                                                            style={{ background: 'rgba(124,58,237,0.22)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)' }}>📄</button>
+                                                            style={{ background: 'rgba(124,58,237,0.22)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)' }}>
+                                                            📄<span className="btn-label">{j.cover_letter ? 'Cover Letter' : 'Gen CL'}</span>
+                                                        </button>
                                                         <button
                                                             title="Not Interested"
                                                             onClick={e => { e.stopPropagation(); openNiModal(j); }}
                                                             className="action-btn"
-                                                            style={{ background: 'rgba(220,38,38,0.15)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.35)' }}>✕</button>
+                                                            style={{ background: 'rgba(220,38,38,0.15)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.35)' }}>
+                                                            ✕<span className="btn-label">Skip</span>
+                                                        </button>
                                                     </div>
                                                 )}
                                             </td>
@@ -1665,6 +1704,36 @@
 
                                         {/* Notes (if any) */}
                                         {j.notes && <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '0.6rem 0.9rem', fontSize: '0.85rem', color: 'var(--yellow2)', marginBottom: '1rem' }}>{j.notes}</div>}
+
+                                        {/* Interview details summary */}
+                                        {j.interview_details?.date && (
+                                            <div style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '0.75rem' }}>
+                                                <p style={{ fontSize: '0.75rem', color: '#d8b4fe', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.35rem', fontWeight: 600 }}>Interview Scheduled</p>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1.5rem', fontSize: '0.85rem', color: '#e2e8f0' }}>
+                                                    {j.interview_details.round && <span><span style={{ color: 'var(--muted)' }}>Round: </span>{j.interview_details.round}</span>}
+                                                    <span><span style={{ color: 'var(--muted)' }}>Date: </span>{j.interview_details.date}{j.interview_details.time ? ` at ${j.interview_details.time}` : ''}{j.interview_details.timezone ? ` ${j.interview_details.timezone}` : ''}</span>
+                                                    {j.interview_details.platform && <span><span style={{ color: 'var(--muted)' }}>Via: </span>{j.interview_details.platform}</span>}
+                                                    {j.interview_details.interviewer && <span><span style={{ color: 'var(--muted)' }}>With: </span>{j.interview_details.interviewer}</span>}
+                                                </div>
+                                                {j.interview_details.meeting_link && (
+                                                    <a href={j.interview_details.meeting_link} target="_blank" rel="noopener" style={{ display: 'inline-block', marginTop: '0.5rem', fontSize: '0.82rem', color: '#a78bfa', textDecoration: 'none', fontWeight: 600 }}>🔗 Join Meeting →</a>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Offer details summary */}
+                                        {j.offer_details?.salary && (
+                                            <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '0.75rem' }}>
+                                                <p style={{ fontSize: '0.75rem', color: '#fde68a', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.35rem', fontWeight: 600 }}>Offer Received</p>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1.5rem', fontSize: '0.85rem', color: '#e2e8f0' }}>
+                                                    <span><span style={{ color: 'var(--muted)' }}>Salary: </span><strong style={{ color: '#86efac' }}>{j.offer_details.salary}</strong>{j.offer_details.currency ? ` ${j.offer_details.currency}` : ''}</span>
+                                                    {j.offer_details.joining_date && <span><span style={{ color: 'var(--muted)' }}>Joining: </span>{j.offer_details.joining_date}</span>}
+                                                    {j.offer_details.deadline && <span><span style={{ color: 'var(--muted)' }}>Deadline: </span>{j.offer_details.deadline}</span>}
+                                                    {j.offer_details.location && <span><span style={{ color: 'var(--muted)' }}>Location: </span>{j.offer_details.location}</span>}
+                                                </div>
+                                                {j.offer_details.benefits && <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginTop: '0.35rem' }}>Benefits: {j.offer_details.benefits}</p>}
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Action bar — always single row, buttons share space equally */}
@@ -1675,6 +1744,12 @@
                                             style={{ ...styles.btn, flex: 1, background: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)', fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>
                                             {j.cover_letter ? '📄 Cover Letter' : '✨ Gen CL'}
                                         </button>
+                                        {(j.status === 'interview' || j.status === 'offer' || j.status === 'applied') && (
+                                            <button onClick={() => { setJobPanel(null); navigate(`job/${j.id}`); }}
+                                                style={{ ...styles.btn, flex: 1, background: j.status === 'offer' ? 'rgba(245,158,11,0.15)' : 'rgba(124,58,237,0.15)', color: j.status === 'offer' ? '#fde68a' : '#d8b4fe', border: `1px solid ${j.status === 'offer' ? 'rgba(245,158,11,0.3)' : 'rgba(124,58,237,0.3)'}`, fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>
+                                                {j.status === 'offer' ? '💰 Offer' : '📅 Interview'}
+                                            </button>
+                                        )}
                                         {tab !== 'applied' && tab !== 'not_interested' && (<>
                                             <button onClick={async () => { await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast('Marked as Applied!', 'success'); setJobPanel(null); loadJobs(); }}
                                                 style={{ ...styles.btn, ...styles.btnSuccess, flex: 1, fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>✓ Applied</button>
@@ -1846,8 +1921,19 @@
         function JobDetail({ jobId, navigate, showToast }) {
             const [job, setJob] = useState(null);
             const [status, setStatus] = useState('');
+            const [interview, setInterview] = useState({ round: '', date: '', time: '', timezone: 'IST', interviewer: '', meeting_link: '', platform: '', notes: '' });
+            const [offer, setOffer] = useState({ salary: '', currency: 'INR', joining_date: '', deadline: '', benefits: '', location: '', offer_text: '', notes: '' });
+            const [savingInterview, setSavingInterview] = useState(false);
+            const [savingOffer, setSavingOffer] = useState(false);
 
-            useEffect(() => { api.get(`/api/jobs/${jobId}`).then(j => { setJob(j); setStatus(j.status); }); }, [jobId]);
+            useEffect(() => {
+                api.get(`/api/jobs/${jobId}`).then(j => {
+                    setJob(j);
+                    setStatus(j.status);
+                    if (j.interview_details) setInterview(prev => ({ ...prev, ...j.interview_details }));
+                    if (j.offer_details) setOffer(prev => ({ ...prev, ...j.offer_details }));
+                });
+            }, [jobId]);
 
             if (!job) return <div style={styles.container}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>;
 
@@ -1856,6 +1942,46 @@
                 showToast(`Status updated to "${status}"`, 'success');
                 setJob(j => ({ ...j, status }));
             };
+
+            const saveInterview = async () => {
+                setSavingInterview(true);
+                try {
+                    const res = await api.post(`/api/jobs/${job.id}/interview`, interview);
+                    setJob(j => ({ ...j, status: 'interview', interview_details: res.interview_details }));
+                    setStatus('interview');
+                    showToast('Interview details saved!', 'success');
+                } catch { showToast('Failed to save interview details', 'error'); }
+                setSavingInterview(false);
+            };
+
+            const saveOffer = async () => {
+                setSavingOffer(true);
+                try {
+                    const res = await api.post(`/api/jobs/${job.id}/offer`, offer);
+                    setJob(j => ({ ...j, status: 'offer', offer_details: res.offer_details }));
+                    setStatus('offer');
+                    showToast('Offer details saved!', 'success');
+                } catch { showToast('Failed to save offer details', 'error'); }
+                setSavingOffer(false);
+            };
+
+            const iField = (label, key, type='text', placeholder='') => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', flex: '1 1 180px' }}>
+                    <label style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</label>
+                    <input type={type} value={interview[key]} placeholder={placeholder}
+                        onChange={e => setInterview(p => ({ ...p, [key]: e.target.value }))}
+                        style={{ ...styles.input, fontSize: '0.9rem', padding: '0.45rem 0.7rem' }} />
+                </div>
+            );
+
+            const oField = (label, key, type='text', placeholder='') => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', flex: '1 1 180px' }}>
+                    <label style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</label>
+                    <input type={type} value={offer[key]} placeholder={placeholder}
+                        onChange={e => setOffer(p => ({ ...p, [key]: e.target.value }))}
+                        style={{ ...styles.input, fontSize: '0.9rem', padding: '0.45rem 0.7rem' }} />
+                </div>
+            );
 
             const genCoverLetter = async () => {
                 showToast('Generating cover letter...', 'warning');
@@ -1921,7 +2047,87 @@
                             </select>
                             <button style={{ ...styles.btn, ...styles.btnPrimary, ...styles.btnSm }} onClick={updateStatus}>Update</button>
                         </div>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.6rem' }}>
+                            Set to <strong>Interview</strong> or <strong>Offer</strong> to unlock detailed tracking below.
+                        </p>
                     </div>
+
+                    {(status === 'interview' || job.status === 'interview' || job.interview_details) && (
+                        <div style={{ ...styles.card, borderLeft: '3px solid #7c3aed' }}>
+                            <h2 style={{ fontSize: '1rem', marginBottom: '1rem', color: '#d8b4fe' }}>Interview Details</h2>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                {iField('Round', 'round', 'text', 'e.g. Technical Round 1')}
+                                {iField('Date', 'date', 'date')}
+                                {iField('Time', 'time', 'time')}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', flex: '1 1 120px' }}>
+                                    <label style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Timezone</label>
+                                    <select value={interview.timezone} onChange={e => setInterview(p => ({ ...p, timezone: e.target.value }))} style={{ ...styles.select, fontSize: '0.9rem', padding: '0.45rem 0.7rem' }}>
+                                        {['IST','UTC','UTC+5:30','EST','PST','CST','MST','GMT','CET','AEST'].map(tz => <option key={tz}>{tz}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                {iField('Interviewer / Team', 'interviewer', 'text', 'e.g. Priya Sharma (Engineering)')}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', flex: '1 1 140px' }}>
+                                    <label style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Platform</label>
+                                    <select value={interview.platform} onChange={e => setInterview(p => ({ ...p, platform: e.target.value }))} style={{ ...styles.select, fontSize: '0.9rem', padding: '0.45rem 0.7rem' }}>
+                                        {['','Google Meet','Zoom','Microsoft Teams','Webex','Phone Call','In Person','Other'].map(pl => <option key={pl} value={pl}>{pl || '— Select platform —'}</option>)}
+                                    </select>
+                                </div>
+                                {iField('Meeting Link', 'meeting_link', 'url', 'https://meet.google.com/...')}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', marginBottom: '1rem' }}>
+                                <label style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notes</label>
+                                <textarea rows={2} value={interview.notes} placeholder="Preparation notes, topics to review..."
+                                    onChange={e => setInterview(p => ({ ...p, notes: e.target.value }))}
+                                    style={{ ...styles.input, resize: 'vertical', fontSize: '0.9rem', padding: '0.5rem 0.7rem', fontFamily: 'inherit' }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <button style={{ ...styles.btn, background: '#7c3aed', color: '#fff', padding: '0.5rem 1.4rem' }} onClick={saveInterview} disabled={savingInterview}>
+                                    {savingInterview ? 'Saving...' : 'Save Interview Details'}
+                                </button>
+                                {interview.meeting_link && <a href={interview.meeting_link} target="_blank" rel="noopener" style={{ ...styles.btn, ...styles.btnSm, background: '#1e3a5f', color: '#93c5fd' }}>Join Meeting &rarr;</a>}
+                            </div>
+                            {job.interview_details?.saved_at && <p style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '0.5rem' }}>Last saved: {fmtDate(job.interview_details.saved_at)}</p>}
+                        </div>
+                    )}
+
+                    {(status === 'offer' || job.status === 'offer' || job.offer_details) && (
+                        <div style={{ ...styles.card, borderLeft: '3px solid #f59e0b' }}>
+                            <h2 style={{ fontSize: '1rem', marginBottom: '1rem', color: '#fde68a' }}>Offer Details</h2>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                {oField('Salary / CTC', 'salary', 'text', 'e.g. ₹25 LPA or $120,000')}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', flex: '1 1 100px' }}>
+                                    <label style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Currency</label>
+                                    <select value={offer.currency} onChange={e => setOffer(p => ({ ...p, currency: e.target.value }))} style={{ ...styles.select, fontSize: '0.9rem', padding: '0.45rem 0.7rem' }}>
+                                        {['INR','USD','EUR','GBP','AED','SGD','AUD','CAD'].map(c => <option key={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                                {oField('Joining Date', 'joining_date', 'date')}
+                                {oField('Acceptance Deadline', 'deadline', 'date')}
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                {oField('Benefits', 'benefits', 'text', 'Health, ESOPs, bonus, WFH...')}
+                                {oField('Work Location', 'location', 'text', 'e.g. Remote / Bengaluru')}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', marginBottom: '0.75rem' }}>
+                                <label style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Offer Letter Text <span style={{ textTransform: 'none', color: '#64748b' }}>(paste key details)</span></label>
+                                <textarea rows={4} value={offer.offer_text} placeholder="Paste relevant sections from your offer letter here..."
+                                    onChange={e => setOffer(p => ({ ...p, offer_text: e.target.value }))}
+                                    style={{ ...styles.input, resize: 'vertical', fontSize: '0.9rem', padding: '0.5rem 0.7rem', fontFamily: 'inherit' }} />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', marginBottom: '1rem' }}>
+                                <label style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notes</label>
+                                <textarea rows={2} value={offer.notes} placeholder="Negotiation notes, questions, decisions..."
+                                    onChange={e => setOffer(p => ({ ...p, notes: e.target.value }))}
+                                    style={{ ...styles.input, resize: 'vertical', fontSize: '0.9rem', padding: '0.5rem 0.7rem', fontFamily: 'inherit' }} />
+                            </div>
+                            <button style={{ ...styles.btn, background: '#b45309', color: '#fff', padding: '0.5rem 1.4rem' }} onClick={saveOffer} disabled={savingOffer}>
+                                {savingOffer ? 'Saving...' : 'Save Offer Details'}
+                            </button>
+                            {job.offer_details?.saved_at && <p style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '0.5rem' }}>Last saved: {fmtDate(job.offer_details.saved_at)}</p>}
+                        </div>
+                    )}
 
                     {job.score_details && (
                         <div style={styles.card}>

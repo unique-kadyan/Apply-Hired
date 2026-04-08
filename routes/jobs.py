@@ -11,6 +11,7 @@ from cover_letter import generate_cover_letter, check_profile_completeness
 from tracker import (
     get_jobs, get_job_by_id, update_job_status, _get_db, _to_object_id,
     get_not_interested_reasons, save_not_interested_reason, update_user_profile,
+    update_interview_details, update_offer_details,
 )
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/api")
@@ -204,6 +205,58 @@ def profile_check():
     profile = get_user_profile(request.user)
     result = check_profile_completeness(profile)
     return jsonify(result)
+
+
+# ---- Interview & Offer Details --------------------------------------------
+
+@jobs_bp.route("/jobs/<job_id>/interview", methods=["PUT", "POST"])
+@login_required
+def save_interview(job_id):
+    """Save interview scheduling details for a job."""
+    job = get_job_by_id(job_id, user_id=request.user["id"])
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    data = request.get_json() or {}
+    details = {
+        "round":        data.get("round", ""),        # e.g. "HR Screen", "Technical Round 1"
+        "date":         data.get("date", ""),          # ISO date string
+        "time":         data.get("time", ""),          # e.g. "14:30"
+        "timezone":     data.get("timezone", ""),      # e.g. "IST", "UTC+5:30"
+        "interviewer":  data.get("interviewer", ""),   # name / team
+        "meeting_link": data.get("meeting_link", ""), # Zoom/Meet/Teams URL
+        "platform":     data.get("platform", ""),      # e.g. "Google Meet"
+        "notes":        data.get("notes", ""),
+        "saved_at":     datetime.now().isoformat(),
+    }
+    ok = update_interview_details(job_id, details, user_id=request.user["id"])
+    if not ok:
+        return jsonify({"error": "Update failed"}), 500
+    return jsonify({"message": "Interview details saved", "interview_details": details})
+
+
+@jobs_bp.route("/jobs/<job_id>/offer", methods=["PUT", "POST"])
+@login_required
+def save_offer(job_id):
+    """Save offer letter details for a job."""
+    job = get_job_by_id(job_id, user_id=request.user["id"])
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    data = request.get_json() or {}
+    details = {
+        "salary":       data.get("salary", ""),        # e.g. "₹25 LPA" or "$120,000"
+        "currency":     data.get("currency", ""),
+        "joining_date": data.get("joining_date", ""),  # ISO date string
+        "deadline":     data.get("deadline", ""),      # Offer acceptance deadline
+        "benefits":     data.get("benefits", ""),      # Health, ESOPs, bonus etc.
+        "location":     data.get("location", ""),      # Office / remote
+        "offer_text":   data.get("offer_text", ""),    # Pasted offer letter text
+        "notes":        data.get("notes", ""),
+        "saved_at":     datetime.now().isoformat(),
+    }
+    ok = update_offer_details(job_id, details, user_id=request.user["id"])
+    if not ok:
+        return jsonify({"error": "Update failed"}), 500
+    return jsonify({"message": "Offer details saved", "offer_details": details})
 
 
 # ---- Clear jobs -----------------------------------------------------------
