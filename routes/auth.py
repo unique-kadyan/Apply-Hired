@@ -151,6 +151,142 @@ def logout():
     return jsonify({"message": "Logged out"})
 
 
+# In-memory reset tokens: { token: { "email": ..., "expires": timestamp } }
+_reset_tokens: dict = {}
+
+
+@auth_bp.route("/forgot-password", methods=["POST"])
+def forgot_password():
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+
+    # Check if user exists
+    db = _get_db()
+    user = db.users.find_one({"email": email})
+    # Always return success to prevent email enumeration
+    if not user:
+        return jsonify({"message": "If that email exists, a reset link has been sent."})
+
+    # Generate reset token
+    token = secrets.token_urlsafe(32)
+    _reset_tokens[token] = {
+        "email": email,
+        "expires": datetime.now().timestamp() + 600,  # 10 minutes
+    }
+
+    # Build reset URL
+    base_url = request.url_root.rstrip("/")
+    if base_url.startswith("http://") and "localhost" not in base_url and "127.0.0.1" not in base_url:
+        base_url = base_url.replace("http://", "https://", 1)
+    reset_url = f"{base_url}/?reset_token={token}"
+
+    # Send email
+    from services.email_service import send_otp_email as _send_email
+    _send_reset_email(email, reset_url)
+
+    return jsonify({"message": "If that email exists, a reset link has been sent."})
+
+
+def _send_reset_email(to_email: str, reset_url: str):
+    """Send password reset email via available email provider."""
+    html = f"""
+    <div style="font-family:'Segoe UI',system-ui,sans-serif;max-width:480px;margin:0 auto;
+                background:#0f172a;color:#e2e8f0;padding:2rem;border-radius:12px">
+        <h1 style="color:#60a5fa;margin:0 0 0.5rem">JobBot</h1>
+        <p style="color:#94a3b8;margin:0 0 1.5rem">Reset your password</p>
+        <p style="color:#cbd5e1;line-height:1.6;margin:0 0 1.5rem">
+            Click the button below to reset your password. This link expires in 10 minutes.
+        </p>
+        <a href="{reset_url}" style="display:inline-block;background:#2563eb;color:#fff;
+           padding:0.75rem 2rem;border-radius:8px;text-decoration:none;font-weight:600">
+            Reset Password
+        </a>
+        <p style="color:#64748b;font-size:0.82rem;margin:1.5rem 0 0">
+            If you didn't request this, ignore this email.
+        </p>
+    </div>
+    """
+    import os
+    # Try Brevo
+    brevo_key = os.environ.get("BREVO_API_KEY", "")
+    if brevo_key:
+        try:
+            import requests as req
+            smtp_email = os.environ.get("SMTP_EMAIL", os.environ.get("BREVO_FROM", "noreply@jobbot.app"))
+            resp = req.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={"api-key": brevo_key, "Content-Type": "application/json"},
+                json={
+                    "sender": {"name": "JobBot", "email": smtp_email},
+                    "to": [{"email": to_email}],
+                    "subject": "JobBot — Reset your password",
+                    "htmlContent": html,
+                },
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                return
+        except Exception:
+            pass
+
+    # Try SMTP
+    smtp_email = os.environ.get("SMTP_EMAIL", "")
+    smtp_pass = os.environ.get("SMTP_PASSWORD", "")
+    if smtp_email and smtp_pass:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            msg = MIMEMultipart("alternative")
+            msg["From"] = f"JobBot <{smtp_email}>"
+            msg["To"] = to_email
+            msg["Subject"] = "JobBot — Reset your password"
+            msg.attach(MIMEText(html, "html"))
+            with smtplib.SMTP(os.environ.get("SMTP_HOST", "smtp.gmail.com"),
+                              int(os.environ.get("SMTP_PORT", 587)), timeout=10) as server:
+                server.starttls()
+                server.login(smtp_email, smtp_pass)
+                server.sendmail(smtp_email, to_email, msg.as_string())
+        except Exception:
+            pass
+
+
+@auth_bp.route("/reset-password", methods=["POST"])
+def reset_password():
+    data = request.get_json() or {}
+    token = (data.get("token") or "").strip()
+    new_password = data.get("password", "")
+
+    if not token or not new_password:
+        return jsonify({"error": "Token and new password are required"}), 400
+    if len(new_password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    pending = _reset_tokens.get(token)
+    if not pending:
+        return jsonify({"error": "Invalid or expired reset link"}), 400
+    if datetime.now().timestamp() > pending["expires"]:
+        del _reset_tokens[token]
+        return jsonify({"error": "Reset link has expired. Please request a new one."}), 400
+
+    email = pending["email"]
+    del _reset_tokens[token]
+
+    # Update password
+    from werkzeug.security import generate_password_hash
+    db = _get_db()
+    result = db.users.update_one(
+        {"email": email},
+        {"$set": {"password_hash": generate_password_hash(new_password)}},
+    )
+    if result.modified_count == 0:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({"message": "Password reset successfully. You can now sign in."})
+
+
 @auth_bp.route("/me", methods=["GET"])
 def me():
     user_id = session.get("user_id")

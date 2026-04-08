@@ -155,6 +155,15 @@ _RESUME_PARSE_PROMPT = """You are a professional resume parser. The text below w
 
 PDF text extraction commonly produces artifacts: words, job titles, company names, and sentences may be split across multiple lines or truncated mid-word due to column layouts, page breaks, or formatting. You must intelligently reconstruct all fragmented text into its complete, meaningful form by inferring from surrounding context. Never return partial or truncated words — every field must contain complete, properly formed text.
 
+IMPORTANT skill classification rules:
+- "Java" and "JavaScript" are DIFFERENT languages. Only list "Java" if the resume explicitly mentions Java (not as part of JavaScript). Only list "JavaScript" if explicitly mentioned.
+- "React" and "React Native" are different. "React.js" = "React".
+- "Node.js" is backend, not a language.
+- "SQL" is a language. "PostgreSQL", "MySQL", "Oracle SQL" are databases.
+- "Spring Boot", "Spring Security", "Spring Data" are separate backend skills — list each one mentioned.
+- "AWS" is cloud. Individual services like "EC2", "Lambda", "S3" should also be listed under cloud_devops.
+- Only list skills that are ACTUALLY mentioned in the resume. Do not infer or assume.
+
 Parse the resume and return ONLY valid JSON with this structure:
 
 {
@@ -479,7 +488,7 @@ def parse_resume_ai(text: str, filepath: str = None) -> Optional[dict]:
 # Each entry is (regex_pattern, display_name). If display_name is None, the pattern is used as-is.
 SKILL_PATTERNS = {
     "languages": [
-        "Java", "Python", "JavaScript", "TypeScript", ("C\\+\\+", "C++"), "C#", "Go",
+        ("Java(?!Script)", "Java"), "Python", "JavaScript", "TypeScript", ("C\\+\\+", "C++"), "C#", "Go",
         "Golang", "Rust", "Ruby", "PHP", "Kotlin", "Swift", "Scala", "SQL",
         "Perl", "Dart", "Lua", "Shell", "Bash",
     ],

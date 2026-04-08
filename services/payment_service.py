@@ -7,7 +7,7 @@ import hashlib
 
 logger = logging.getLogger(__name__)
 
-RESUME_OPTIMIZE_PRICE = 5000  # INR 50.00 in paise
+RESUME_OPTIMIZE_PRICE = int(os.environ.get("RESUME_PRICE_INR", 50))
 
 
 def _key_id():
@@ -27,16 +27,15 @@ def _get_client():
     return razorpay.Client(auth=(_key_id(), _key_secret()))
 
 
-def create_order(amount_paise: int = RESUME_OPTIMIZE_PRICE, receipt: str = "resume_opt") -> dict:
+def create_order(amount_paise: int, receipt: str = "resume_opt") -> dict:
     """Create a Razorpay order. Returns order dict with 'id'."""
     client = _get_client()
-    order = client.order.create({
+    return client.order.create({
         "amount": amount_paise,
         "currency": "INR",
         "receipt": receipt,
-        "payment_capture": 1,  # auto-capture
+        "payment_capture": 1,
     })
-    return order
 
 
 def verify_payment(order_id: str, payment_id: str, signature: str) -> bool:

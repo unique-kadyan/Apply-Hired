@@ -91,6 +91,8 @@ Return ONLY a JSON object with these fields:
 - "missing_skills": list of skills the job wants but the candidate lacks
 - "recommendation": "strong_match" | "good_match" | "partial_match" | "weak_match"
 
+IMPORTANT: Match skills precisely. "Java" and "JavaScript" are completely different technologies. A Java developer does NOT match a JavaScript role and vice versa. Score accordingly.
+
 CANDIDATE:
 - Title: {PROFILE['title']}
 - Experience: {PROFILE['years_of_experience']} years
