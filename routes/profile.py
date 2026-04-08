@@ -7,6 +7,7 @@ from flask import Blueprint, request, jsonify, current_app
 from middleware import login_required, get_user_profile
 from resume_parser import parse_resume, score_resume
 from tracker import update_user_profile
+from services.profile_import import import_github, import_linkedin_url, merge_github_into_profile
 
 profile_bp = Blueprint("profile", __name__, url_prefix="/api/profile")
 
@@ -71,6 +72,90 @@ def upload_resume():
         return jsonify({"message": "Resume parsed successfully!", "profile": profile, "resume_score": resume_score})
     except Exception as e:
         return jsonify({"error": f"Failed to parse resume: {str(e)}"}), 500
+
+
+@profile_bp.route("/connect/github", methods=["POST"])
+@login_required
+def connect_github():
+    data = request.get_json() or {}
+    username = data.get("username", "")
+    if not username:
+        return jsonify({"error": "GitHub username or URL is required"}), 400
+
+    github_data = import_github(username)
+    if github_data.get("error"):
+        return jsonify({"error": github_data["error"]}), 400
+
+    profile = get_user_profile(request.user)
+    profile = merge_github_into_profile(profile, github_data)
+    update_user_profile(request.user["id"], profile)
+
+    return jsonify({"message": "GitHub profile imported!", "profile": profile, "github": github_data})
+
+
+@profile_bp.route("/connect/linkedin", methods=["POST"])
+@login_required
+def connect_linkedin():
+    data = request.get_json() or {}
+    url = data.get("url", "")
+    if not url:
+        return jsonify({"error": "LinkedIn URL is required"}), 400
+
+    linkedin_data = import_linkedin_url(url)
+    profile = get_user_profile(request.user)
+    profile["linkedin"] = linkedin_data.get("linkedin_url", "")
+    update_user_profile(request.user["id"], profile)
+
+    return jsonify({"message": "LinkedIn connected!", "profile": profile})
+
+
+@profile_bp.route("/connect/portfolio", methods=["POST"])
+@login_required
+def connect_portfolio():
+    data = request.get_json() or {}
+    url = data.get("url", "")
+    if not url:
+        return jsonify({"error": "Portfolio URL is required"}), 400
+
+    profile = get_user_profile(request.user)
+    profile["website"] = url.strip()
+    update_user_profile(request.user["id"], profile)
+
+    return jsonify({"message": "Portfolio connected!", "profile": profile})
+
+
+@profile_bp.route("/autofill-data", methods=["GET"])
+@login_required
+def get_autofill_data():
+    """Return profile data formatted for auto-filling job application forms.
+    Used by the Chrome Extension."""
+    profile = get_user_profile(request.user)
+    name = profile.get("name", "")
+    parts = name.split() if name else []
+
+    skills_flat = ", ".join(
+        s for group in (profile.get("skills") or {}).values() for s in group
+    )
+
+    return jsonify({
+        "full_name": name,
+        "first_name": parts[0] if parts else "",
+        "last_name": parts[-1] if len(parts) > 1 else "",
+        "email": profile.get("email", ""),
+        "phone": profile.get("phone", ""),
+        "location": profile.get("location", ""),
+        "city": profile.get("location", "").split(",")[0].strip() if profile.get("location") else "",
+        "title": profile.get("title", ""),
+        "summary": profile.get("summary", ""),
+        "years_of_experience": str(profile.get("years_of_experience", "")),
+        "linkedin": profile.get("linkedin", ""),
+        "github": profile.get("github", ""),
+        "website": profile.get("website", ""),
+        "skills": skills_flat,
+        "education": profile.get("education", ""),
+        "cover_letter": "",  # filled per-job by the extension
+        "notice_period": "Immediate / 15 days",
+    })
 
 
 @profile_bp.route("/score-resume", methods=["POST"])

@@ -97,6 +97,27 @@ def gen_cover_letter(job_id):
     return jsonify({"cover_letter": letter})
 
 
+# ---- Mark applied by URL (used by Chrome Extension) ----------------------
+
+@jobs_bp.route("/mark-applied-by-url", methods=["POST"])
+@login_required
+def mark_applied_by_url():
+    """Mark a job as applied by matching its URL. Used by Chrome Extension after form submission."""
+    data = request.get_json() or {}
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "URL is required"}), 400
+
+    db = _get_db()
+    # Find job by URL for this user
+    result = db.jobs.update_many(
+        {"user_id": str(request.user["id"]), "url": {"$regex": url.split("?")[0][:100]}},
+        {"$set": {"status": "applied", "updated_at": datetime.now().isoformat(),
+                  "notes": f"Applied via Chrome Extension on {datetime.now().strftime('%Y-%m-%d %H:%M')}"}},
+    )
+    return jsonify({"matched": result.modified_count})
+
+
 # ---- Apply & Auto-Apply ---------------------------------------------------
 
 @jobs_bp.route("/apply", methods=["POST"])

@@ -93,6 +93,97 @@
             );
         }
 
+        function ConnectAccounts({ profile, setProfile, showToast }) {
+            const [githubInput, setGithubInput] = useState(profile.github_username || '');
+            const [linkedinInput, setLinkedinInput] = useState(profile.linkedin || '');
+            const [portfolioInput, setPortfolioInput] = useState(profile.website || '');
+            const [loading, setLoading] = useState('');
+
+            const connectGithub = async () => {
+                if (!githubInput.trim()) return;
+                setLoading('github');
+                try {
+                    const res = await api.post('/api/profile/connect/github', { username: githubInput });
+                    if (res.error) showToast(res.error, 'error');
+                    else { setProfile(res.profile); showToast('GitHub imported! Skills & projects updated.', 'success'); }
+                } catch (err) { showToast('Failed to import GitHub', 'error'); }
+                setLoading('');
+            };
+
+            const connectLinkedin = async () => {
+                if (!linkedinInput.trim()) return;
+                setLoading('linkedin');
+                try {
+                    const res = await api.post('/api/profile/connect/linkedin', { url: linkedinInput });
+                    if (res.error) showToast(res.error, 'error');
+                    else { setProfile(res.profile); showToast('LinkedIn connected!', 'success'); }
+                } catch (err) { showToast('Failed to connect LinkedIn', 'error'); }
+                setLoading('');
+            };
+
+            const connectPortfolio = async () => {
+                if (!portfolioInput.trim()) return;
+                setLoading('portfolio');
+                try {
+                    const res = await api.post('/api/profile/connect/portfolio', { url: portfolioInput });
+                    if (res.error) showToast(res.error, 'error');
+                    else { setProfile(res.profile); showToast('Portfolio connected!', 'success'); }
+                } catch (err) { showToast('Failed to connect portfolio', 'error'); }
+                setLoading('');
+            };
+
+            const rowStyle = { display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem' };
+
+            return (
+                <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 14, padding: '1.5rem', marginBottom: '1rem' }}>
+                    <h2 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Connect Accounts</h2>
+
+                    <div style={rowStyle}>
+                        <span style={{ color: 'var(--muted)', fontSize: '0.85rem', minWidth: 70 }}>GitHub</span>
+                        <input style={{ ...styles.input, flex: 1 }} value={githubInput} onChange={e => setGithubInput(e.target.value)}
+                               placeholder="username or https://github.com/username" />
+                        <button onClick={connectGithub} disabled={loading === 'github'}
+                            style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, whiteSpace: 'nowrap' }}>
+                            {loading === 'github' ? 'Importing...' : profile.github ? 'Update' : 'Import'}
+                        </button>
+                    </div>
+
+                    <div style={rowStyle}>
+                        <span style={{ color: 'var(--muted)', fontSize: '0.85rem', minWidth: 70 }}>LinkedIn</span>
+                        <input style={{ ...styles.input, flex: 1 }} value={linkedinInput} onChange={e => setLinkedinInput(e.target.value)}
+                               placeholder="https://linkedin.com/in/yourname" />
+                        <button onClick={connectLinkedin} disabled={loading === 'linkedin'}
+                            style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, whiteSpace: 'nowrap' }}>
+                            {loading === 'linkedin' ? 'Saving...' : profile.linkedin ? 'Update' : 'Connect'}
+                        </button>
+                    </div>
+
+                    <div style={rowStyle}>
+                        <span style={{ color: 'var(--muted)', fontSize: '0.85rem', minWidth: 70 }}>Portfolio</span>
+                        <input style={{ ...styles.input, flex: 1 }} value={portfolioInput} onChange={e => setPortfolioInput(e.target.value)}
+                               placeholder="https://yoursite.com" />
+                        <button onClick={connectPortfolio} disabled={loading === 'portfolio'}
+                            style={{ ...styles.btn, ...styles.btnSm, ...styles.btnPrimary, whiteSpace: 'nowrap' }}>
+                            {loading === 'portfolio' ? 'Saving...' : profile.website ? 'Update' : 'Connect'}
+                        </button>
+                    </div>
+
+                    {profile.projects && profile.projects.length > 0 && (
+                        <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
+                            <h3 style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '0.5rem' }}>GitHub Projects</h3>
+                            {profile.projects.map((p, i) => (
+                                <div key={i} style={{ marginBottom: '0.4rem' }}>
+                                    <a href={p.url} target="_blank" rel="noopener" style={{ fontWeight: 600, fontSize: '0.88rem' }}>{p.name}</a>
+                                    {p.language && <span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.1rem 0.4rem', borderRadius: 4, fontSize: '0.72rem', marginLeft: '0.5rem' }}>{p.language}</span>}
+                                    {p.description && <p style={{ color: 'var(--muted)', fontSize: '0.82rem', margin: '0.1rem 0 0' }}>{p.description}</p>}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
         function ResumeScoreCard({ score }) {
             if (!score || !score.sections) return null;
             const total = score.total_score || 0;
@@ -1031,6 +1122,9 @@
                             <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Supports PDF, DOCX, TXT</span>
                         </div>
                     </div>
+
+                    {/* Connect Accounts */}
+                    <ConnectAccounts profile={profile} setProfile={setProfile} showToast={showToast} />
 
                     {/* Resume Score */}
                     {profile.resume_score && <ResumeScoreCard score={profile.resume_score} />}
