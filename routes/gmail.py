@@ -1,15 +1,15 @@
 """Gmail API integration — auto-detect interview invitations and offer letters."""
 
-import os
-import re
 import base64
 import logging
+import os
+import re
 import secrets
 from datetime import datetime
 from urllib.parse import urlencode
 
 import requests as http_requests
-from flask import Blueprint, request, jsonify, redirect, session
+from flask import Blueprint, jsonify, redirect, request, session
 
 from middleware import login_required
 from tracker import _get_db, _to_object_id

@@ -21,8 +21,8 @@ _scheduler = None  # BackgroundScheduler instance (initialised lazily)
 def _run_scheduled_searches():
     """Called every hour. Triggers searches for users whose interval has elapsed."""
     try:
+        from services.search_service import is_search_running, start_search
         from tracker import _get_db
-        from services.search_service import start_search, is_search_running
 
         db = _get_db()
         now = datetime.now(timezone.utc)

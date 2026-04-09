@@ -7,13 +7,16 @@ from datetime import datetime
 from urllib.parse import urlencode
 
 import requests as http_requests
-from flask import Blueprint, request, jsonify, session, redirect
+from flask import Blueprint, jsonify, redirect, request, session
 
 from middleware import DEFAULT_PROFILE
 from services.email_service import is_smtp_configured, send_otp_email
 from tracker import (
-    create_user, authenticate_user, get_user_by_id,
-    update_user_profile, _get_db,
+    _get_db,
+    authenticate_user,
+    create_user,
+    get_user_by_id,
+    update_user_profile,
 )
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
@@ -236,8 +239,8 @@ def _send_reset_email(to_email: str, reset_url: str):
     if smtp_email and smtp_pass:
         try:
             import smtplib
-            from email.mime.text import MIMEText
             from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
             msg = MIMEMultipart("alternative")
             msg["From"] = f"JobBot <{smtp_email}>"
             msg["To"] = to_email

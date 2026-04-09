@@ -3,24 +3,24 @@
 import json
 from datetime import datetime
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, jsonify, request
 
-from middleware import login_required, get_user_profile
+from cover_letter import check_profile_completeness, generate_cover_letter
+from middleware import get_user_profile, login_required
 from scrapers import Job
-from cover_letter import generate_cover_letter, check_profile_completeness
 from tracker import (
-    get_jobs,
-    get_job_by_id,
-    update_job_status,
     _get_db,
     _to_object_id,
-    get_not_interested_reasons,
-    save_not_interested_reason,
     delete_not_interested_reason,
-    update_user_profile,
-    update_interview_details,
-    update_offer_details,
+    get_job_by_id,
+    get_jobs,
+    get_not_interested_reasons,
     get_skip_filter_keywords,
+    save_not_interested_reason,
+    update_interview_details,
+    update_job_status,
+    update_offer_details,
+    update_user_profile,
 )
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/api")

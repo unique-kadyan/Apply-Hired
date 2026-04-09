@@ -1,18 +1,29 @@
 """Profile routes — view, update, resume upload, and avatar upload."""
 
+import base64
+import io
 import json
 import logging
 import os
-import io
-import base64
 
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, current_app, jsonify, request
 from PIL import Image
 
-from middleware import login_required, get_user_profile
-from resume_parser import parse_resume, score_resume, _build_ai_providers, _call_ai_text, _is_quota_error, extract_text
+from middleware import get_user_profile, login_required
+from resume_parser import (
+    _build_ai_providers,
+    _call_ai_text,
+    _is_quota_error,
+    extract_text,
+    parse_resume,
+    score_resume,
+)
+from services.profile_import import (
+    import_github,
+    import_linkedin_url,
+    merge_github_into_profile,
+)
 from tracker import update_user_profile
-from services.profile_import import import_github, import_linkedin_url, merge_github_into_profile
 
 logger = logging.getLogger(__name__)
 

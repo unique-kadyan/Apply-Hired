@@ -10,10 +10,10 @@ Usage:
     python main.py export        Export top jobs to CSV
 """
 
-import sys
-import os
 import csv
 import logging
+import os
+import sys
 import time
 from datetime import datetime
 
@@ -31,11 +31,11 @@ from rich.console import Console
 from rich.panel import Panel
 
 from config import SEARCH_PREFERENCES
-from scrapers import search_all_boards, ALL_SCRAPERS
-from matcher import rank_jobs
 from cover_letter import generate_cover_letter
-from tracker import save_job, get_jobs, log_search_run, init_db
-from dashboard import show_stats, show_jobs, interactive_menu, show_job_detail
+from dashboard import interactive_menu, show_job_detail, show_jobs, show_stats
+from matcher import rank_jobs
+from scrapers import ALL_SCRAPERS, search_all_boards
+from tracker import get_jobs, init_db, log_search_run, save_job
 
 console = Console()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")

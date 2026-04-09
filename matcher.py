@@ -1,7 +1,7 @@
 """Job matching and scoring engine — ranks jobs against resume profile."""
 
-import re
 import logging
+import re
 from typing import Optional
 
 from config import PROFILE, SEARCH_PREFERENCES
@@ -125,7 +125,7 @@ def _location_score(job_location: str) -> float:
     Remote jobs always get +0.05 (broadly applicable).
     City/country match gives +0.10 (more targeted).
     """
-    from config import PROFILE, LOCATION_PREFERENCES
+    from config import LOCATION_PREFERENCES, PROFILE
     user_loc = PROFILE.get("location", "").lower()  # e.g. "rohtak, india"
     job_loc  = (job_location or "").lower()
 
@@ -165,7 +165,12 @@ def score_job_local(job, selected_levels: list[str] | None = None) -> float:
 
 def score_job_ai(job) -> Optional[dict]:
     """Evaluate job fit using free AI providers with failover."""
-    from resume_parser import _build_ai_providers, _call_ai_text, _parse_ai_response, _is_quota_error
+    from resume_parser import (
+        _build_ai_providers,
+        _call_ai_text,
+        _is_quota_error,
+        _parse_ai_response,
+    )
 
     providers = _build_ai_providers()
     if not providers:

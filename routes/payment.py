@@ -1,14 +1,17 @@
 """Payment routes — Razorpay order creation, verification, and resume optimization."""
 
-import os
 import logging
+import os
 from datetime import datetime, timezone
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, jsonify, request
 
-from middleware import login_required, get_user_profile
+from middleware import get_user_profile, login_required
 from services.payment_service import (
-    is_configured, create_order, verify_payment, _key_id,
+    _key_id,
+    create_order,
+    is_configured,
+    verify_payment,
 )
 from tracker import _get_db, update_user_profile
 
@@ -256,7 +259,12 @@ Return ONLY valid JSON:
 """
 
     try:
-        from resume_parser import _build_ai_providers, _call_ai_text, _parse_ai_response, _is_quota_error
+        from resume_parser import (
+            _build_ai_providers,
+            _call_ai_text,
+            _is_quota_error,
+            _parse_ai_response,
+        )
 
         providers = _build_ai_providers()
         optimized = None

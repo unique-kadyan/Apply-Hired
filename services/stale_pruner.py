@@ -6,8 +6,9 @@ are checked to avoid hitting active/applied jobs or recent listings.
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
+
 import requests
-from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 

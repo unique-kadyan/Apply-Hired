@@ -1,7 +1,8 @@
 """Import profile data from GitHub and LinkedIn."""
 
-import os
 import logging
+import os
+
 import requests
 
 logger = logging.getLogger(__name__)

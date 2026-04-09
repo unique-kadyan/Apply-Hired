@@ -2,13 +2,18 @@
 
 import re
 import threading
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from config import LOCATION_PREFERENCES, PROFILE, SEARCH_PREFERENCES
-from scrapers import search_all_boards, ALL_SCRAPERS
 from matcher import rank_jobs
-from tracker import save_jobs_bulk, log_search_run, get_not_interested_reasons, _PREDEFINED_REASONS
+from scrapers import ALL_SCRAPERS, search_all_boards
 from services.currency import normalize_salary_annual_usd
+from tracker import (
+    _PREDEFINED_REASONS,
+    get_not_interested_reasons,
+    log_search_run,
+    save_jobs_bulk,
+)
 
 # Per-user search status keyed by user_id
 _status_map: dict[int, dict] = {}

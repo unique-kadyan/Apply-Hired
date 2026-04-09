@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import quote_plus
 
-from werkzeug.security import generate_password_hash, check_password_hash
 from bson import ObjectId
-from pymongo import MongoClient, DESCENDING
+from pymongo import DESCENDING, MongoClient
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import MONGO_URI
 
@@ -455,9 +455,10 @@ def _build_job_doc(job, score_data: dict, cover_letter: str = "", user_id=None) 
 def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
     """Save multiple jobs with fuzzy dedup (same company+title within 7 days → keep highest score).
     Returns count of new jobs inserted."""
+    from datetime import timedelta
+
     from pymongo import InsertOne, UpdateOne
     from pymongo.errors import BulkWriteError
-    from datetime import timedelta
 
     db = _get_db()
     docs = [_build_job_doc(job, score_data, user_id=user_id) for job, score_data in ranked]

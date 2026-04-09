@@ -3,15 +3,15 @@
 import json
 import webbrowser
 
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
 from rich.columns import Columns
-from rich.prompt import Prompt, IntPrompt, Confirm
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.table import Table
 from rich.text import Text
 
-from tracker import get_jobs, get_stats, get_job_by_id, update_job_status
 from cover_letter import generate_cover_letter
+from tracker import get_job_by_id, get_jobs, get_stats, update_job_status
 
 console = Console()
 

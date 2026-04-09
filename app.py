@@ -2,16 +2,16 @@
 
 import os
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 
-from tracker import init_db
 from routes.auth import auth_bp
-from routes.profile import profile_bp
-from routes.jobs import jobs_bp
-from routes.search import search_bp
-from routes.payment import payment_bp
 from routes.gmail import gmail_bp
+from routes.jobs import jobs_bp
+from routes.payment import payment_bp
+from routes.profile import profile_bp
+from routes.search import search_bp
 from services.scheduler import start_scheduler, stop_scheduler
+from tracker import init_db
 
 
 def create_app() -> Flask:

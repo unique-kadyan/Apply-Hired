@@ -1,9 +1,9 @@
 """Resume parser — extracts profile data from PDF/DOCX/TXT files."""
 
-import os
-import re
 import json
 import logging
+import os
+import re
 from pathlib import Path
 from typing import Optional
 

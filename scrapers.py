@@ -1,25 +1,25 @@
 """Job scrapers for multiple free job boards and APIs."""
 
+import logging
 import os
 import re
 import time
-import logging
-from dataclasses import dataclass, field, asdict
-from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import quote_plus
+from dataclasses import asdict, dataclass, field
 from functools import lru_cache
+from typing import Optional
+from urllib.parse import quote_plus
 
 import pycountry
 import requests
 from bs4 import BeautifulSoup
 
 from config import (
-    SEARCH_PREFERENCES,
-    JSEARCH_API_KEY,
     ADZUNA_APP_ID,
     ADZUNA_APP_KEY,
+    JSEARCH_API_KEY,
     LOCATION_PREFERENCES,
+    SEARCH_PREFERENCES,
 )
 
 logger = logging.getLogger(__name__)

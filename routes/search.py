@@ -1,12 +1,11 @@
 """Search & stats routes."""
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, jsonify, request
 
 from config import LOCATION_PREFERENCES
-from middleware import login_required, get_user_profile
+from middleware import get_user_profile, login_required
 from services.search_service import get_search_status, is_search_running, start_search
-from tracker import get_stats, _get_db
-
+from tracker import _get_db, get_stats
 
 _CURRENCY_TO_USD = {
     "INR": 83.5, "EUR": 0.92, "GBP": 0.79, "AED": 3.67,

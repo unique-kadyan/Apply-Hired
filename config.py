@@ -1,6 +1,7 @@
 """Configuration and resume profile for the job application bot."""
 
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()

@@ -1,13 +1,13 @@
 """Auto-apply module — opens job pages in browser, auto-fills forms using Selenium + AI."""
 
-import os
-import time
 import json
 import logging
+import os
 import re
+import time
 import webbrowser
 
-from config import PROFILE, OPENAI_API_KEY
+from config import OPENAI_API_KEY, PROFILE
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,8 @@ def _get_driver():
     """Initialize Selenium Chrome driver with anti-detection."""
     try:
         from selenium import webdriver
-        from selenium.webdriver.chrome.service import Service
         from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
         from webdriver_manager.chrome import ChromeDriverManager
 
         options = Options()
@@ -55,8 +55,8 @@ def _get_driver():
 def _wait_for_page_and_forms(driver, timeout=10):
     """Wait for page to fully load and for form elements to appear."""
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
 
     try:
         # Wait for document ready state
@@ -340,8 +340,8 @@ def _try_platform_apply(driver, job: dict) -> bool:
 def _linkedin_easy_apply(driver, job: dict) -> bool:
     """Attempt LinkedIn Easy Apply."""
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
 
     try:
         # Click Easy Apply button
@@ -401,8 +401,8 @@ def _linkedin_easy_apply(driver, job: dict) -> bool:
 def _indeed_apply(driver, job: dict) -> bool:
     """Attempt Indeed Apply."""
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
 
     try:
         # Click apply button

@@ -1,9 +1,9 @@
 """Authentication middleware and profile helpers."""
 
-import json
 import functools
+import json
 
-from flask import request, jsonify, session
+from flask import jsonify, request, session
 
 from tracker import get_user_by_id
 
