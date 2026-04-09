@@ -49,6 +49,7 @@ def _get_db():
         raise RuntimeError("MONGO_URI is not set. Add it to your .env file.")
 
     import certifi
+
     safe_uri = _fix_mongo_uri(MONGO_URI)
     _client = MongoClient(safe_uri, tlsCAFile=certifi.where())
     _db = _client.get_default_database(default="jobbot")
@@ -98,6 +99,7 @@ def init_db():
 # Internal helper used by routes/auth.py  (replaces sqlite _get_conn)
 # ---------------------------------------------------------------------------
 
+
 def _get_conn():
     """Return the db handle — kept for compatibility with routes/auth.py."""
     return _get_db()
@@ -106,6 +108,7 @@ def _get_conn():
 # ---------------------------------------------------------------------------
 # User auth helpers
 # ---------------------------------------------------------------------------
+
 
 def create_user(name: str, email: str, password: str) -> Optional[dict]:
     """Create a new user. Returns user dict or None if email exists."""
@@ -217,46 +220,152 @@ def delete_not_interested_reason(user_id, reason: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 # Predefined reasons — too generic to extract actionable keywords from
-_PREDEFINED_REASONS = frozenset({
-    "Salary too low",
-    "Location not suitable",
-    "Role mismatch — not what I do",
-    "Company concerns",
-    "Too senior / too junior",
-    "Already applied elsewhere",
-    "Poor job description",
-    "Contract / freelance only",
-})
+_PREDEFINED_REASONS = frozenset(
+    {
+        "Salary too low",
+        "Location not suitable",
+        "Role mismatch — not what I do",
+        "Company concerns",
+        "Too senior / too junior",
+        "Already applied elsewhere",
+        "Poor job description",
+        "Contract / freelance only",
+    }
+)
 
 # Common English stopwords + resume/job-domain words that add no signal
-_SKIP_STOPWORDS = frozenset({
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "shall", "can", "need", "too", "very", "just",
-    "only", "also", "but", "and", "or", "not", "no", "nor", "so", "yet",
-    "for", "in", "on", "at", "to", "of", "with", "by", "from", "as", "into",
-    "this", "that", "these", "those", "what", "who", "when", "where", "how",
-    "why", "all", "any", "each", "some", "such", "than", "i", "me", "my",
-    "we", "us", "our", "they", "their", "role", "job", "position", "work",
-    "company", "require", "requires", "required", "want", "looking", "dont",
-    "already", "poor", "mismatch", "concerns", "issues", "type", "kind",
-    "applied", "elsewhere", "description", "suitable", "using", "about",
-    "because", "since", "while", "during", "which", "there", "here", "like",
-    "more", "less", "other", "another", "same", "different", "good", "bad",
-})
+_SKIP_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "can",
+        "need",
+        "too",
+        "very",
+        "just",
+        "only",
+        "also",
+        "but",
+        "and",
+        "or",
+        "not",
+        "no",
+        "nor",
+        "so",
+        "yet",
+        "for",
+        "in",
+        "on",
+        "at",
+        "to",
+        "of",
+        "with",
+        "by",
+        "from",
+        "as",
+        "into",
+        "this",
+        "that",
+        "these",
+        "those",
+        "what",
+        "who",
+        "when",
+        "where",
+        "how",
+        "why",
+        "all",
+        "any",
+        "each",
+        "some",
+        "such",
+        "than",
+        "i",
+        "me",
+        "my",
+        "we",
+        "us",
+        "our",
+        "they",
+        "their",
+        "role",
+        "job",
+        "position",
+        "work",
+        "company",
+        "require",
+        "requires",
+        "required",
+        "want",
+        "looking",
+        "dont",
+        "already",
+        "poor",
+        "mismatch",
+        "concerns",
+        "issues",
+        "type",
+        "kind",
+        "applied",
+        "elsewhere",
+        "description",
+        "suitable",
+        "using",
+        "about",
+        "because",
+        "since",
+        "while",
+        "during",
+        "which",
+        "there",
+        "here",
+        "like",
+        "more",
+        "less",
+        "other",
+        "another",
+        "same",
+        "different",
+        "good",
+        "bad",
+    }
+)
 
 
 def get_skip_filter_keywords(user_id) -> list[str]:
     """
     Derive keyword filters from the user's custom not-interested reasons.
+    NOTE: These keywords are for display/tracking only and are NOT used to filter jobs during search.
 
     Only uses custom (non-predefined) reasons — generic reasons like
     "Salary too low" don't give actionable title-matching keywords.
 
-    Returns a sorted list of lowercase keyword strings to exclude from
-    job titles in future searches.
+    Returns a sorted list of lowercase keyword strings extracted from
+    the user's custom not-interested reasons.
     """
     import re as _re
+
     db = _get_db()
     oid = _to_object_id(user_id)
     if not oid:
@@ -273,7 +382,11 @@ def get_skip_filter_keywords(user_id) -> list[str]:
 
     # Per-job notes that are also non-predefined custom text
     for doc in db.jobs.find(
-        {"user_id": str(user_id), "status": "not_interested", "notes": {"$nin": ["", *list(_PREDEFINED_REASONS)]}},
+        {
+            "user_id": str(user_id),
+            "status": "not_interested",
+            "notes": {"$nin": ["", *list(_PREDEFINED_REASONS)]},
+        },
         {"notes": 1},
     ):
         note = (doc.get("notes") or "").strip()
@@ -293,6 +406,7 @@ def get_skip_filter_keywords(user_id) -> list[str]:
 # ---------------------------------------------------------------------------
 # Jobs
 # ---------------------------------------------------------------------------
+
 
 def save_job(job, score_data: dict, cover_letter: str = "", user_id=None) -> bool:
     """Save a job to the database. Returns True if new, False if exists."""
@@ -321,7 +435,11 @@ def _build_job_doc(job, score_data: dict, cover_letter: str = "", user_id=None) 
         "source": job.source,
         "description": (job.description or "")[:3000],
         "salary": (job.salary or "")[:50],
-        "tags": json.dumps(job.tags[:10]) if isinstance(job.tags, list) else (job.tags or "[]"),
+        "tags": (
+            json.dumps(job.tags[:10])
+            if isinstance(job.tags, list)
+            else (job.tags or "[]")
+        ),
         "date_posted": job.date_posted,
         "job_type": job.job_type,
         "score": score_data.get("final_score", 0.0),
@@ -335,34 +453,91 @@ def _build_job_doc(job, score_data: dict, cover_letter: str = "", user_id=None) 
 
 
 def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
-    """Save multiple jobs in one bulk operation. Returns count of new jobs inserted."""
+    """Save multiple jobs with fuzzy dedup (same company+title within 7 days → keep highest score).
+    Returns count of new jobs inserted."""
+    from pymongo import InsertOne, UpdateOne
+    from pymongo.errors import BulkWriteError
+    from datetime import timedelta
+    import re as _re
+
     db = _get_db()
     docs = [_build_job_doc(job, score_data, user_id=user_id) for job, score_data in ranked]
     if not docs:
         return 0
 
-    from pymongo import InsertOne
-    from pymongo.errors import BulkWriteError
+    # --- Step 1: In-memory dedup within this batch (same company+title → keep highest score) ---
+    seen_key_to_idx: dict[str, int] = {}
+    best_docs: list[dict] = []
+    for doc in docs:
+        key = (
+            f"{(doc.get('company') or '').lower().strip()[:60]}"
+            f"|{(doc.get('title') or '').lower().strip()[:80]}"
+        )
+        if key in seen_key_to_idx:
+            idx = seen_key_to_idx[key]
+            if doc["score"] > best_docs[idx]["score"]:
+                best_docs[idx] = doc
+        else:
+            seen_key_to_idx[key] = len(best_docs)
+            best_docs.append(doc)
 
-    ops = [InsertOne(doc) for doc in docs]
+    # --- Step 2: Batch-query existing jobs by company within last 7 days ---
+    uid_str = str(user_id) if user_id else None
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    companies = list({(d.get("company") or "")[:60] for d in best_docs})
+
+    existing_map: dict[str, dict] = {}
+    if companies:
+        for ex in db.jobs.find(
+            {"user_id": uid_str, "company": {"$in": companies}, "created_at": {"$gte": cutoff}},
+            {"_id": 1, "company": 1, "title": 1, "score": 1},
+        ):
+            ex_key = (
+                f"{(ex.get('company') or '').lower().strip()[:60]}"
+                f"|{(ex.get('title') or '').lower().strip()[:80]}"
+            )
+            existing_map[ex_key] = ex
+
+    # --- Step 3: Build ops — insert new, update only if score improved ---
+    ops = []
+    for doc in best_docs:
+        key = (
+            f"{(doc.get('company') or '').lower().strip()[:60]}"
+            f"|{(doc.get('title') or '').lower().strip()[:80]}"
+        )
+        if key in existing_map:
+            ex = existing_map[key]
+            if doc["score"] > ex.get("score", 0):
+                ops.append(UpdateOne(
+                    {"_id": ex["_id"]},
+                    {"$set": {"score": doc["score"], "source": doc["source"],
+                              "url": doc["url"], "updated_at": doc["updated_at"]}},
+                ))
+            # else: same or lower score — skip
+        else:
+            ops.append(InsertOne(doc))
+
+    if not ops:
+        return 0
+
     try:
         result = db.jobs.bulk_write(ops, ordered=False)
         return result.inserted_count
     except BulkWriteError as e:
-        # Some inserts fail due to duplicate (user_id, url) — that's expected
+        # Remaining duplicate-URL violations — expected for truly identical jobs
         return e.details.get("nInserted", 0)
 
 
 def update_job_status(job_id, status: str, notes: str = ""):
-    """Update job application status."""
+    """Update job application status. Tracks applied_at timestamp for follow-up reminders."""
     db = _get_db()
     oid = _to_object_id(job_id)
     if oid:
-        db.jobs.update_one(
-            {"_id": oid},
-            {"$set": {"status": status, "notes": notes,
-                       "updated_at": datetime.now(timezone.utc).isoformat()}},
-        )
+        now = datetime.now(timezone.utc).isoformat()
+        fields = {"status": status, "notes": notes, "updated_at": now}
+        if status == "applied":
+            fields["applied_at"] = now  # used for follow-up reminder logic
+        db.jobs.update_one({"_id": oid}, {"$set": fields})
 
 
 def update_interview_details(job_id, details: dict, user_id=None):
@@ -377,11 +552,13 @@ def update_interview_details(job_id, details: dict, user_id=None):
     now = datetime.now(timezone.utc).isoformat()
     result = db.jobs.update_one(
         query,
-        {"$set": {
-            "interview_details": details,
-            "status": "interview",
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "interview_details": details,
+                "status": "interview",
+                "updated_at": now,
+            }
+        },
     )
     return result.modified_count > 0
 
@@ -398,16 +575,26 @@ def update_offer_details(job_id, details: dict, user_id=None):
     now = datetime.now(timezone.utc).isoformat()
     result = db.jobs.update_one(
         query,
-        {"$set": {
-            "offer_details": details,
-            "status": "offer",
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "offer_details": details,
+                "status": "offer",
+                "updated_at": now,
+            }
+        },
     )
     return result.modified_count > 0
 
 
-VALID_SORT_FIELDS = {"score", "date_posted", "updated_at", "created_at", "title", "company", "salary"}
+VALID_SORT_FIELDS = {
+    "score",
+    "date_posted",
+    "updated_at",
+    "created_at",
+    "title",
+    "company",
+    "salary",
+}
 
 
 def get_jobs(
@@ -422,11 +609,11 @@ def get_jobs(
     sort_dir: str = "desc",
     search: Optional[str] = None,
     user_id=None,
-    exclude_title_keywords: Optional[list] = None,
 ) -> tuple[list[dict], int]:
     """Retrieve paginated jobs with optional filters, search, and sort."""
     import re as _re
     from pymongo import ASCENDING
+
     db = _get_db()
     query: dict = {"score": {"$gte": min_score}}
 
@@ -451,19 +638,33 @@ def get_jobs(
             {"tags": pattern},
         ]
 
-    # Exclude jobs whose title matches any skip keyword derived from user's custom reasons
-    if exclude_title_keywords:
-        safe_kws = [kw for kw in exclude_title_keywords if kw.strip()][:40]
-        if safe_kws:
-            combined = "|".join(_re.escape(kw) for kw in safe_kws)
-            query["title"] = {"$not": _re.compile(combined, _re.IGNORECASE)}
-
     total = db.jobs.count_documents(query)
     skip = (page - 1) * per_page
     sort_field = sort_by if sort_by in VALID_SORT_FIELDS else "score"
     direction = ASCENDING if sort_dir == "asc" else DESCENDING
     cursor = db.jobs.find(query).sort(sort_field, direction).skip(skip).limit(per_page)
-    return [_id_str(doc) for doc in cursor], total
+
+    docs = [_id_str(doc) for doc in cursor]
+
+    # Compute follow-up reminder flag: applied > 7 days ago with no interview signal
+    now_utc = datetime.now(timezone.utc)
+    for doc in docs:
+        if doc.get("status") == "applied" and doc.get("applied_at"):
+            try:
+                applied_dt = datetime.fromisoformat(doc["applied_at"])
+                if applied_dt.tzinfo is None:
+                    applied_dt = applied_dt.replace(tzinfo=timezone.utc)
+                days_elapsed = (now_utc - applied_dt).days
+                doc["followup_due"] = days_elapsed >= 7
+                doc["days_since_applied"] = days_elapsed
+            except Exception:
+                doc["followup_due"] = False
+                doc["days_since_applied"] = None
+        else:
+            doc["followup_due"] = False
+            doc["days_since_applied"] = None
+
+    return docs, total
 
 
 def get_job_by_id(job_id, user_id=None) -> Optional[dict]:
@@ -489,13 +690,24 @@ def get_stats(user_id=None) -> dict:
         base_filter["user_id"] = str(user_id)
 
     # Status counts
-    all_statuses = ["new", "saved", "applied", "interview", "offer", "rejected", "not_interested"]
+    all_statuses = [
+        "new",
+        "saved",
+        "applied",
+        "interview",
+        "offer",
+        "rejected",
+        "not_interested",
+    ]
     stats = {"total": db.jobs.count_documents(base_filter)}
     for s in all_statuses:
         stats[s] = db.jobs.count_documents({**base_filter, "status": s})
 
     # Average score
-    pipeline = [{"$match": base_filter}, {"$group": {"_id": None, "avg": {"$avg": "$score"}}}]
+    pipeline = [
+        {"$match": base_filter},
+        {"$group": {"_id": None, "avg": {"$avg": "$score"}}},
+    ]
     result = list(db.jobs.aggregate(pipeline))
     stats["avg_score"] = result[0]["avg"] if result and result[0]["avg"] else 0
 
@@ -503,31 +715,52 @@ def get_stats(user_id=None) -> dict:
     buckets = [0, 0.2, 0.4, 0.6, 0.8, 1.01]
     score_dist = []
     for i in range(len(buckets) - 1):
-        cnt = db.jobs.count_documents({**base_filter, "score": {"$gte": buckets[i], "$lt": buckets[i+1]}})
-        score_dist.append({"label": f"{int(buckets[i]*100)}-{int(buckets[i+1]*100)}%", "count": cnt})
+        cnt = db.jobs.count_documents(
+            {**base_filter, "score": {"$gte": buckets[i], "$lt": buckets[i + 1]}}
+        )
+        score_dist.append(
+            {"label": f"{int(buckets[i]*100)}-{int(buckets[i+1]*100)}%", "count": cnt}
+        )
     stats["score_distribution"] = score_dist
 
     # Top companies by job count
     pipeline = [
         {"$match": base_filter},
-        {"$group": {"_id": "$company", "count": {"$sum": 1}, "avg_score": {"$avg": "$score"}}},
+        {
+            "$group": {
+                "_id": "$company",
+                "count": {"$sum": 1},
+                "avg_score": {"$avg": "$score"},
+            }
+        },
         {"$sort": {"count": -1}},
         {"$limit": 8},
     ]
     stats["top_companies"] = [
-        {"name": r["_id"], "count": r["count"], "avg_score": round(r["avg_score"] * 100)}
-        for r in db.jobs.aggregate(pipeline) if r["_id"]
+        {
+            "name": r["_id"],
+            "count": r["count"],
+            "avg_score": round(r["avg_score"] * 100),
+        }
+        for r in db.jobs.aggregate(pipeline)
+        if r["_id"]
     ]
 
     # Daily activity — jobs added per day for last 14 days
     from datetime import timedelta
+
     today = datetime.now(timezone.utc).date()
     daily = {}
     for i in range(13, -1, -1):
         d = (today - timedelta(days=i)).isoformat()
         daily[d] = 0
     pipeline = [
-        {"$match": {**base_filter, "created_at": {"$gte": (today - timedelta(days=13)).isoformat()}}},
+        {
+            "$match": {
+                **base_filter,
+                "created_at": {"$gte": (today - timedelta(days=13)).isoformat()},
+            }
+        },
         {"$group": {"_id": {"$substr": ["$created_at", 0, 10]}, "count": {"$sum": 1}}},
     ]
     for r in db.jobs.aggregate(pipeline):
@@ -537,28 +770,86 @@ def get_stats(user_id=None) -> dict:
 
     # Application funnel stages
     stats["funnel"] = [
-        {"stage": "Discovered",    "count": stats["total"]},
-        {"stage": "New",           "count": stats["new"] + stats.get("saved", 0)},
-        {"stage": "Applied",       "count": stats["applied"] + stats["interview"] + stats.get("offer", 0)},
-        {"stage": "Interview",     "count": stats["interview"] + stats.get("offer", 0)},
-        {"stage": "Offer",         "count": stats.get("offer", 0)},
+        {"stage": "Discovered", "count": stats["total"]},
+        {"stage": "New", "count": stats["new"] + stats.get("saved", 0)},
+        {
+            "stage": "Applied",
+            "count": stats["applied"] + stats["interview"] + stats.get("offer", 0),
+        },
+        {"stage": "Interview", "count": stats["interview"] + stats.get("offer", 0)},
+        {"stage": "Offer", "count": stats.get("offer", 0)},
+    ]
+
+    # Response rate by source: applied/interview/offer jobs grouped by source board
+    pipeline = [
+        {"$match": {**base_filter, "status": {"$in": ["applied", "interview", "offer"]}}},
+        {
+            "$group": {
+                "_id": "$source",
+                "applied": {"$sum": 1},
+                "interviews": {
+                    "$sum": {"$cond": [{"$in": ["$status", ["interview", "offer"]]}, 1, 0]}
+                },
+            }
+        },
+        {"$sort": {"applied": -1}},
+        {"$limit": 10},
+    ]
+    stats["source_conversion"] = [
+        {
+            "source": r["_id"] or "unknown",
+            "applied": r["applied"],
+            "interviews": r["interviews"],
+            "rate": round(r["interviews"] / r["applied"] * 100) if r["applied"] else 0,
+        }
+        for r in db.jobs.aggregate(pipeline)
+    ]
+
+    # Cover letter A/B tone tracking (formal vs casual interview conversion rate)
+    pipeline = [
+        {"$match": {**base_filter, "cover_letter_tone": {"$exists": True, "$ne": None}}},
+        {
+            "$group": {
+                "_id": "$cover_letter_tone",
+                "total": {"$sum": 1},
+                "interviews": {
+                    "$sum": {"$cond": [{"$in": ["$status", ["interview", "offer"]]}, 1, 0]}
+                },
+            }
+        },
+    ]
+    stats["cover_letter_ab"] = [
+        {
+            "tone": r["_id"],
+            "total": r["total"],
+            "interviews": r["interviews"],
+            "rate": round(r["interviews"] / r["total"] * 100) if r["total"] else 0,
+        }
+        for r in db.jobs.aggregate(pipeline)
     ]
 
     return stats
 
 
-def log_search_run(queries: list[str], total_found: int, total_matched: int,
-                   sources: list[str], user_id=None):
+def log_search_run(
+    queries: list[str],
+    total_found: int,
+    total_matched: int,
+    sources: list[str],
+    user_id=None,
+):
     """Log a search run for analytics."""
     db = _get_db()
-    db.search_runs.insert_one({
-        "user_id": str(user_id) if user_id else None,
-        "run_at": datetime.now(timezone.utc).isoformat(),
-        "queries": queries,
-        "total_found": total_found,
-        "total_matched": total_matched,
-        "sources": sources,
-    })
+    db.search_runs.insert_one(
+        {
+            "user_id": str(user_id) if user_id else None,
+            "run_at": datetime.now(timezone.utc).isoformat(),
+            "queries": queries,
+            "total_found": total_found,
+            "total_matched": total_matched,
+            "sources": sources,
+        }
+    )
 
 
 # Initialize on import

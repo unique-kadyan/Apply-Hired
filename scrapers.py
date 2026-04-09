@@ -13,13 +13,20 @@ import pycountry
 import requests
 from bs4 import BeautifulSoup
 
-from config import SEARCH_PREFERENCES, JSEARCH_API_KEY, ADZUNA_APP_ID, ADZUNA_APP_KEY, LOCATION_PREFERENCES
+from config import (
+    SEARCH_PREFERENCES,
+    JSEARCH_API_KEY,
+    ADZUNA_APP_ID,
+    ADZUNA_APP_KEY,
+    LOCATION_PREFERENCES,
+)
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Job:
@@ -59,13 +66,17 @@ class BaseScraper:
     def fetch_jobs(self, query: str) -> list[Job]:
         raise NotImplementedError
 
-    def _safe_get(self, url: str, params: dict = None, headers: dict = None, timeout: int = 15) -> Optional[requests.Response]:
+    def _safe_get(
+        self, url: str, params: dict = None, headers: dict = None, timeout: int = 15
+    ) -> Optional[requests.Response]:
         merged_headers = dict(_DEFAULT_HEADERS)
         if headers:
             merged_headers.update(headers)
         for attempt in range(2):
             try:
-                resp = requests.get(url, params=params, headers=merged_headers, timeout=timeout)
+                resp = requests.get(
+                    url, params=params, headers=merged_headers, timeout=timeout
+                )
                 if resp.status_code == 429:
                     time.sleep(2)
                     continue
@@ -98,6 +109,7 @@ class BaseScraper:
 # ---------------------------------------------------------------------------
 # RemoteOK — free JSON API
 # ---------------------------------------------------------------------------
+
 
 class RemoteOKScraper(BaseScraper):
     name = "RemoteOK"
@@ -135,18 +147,22 @@ class RemoteOKScraper(BaseScraper):
             if any(ex in searchable for ex in SEARCH_PREFERENCES["exclude_keywords"]):
                 continue
 
-            jobs.append(Job(
-                title=title,
-                company=company,
-                location=item.get("location", "Remote"),
-                url=item.get("url", f"https://remoteok.com/remote-jobs/{item.get('id', '')}"),
-                source=self.name,
-                description=_clean_html(description),
-                salary=item.get("salary", ""),
-                tags=tags if isinstance(tags, list) else [],
-                date_posted=item.get("date", ""),
-                job_type="remote",
-            ))
+            jobs.append(
+                Job(
+                    title=title,
+                    company=company,
+                    location=item.get("location", "Remote"),
+                    url=item.get(
+                        "url", f"https://remoteok.com/remote-jobs/{item.get('id', '')}"
+                    ),
+                    source=self.name,
+                    description=_clean_html(description),
+                    salary=item.get("salary", ""),
+                    tags=tags if isinstance(tags, list) else [],
+                    date_posted=item.get("date", ""),
+                    job_type="remote",
+                )
+            )
 
         logger.info(f"[{self.name}] Found {len(jobs)} matching jobs")
         return jobs
@@ -155,6 +171,7 @@ class RemoteOKScraper(BaseScraper):
 # ---------------------------------------------------------------------------
 # Remotive — free JSON API
 # ---------------------------------------------------------------------------
+
 
 class RemotiveScraper(BaseScraper):
     name = "Remotive"
@@ -178,7 +195,9 @@ class RemotiveScraper(BaseScraper):
                 category = cat
                 break
 
-        resp = self._safe_get(self.base_url, params={"category": category, "limit": 100})
+        resp = self._safe_get(
+            self.base_url, params={"category": category, "limit": 100}
+        )
         parsed = self._safe_json(resp)
         if not parsed:
             return []
@@ -205,18 +224,20 @@ class RemotiveScraper(BaseScraper):
             if item.get("salary"):
                 salary_text = item["salary"]
 
-            jobs.append(Job(
-                title=title,
-                company=company,
-                location=item.get("candidate_required_location", "Remote"),
-                url=item.get("url", ""),
-                source=self.name,
-                description=_clean_html(description),
-                salary=salary_text,
-                tags=tags if isinstance(tags, list) else [],
-                date_posted=item.get("publication_date", ""),
-                job_type=item.get("job_type", "remote"),
-            ))
+            jobs.append(
+                Job(
+                    title=title,
+                    company=company,
+                    location=item.get("candidate_required_location", "Remote"),
+                    url=item.get("url", ""),
+                    source=self.name,
+                    description=_clean_html(description),
+                    salary=salary_text,
+                    tags=tags if isinstance(tags, list) else [],
+                    date_posted=item.get("publication_date", ""),
+                    job_type=item.get("job_type", "remote"),
+                )
+            )
 
         logger.info(f"[{self.name}] Found {len(jobs)} matching jobs")
         return jobs
@@ -225,6 +246,7 @@ class RemotiveScraper(BaseScraper):
 # ---------------------------------------------------------------------------
 # Arbeitnow — free JSON API (remote-friendly European + global jobs)
 # ---------------------------------------------------------------------------
+
 
 class ArbeitnowScraper(BaseScraper):
     name = "Arbeitnow"
@@ -258,20 +280,24 @@ class ArbeitnowScraper(BaseScraper):
                 if not any(kw in searchable for kw in keywords):
                     continue
 
-                if any(ex in searchable for ex in SEARCH_PREFERENCES["exclude_keywords"]):
+                if any(
+                    ex in searchable for ex in SEARCH_PREFERENCES["exclude_keywords"]
+                ):
                     continue
 
-                jobs.append(Job(
-                    title=title,
-                    company=company,
-                    location=item.get("location", "Remote"),
-                    url=item.get("url", ""),
-                    source=self.name,
-                    description=_clean_html(description),
-                    tags=tags if isinstance(tags, list) else [],
-                    date_posted=item.get("created_at", ""),
-                    job_type="remote",
-                ))
+                jobs.append(
+                    Job(
+                        title=title,
+                        company=company,
+                        location=item.get("location", "Remote"),
+                        url=item.get("url", ""),
+                        source=self.name,
+                        description=_clean_html(description),
+                        tags=tags if isinstance(tags, list) else [],
+                        date_posted=item.get("created_at", ""),
+                        job_type="remote",
+                    )
+                )
 
             if not data.get("links", {}).get("next"):
                 break
@@ -285,6 +311,7 @@ class ArbeitnowScraper(BaseScraper):
 # ---------------------------------------------------------------------------
 # JSearch (RapidAPI) — LinkedIn, Indeed, Glassdoor aggregator (needs API key)
 # ---------------------------------------------------------------------------
+
 
 class JSearchScraper(BaseScraper):
     name = "JSearch"
@@ -328,14 +355,30 @@ class JSearchScraper(BaseScraper):
             max_sal = item.get("job_max_salary")
             sal_currency = item.get("job_salary_currency") or "USD"
             sal_period = (item.get("job_salary_period") or "").lower()
-            sym = {"USD": "$", "GBP": "£", "EUR": "€", "INR": "₹", "CAD": "C$", "AUD": "A$"}.get(sal_currency, "$")
+            sym = {
+                "USD": "$",
+                "GBP": "£",
+                "EUR": "€",
+                "INR": "₹",
+                "CAD": "C$",
+                "AUD": "A$",
+            }.get(sal_currency, "$")
             if min_sal is not None and float(min_sal) > 0:
                 salary_parts.append(f"{sym}{float(min_sal):,.0f}")
             if max_sal is not None and float(max_sal) > 0 and max_sal != min_sal:
                 salary_parts.append(f"{sym}{float(max_sal):,.0f}")
             salary = " – ".join(salary_parts)
-            if salary and sal_period and sal_period not in ("yearly", "annual", "year", ""):
-                period_label = {"monthly": "/mo", "monthly ": "/mo", "hourly": "/hr", "weekly": "/wk"}.get(sal_period, f"/{sal_period[:2]}")
+            if (
+                salary
+                and sal_period
+                and sal_period not in ("yearly", "annual", "year", "")
+            ):
+                period_label = {
+                    "monthly": "/mo",
+                    "monthly ": "/mo",
+                    "hourly": "/hr",
+                    "weekly": "/wk",
+                }.get(sal_period, f"/{sal_period[:2]}")
                 salary += period_label
 
             # Build location from city + state + country
@@ -345,18 +388,20 @@ class JSearchScraper(BaseScraper):
             loc_parts = [p for p in [city, state, country] if p]
             location = ", ".join(loc_parts) if loc_parts else "Remote"
 
-            jobs.append(Job(
-                title=title,
-                company=item.get("employer_name", ""),
-                location=location,
-                url=item.get("job_apply_link", ""),
-                source=self.name,
-                description=description[:2000],
-                salary=salary,
-                tags=[],
-                date_posted=item.get("job_posted_at_datetime_utc", ""),
-                job_type="remote",
-            ))
+            jobs.append(
+                Job(
+                    title=title,
+                    company=item.get("employer_name", ""),
+                    location=location,
+                    url=item.get("job_apply_link", ""),
+                    source=self.name,
+                    description=description[:2000],
+                    salary=salary,
+                    tags=[],
+                    date_posted=item.get("job_posted_at_datetime_utc", ""),
+                    job_type="remote",
+                )
+            )
 
         logger.info(f"[{self.name}] Found {len(jobs)} matching jobs")
         return jobs
@@ -365,6 +410,7 @@ class JSearchScraper(BaseScraper):
 # ---------------------------------------------------------------------------
 # We Work Remotely — scrape HTML (no API key needed)
 # ---------------------------------------------------------------------------
+
 
 class WeWorkRemotelyScraper(BaseScraper):
     name = "WeWorkRemotely"
@@ -405,16 +451,18 @@ class WeWorkRemotelyScraper(BaseScraper):
             if any(ex in searchable for ex in SEARCH_PREFERENCES["exclude_keywords"]):
                 continue
 
-            jobs.append(Job(
-                title=title,
-                company=company,
-                location=location,
-                url=f"https://weworkremotely.com{href}",
-                source=self.name,
-                description="",
-                tags=[],
-                job_type="remote",
-            ))
+            jobs.append(
+                Job(
+                    title=title,
+                    company=company,
+                    location=location,
+                    url=f"https://weworkremotely.com{href}",
+                    source=self.name,
+                    description="",
+                    tags=[],
+                    job_type="remote",
+                )
+            )
 
         logger.info(f"[{self.name}] Found {len(jobs)} matching jobs")
         return jobs
@@ -423,6 +471,7 @@ class WeWorkRemotelyScraper(BaseScraper):
 # ---------------------------------------------------------------------------
 # Jobicy — free JSON API (remote jobs)
 # ---------------------------------------------------------------------------
+
 
 class JobicyScraper(BaseScraper):
     name = "Jobicy"
@@ -462,18 +511,24 @@ class JobicyScraper(BaseScraper):
                 currency = item.get("salaryCurrency", "USD")
                 salary_text = f"{currency} {item['annualSalaryMin']:,}+/yr"
 
-            jobs.append(Job(
-                title=title,
-                company=company,
-                location=location,
-                url=item.get("url", ""),
-                source=self.name,
-                description=_clean_html(description),
-                salary=salary_text,
-                tags=item.get("jobIndustry", []) if isinstance(item.get("jobIndustry"), list) else [],
-                date_posted=item.get("pubDate", ""),
-                job_type="remote",
-            ))
+            jobs.append(
+                Job(
+                    title=title,
+                    company=company,
+                    location=location,
+                    url=item.get("url", ""),
+                    source=self.name,
+                    description=_clean_html(description),
+                    salary=salary_text,
+                    tags=(
+                        item.get("jobIndustry", [])
+                        if isinstance(item.get("jobIndustry"), list)
+                        else []
+                    ),
+                    date_posted=item.get("pubDate", ""),
+                    job_type="remote",
+                )
+            )
 
         logger.info(f"[{self.name}] Found {len(jobs)} matching jobs")
         return jobs
@@ -482,6 +537,7 @@ class JobicyScraper(BaseScraper):
 # ---------------------------------------------------------------------------
 # FindWork.dev — free API for developer jobs
 # ---------------------------------------------------------------------------
+
 
 class FindWorkScraper(BaseScraper):
     name = "FindWork"
@@ -518,18 +574,20 @@ class FindWorkScraper(BaseScraper):
             elif item.get("salary_min"):
                 salary_text = f"${item['salary_min']:,}+"
 
-            jobs.append(Job(
-                title=title,
-                company=company,
-                location=item.get("location", "Remote"),
-                url=item.get("url", ""),
-                source=self.name,
-                description=_clean_html(description) if description else "",
-                salary=salary_text,
-                tags=keywords_list if isinstance(keywords_list, list) else [],
-                date_posted=item.get("date_posted", ""),
-                job_type="remote" if item.get("remote") else "onsite",
-            ))
+            jobs.append(
+                Job(
+                    title=title,
+                    company=company,
+                    location=item.get("location", "Remote"),
+                    url=item.get("url", ""),
+                    source=self.name,
+                    description=_clean_html(description) if description else "",
+                    salary=salary_text,
+                    tags=keywords_list if isinstance(keywords_list, list) else [],
+                    date_posted=item.get("date_posted", ""),
+                    job_type="remote" if item.get("remote") else "onsite",
+                )
+            )
 
         logger.info(f"[{self.name}] Found {len(jobs)} matching jobs")
         return jobs
@@ -539,17 +597,29 @@ class FindWorkScraper(BaseScraper):
 # Adzuna — free API (requires app_id + app_key, 250 free calls/month)
 # ---------------------------------------------------------------------------
 
+
 class AdzunaScraper(BaseScraper):
     name = "Adzuna"
     base_url = "https://api.adzuna.com/v1/api/jobs"
 
     # Map country to Adzuna country code
     COUNTRY_MAP = {
-        "india": "in", "us": "us", "usa": "us", "united states": "us",
-        "uk": "gb", "united kingdom": "gb", "canada": "ca",
-        "australia": "au", "germany": "de", "france": "fr",
-        "netherlands": "nl", "spain": "es", "italy": "it",
-        "brazil": "br", "singapore": "sg", "poland": "pl",
+        "india": "in",
+        "us": "us",
+        "usa": "us",
+        "united states": "us",
+        "uk": "gb",
+        "united kingdom": "gb",
+        "canada": "ca",
+        "australia": "au",
+        "germany": "de",
+        "france": "fr",
+        "netherlands": "nl",
+        "spain": "es",
+        "italy": "it",
+        "brazil": "br",
+        "singapore": "sg",
+        "poland": "pl",
     }
 
     def fetch_jobs(self, query: str) -> list[Job]:
@@ -592,22 +662,30 @@ class AdzunaScraper(BaseScraper):
 
             salary_text = ""
             if item.get("salary_min") and item.get("salary_max"):
-                salary_text = f"${item['salary_min']:,.0f} – ${item['salary_max']:,.0f}/yr"
+                salary_text = (
+                    f"${item['salary_min']:,.0f} – ${item['salary_max']:,.0f}/yr"
+                )
             elif item.get("salary_min"):
                 salary_text = f"${item['salary_min']:,.0f}+/yr"
 
-            jobs.append(Job(
-                title=_clean_html(title),
-                company=company,
-                location=location,
-                url=item.get("redirect_url", ""),
-                source=self.name,
-                description=_clean_html(description),
-                salary=salary_text,
-                tags=[item.get("category", {}).get("label", "")] if item.get("category") else [],
-                date_posted=item.get("created", ""),
-                job_type="remote",
-            ))
+            jobs.append(
+                Job(
+                    title=_clean_html(title),
+                    company=company,
+                    location=location,
+                    url=item.get("redirect_url", ""),
+                    source=self.name,
+                    description=_clean_html(description),
+                    salary=salary_text,
+                    tags=(
+                        [item.get("category", {}).get("label", "")]
+                        if item.get("category")
+                        else []
+                    ),
+                    date_posted=item.get("created", ""),
+                    job_type="remote",
+                )
+            )
 
         logger.info(f"[{self.name}] Found {len(jobs)} matching jobs")
         return jobs
@@ -616,6 +694,7 @@ class AdzunaScraper(BaseScraper):
 # ---------------------------------------------------------------------------
 # The Muse — free JSON API
 # ---------------------------------------------------------------------------
+
 
 class TheMuseScraper(BaseScraper):
     name = "TheMuse"
@@ -647,7 +726,11 @@ class TheMuseScraper(BaseScraper):
             company = item.get("company", {}).get("name", "")
             description = item.get("contents", "")
             locations = item.get("locations", [])
-            location = ", ".join(loc.get("name", "") for loc in locations) if locations else "Remote"
+            location = (
+                ", ".join(loc.get("name", "") for loc in locations)
+                if locations
+                else "Remote"
+            )
 
             searchable = f"{title} {company} {description}".lower()
             if not any(kw in searchable for kw in keywords):
@@ -658,18 +741,20 @@ class TheMuseScraper(BaseScraper):
             levels = item.get("levels", [])
             level_names = [l.get("name", "") for l in levels]
 
-            jobs.append(Job(
-                title=title,
-                company=company,
-                location=location,
-                url=item.get("refs", {}).get("landing_page", ""),
-                source=self.name,
-                description=_clean_html(description),
-                salary="",
-                tags=level_names,
-                date_posted=item.get("publication_date", ""),
-                job_type="remote",
-            ))
+            jobs.append(
+                Job(
+                    title=title,
+                    company=company,
+                    location=location,
+                    url=item.get("refs", {}).get("landing_page", ""),
+                    source=self.name,
+                    description=_clean_html(description),
+                    salary="",
+                    tags=level_names,
+                    date_posted=item.get("publication_date", ""),
+                    job_type="remote",
+                )
+            )
 
         logger.info(f"[{self.name}] Found {len(jobs)} matching jobs")
         return jobs
@@ -678,6 +763,7 @@ class TheMuseScraper(BaseScraper):
 # ---------------------------------------------------------------------------
 # HackerNews Who's Hiring — scrape monthly thread
 # ---------------------------------------------------------------------------
+
 
 class HackerNewsScraper(BaseScraper):
     name = "HackerNews"
@@ -754,18 +840,20 @@ class HackerNewsScraper(BaseScraper):
             # Try to extract salary from text
             salary = _extract_salary_from_text(clean_text)
 
-            jobs.append(Job(
-                title=title or first_line,
-                company=company,
-                location="Remote",
-                url=f"https://news.ycombinator.com/item?id={kid_id}",
-                source=self.name,
-                description=clean_text[:2000],
-                salary=salary,
-                tags=[],
-                date_posted="",
-                job_type="remote",
-            ))
+            jobs.append(
+                Job(
+                    title=title or first_line,
+                    company=company,
+                    location="Remote",
+                    url=f"https://news.ycombinator.com/item?id={kid_id}",
+                    source=self.name,
+                    description=clean_text[:2000],
+                    salary=salary,
+                    tags=[],
+                    date_posted="",
+                    job_type="remote",
+                )
+            )
 
         logger.info(f"[{self.name}] Found {len(jobs)} matching jobs")
         return jobs
@@ -774,6 +862,7 @@ class HackerNewsScraper(BaseScraper):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _clean_html(text: str) -> str:
     """Strip HTML tags from text."""
@@ -789,15 +878,15 @@ def _extract_salary_from_text(text: str) -> str:
     """Try to extract salary/compensation from free-form text."""
     patterns = [
         # $120k-$180k or $120K - $180K
-        r'\$[\d,]+[kK]?\s*[-–]\s*\$[\d,]+[kK]?(?:\s*/?\s*(?:yr|year|annual|pa))?',
+        r"\$[\d,]+[kK]?\s*[-–]\s*\$[\d,]+[kK]?(?:\s*/?\s*(?:yr|year|annual|pa))?",
         # $120,000 - $180,000
-        r'\$[\d,]{4,}\s*[-–]\s*\$[\d,]{4,}(?:\s*/?\s*(?:yr|year|annual|pa))?',
+        r"\$[\d,]{4,}\s*[-–]\s*\$[\d,]{4,}(?:\s*/?\s*(?:yr|year|annual|pa))?",
         # €80k-€120k or £80k-£120k
-        r'[€£₹][\d,]+[kK]?\s*[-–]\s*[€£₹][\d,]+[kK]?',
+        r"[€£₹][\d,]+[kK]?\s*[-–]\s*[€£₹][\d,]+[kK]?",
         # USD 120k - 180k
-        r'(?:USD|EUR|GBP|INR)\s*[\d,]+[kK]?\s*[-–]\s*[\d,]+[kK]?',
+        r"(?:USD|EUR|GBP|INR)\s*[\d,]+[kK]?\s*[-–]\s*[\d,]+[kK]?",
         # 120k-180k salary or comp
-        r'[\d,]+[kK]\s*[-–]\s*[\d,]+[kK]\s*(?:USD|EUR|GBP|INR)?',
+        r"[\d,]+[kK]\s*[-–]\s*[\d,]+[kK]\s*(?:USD|EUR|GBP|INR)?",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -806,32 +895,49 @@ def _extract_salary_from_text(text: str) -> str:
     return ""
 
 
-
 # ---------------------------------------------------------------------------
 # Country lookup — powered by pycountry (ISO 3166-1)
 # ---------------------------------------------------------------------------
 
 # Terms that mean "open to the whole world" — always accept
-_GLOBAL_REMOTE_TERMS = {"worldwide", "global", "anywhere", "international", "distributed", "fully remote"}
+_GLOBAL_REMOTE_TERMS = {
+    "worldwide",
+    "global",
+    "anywhere",
+    "international",
+    "distributed",
+    "fully remote",
+}
 
 # Extra common-language names/abbreviations not in ISO that pycountry won't know
 _EXTRA_ALIASES: dict[str, str] = {
-    "usa":          "US",
-    "u.s.":         "US",
-    "america":      "US",
-    "uk":           "GB",
-    "u.k.":         "GB",
-    "great britain":"GB",
-    "england":      "GB",
-    "britain":      "GB",
-    "holland":      "NL",
-    "deutschland":  "DE",
-    "uae":          "AE",
-    "emirates":     "AE",
-    "dubai":        "AE",
-    "abu dhabi":    "AE",
-    "korea":        "KR",
+    "usa": "US",
+    "u.s.": "US",
+    "america": "US",
+    "uk": "GB",
+    "u.k.": "GB",
+    "great britain": "GB",
+    "england": "GB",
+    "britain": "GB",
+    "holland": "NL",
+    "deutschland": "DE",
+    "uae": "AE",
+    "emirates": "AE",
+    "dubai": "AE",
+    "abu dhabi": "AE",
+    "korea": "KR",
 }
+
+# Country aliases for remote work filtering
+_COUNTRY_ALIASES = _EXTRA_ALIASES
+
+
+def _canonical_country(country_name: str) -> str | None:
+    """
+    Convert a country name to its ISO 3166-1 alpha-2 code.
+    E.g., "India" → "IN", "USA" → "US", "UK" → "GB"
+    """
+    return _resolve_alpha2(country_name)
 
 
 @lru_cache(maxsize=512)
@@ -911,9 +1017,9 @@ def _loc_contains_alpha2(loc_lower: str, alpha2: str) -> bool:
             continue
         if len(token) <= 2:
             # Standalone token: preceded/followed by non-alpha characters
-            pattern = r'(?<![a-z])' + re.escape(token) + r'(?![a-z])'
+            pattern = r"(?<![a-z])" + re.escape(token) + r"(?![a-z])"
         else:
-            pattern = r'\b' + re.escape(token) + r'\b'
+            pattern = r"\b" + re.escape(token) + r"\b"
         if re.search(pattern, loc_lower):
             return True
 
@@ -977,6 +1083,7 @@ def _matches_location_preference(job_location: str, user_country: str) -> bool:
 # Reed.co.uk — UK job board with free API (requires API key, basic auth)
 # ---------------------------------------------------------------------------
 
+
 class ReedScraper(BaseScraper):
     name = "Reed"
     base_url = "https://www.reed.co.uk/api/1.0/search"
@@ -986,6 +1093,7 @@ class ReedScraper(BaseScraper):
         if not api_key:
             return []
         import base64
+
         auth = base64.b64encode(f"{api_key}:".encode()).decode()
         resp = self._safe_get(
             self.base_url,
@@ -996,22 +1104,29 @@ class ReedScraper(BaseScraper):
             return []
         jobs = []
         for item in resp.json().get("results", []):
-            jobs.append(Job(
-                title=item.get("jobTitle", ""),
-                company=item.get("employerName", ""),
-                location=item.get("locationName", ""),
-                url=item.get("jobUrl", ""),
-                source=self.name,
-                description=item.get("jobDescription", ""),
-                salary=f"{item.get('minimumSalary', '')} - {item.get('maximumSalary', '')}" if item.get("minimumSalary") else "",
-                date_posted=item.get("date", ""),
-            ))
+            jobs.append(
+                Job(
+                    title=item.get("jobTitle", ""),
+                    company=item.get("employerName", ""),
+                    location=item.get("locationName", ""),
+                    url=item.get("jobUrl", ""),
+                    source=self.name,
+                    description=item.get("jobDescription", ""),
+                    salary=(
+                        f"{item.get('minimumSalary', '')} - {item.get('maximumSalary', '')}"
+                        if item.get("minimumSalary")
+                        else ""
+                    ),
+                    date_posted=item.get("date", ""),
+                )
+            )
         return jobs
 
 
 # ---------------------------------------------------------------------------
 # LinkedIn Jobs (via RapidAPI — uses existing JSEARCH or separate key)
 # ---------------------------------------------------------------------------
+
 
 class LinkedInJobsScraper(BaseScraper):
     name = "LinkedIn"
@@ -1033,21 +1148,24 @@ class LinkedInJobsScraper(BaseScraper):
             return []
         jobs = []
         for item in resp.json() if isinstance(resp.json(), list) else []:
-            jobs.append(Job(
-                title=item.get("job_title", ""),
-                company=item.get("company_name", ""),
-                location=item.get("job_location", "Remote"),
-                url=item.get("job_url", ""),
-                source=self.name,
-                description=item.get("job_description", ""),
-                date_posted=item.get("posted_date", ""),
-            ))
+            jobs.append(
+                Job(
+                    title=item.get("job_title", ""),
+                    company=item.get("company_name", ""),
+                    location=item.get("job_location", "Remote"),
+                    url=item.get("job_url", ""),
+                    source=self.name,
+                    description=item.get("job_description", ""),
+                    date_posted=item.get("posted_date", ""),
+                )
+            )
         return jobs
 
 
 # ---------------------------------------------------------------------------
 # Himalayas.app — remote job board with free public JSON API
 # ---------------------------------------------------------------------------
+
 
 class HimalayasScraper(BaseScraper):
     name = "Himalayas"
@@ -1064,23 +1182,26 @@ class HimalayasScraper(BaseScraper):
             salary = ""
             if item.get("salaryCurrency") and item.get("salaryMin"):
                 salary = f"{item['salaryCurrency']} {item.get('salaryMin', '')} - {item.get('salaryMax', '')}"
-            jobs.append(Job(
-                title=item.get("title", ""),
-                company=item.get("companyName", ""),
-                location=item.get("location", "Remote"),
-                url=f"https://himalayas.app/jobs/{item.get('slug', '')}",
-                source=self.name,
-                description=item.get("description", "")[:2000],
-                salary=salary,
-                tags=tags if isinstance(tags, list) else [],
-                date_posted=item.get("pubDate", ""),
-            ))
+            jobs.append(
+                Job(
+                    title=item.get("title", ""),
+                    company=item.get("companyName", ""),
+                    location=item.get("location", "Remote"),
+                    url=f"https://himalayas.app/jobs/{item.get('slug', '')}",
+                    source=self.name,
+                    description=item.get("description", "")[:2000],
+                    salary=salary,
+                    tags=tags if isinstance(tags, list) else [],
+                    date_posted=item.get("pubDate", ""),
+                )
+            )
         return jobs
 
 
 # ---------------------------------------------------------------------------
 # Jooble — global job aggregator with free API
 # ---------------------------------------------------------------------------
+
 
 class JoobleScraper(BaseScraper):
     name = "Jooble"
@@ -1101,16 +1222,18 @@ class JoobleScraper(BaseScraper):
                 return []
             jobs = []
             for item in resp.json().get("jobs", []):
-                jobs.append(Job(
-                    title=item.get("title", ""),
-                    company=item.get("company", ""),
-                    location=item.get("location", "Remote"),
-                    url=item.get("link", ""),
-                    source=self.name,
-                    description=item.get("snippet", ""),
-                    salary=item.get("salary", ""),
-                    date_posted=item.get("updated", ""),
-                ))
+                jobs.append(
+                    Job(
+                        title=item.get("title", ""),
+                        company=item.get("company", ""),
+                        location=item.get("location", "Remote"),
+                        url=item.get("link", ""),
+                        source=self.name,
+                        description=item.get("snippet", ""),
+                        salary=item.get("salary", ""),
+                        date_posted=item.get("updated", ""),
+                    )
+                )
             return jobs
         except Exception as e:
             logger.warning(f"[{self.name}] Request failed: {e}")
@@ -1120,6 +1243,7 @@ class JoobleScraper(BaseScraper):
 # ---------------------------------------------------------------------------
 # Arbeitsagentur (German Federal Employment Agency) — free public API
 # ---------------------------------------------------------------------------
+
 
 class ArbeitsagenturScraper(BaseScraper):
     name = "Arbeitsagentur"
@@ -1135,21 +1259,24 @@ class ArbeitsagenturScraper(BaseScraper):
             return []
         jobs = []
         for item in resp.json().get("stellenangebote", []):
-            jobs.append(Job(
-                title=item.get("titel", ""),
-                company=item.get("arbeitgeber", ""),
-                location=item.get("arbeitsort", {}).get("ort", "Germany"),
-                url=f"https://www.arbeitsagentur.de/jobsuche/suche?id={item.get('hashId', '')}",
-                source=self.name,
-                description=item.get("titel", ""),
-                date_posted=item.get("eintrittsdatum", ""),
-            ))
+            jobs.append(
+                Job(
+                    title=item.get("titel", ""),
+                    company=item.get("arbeitgeber", ""),
+                    location=item.get("arbeitsort", {}).get("ort", "Germany"),
+                    url=f"https://www.arbeitsagentur.de/jobsuche/suche?id={item.get('hashId', '')}",
+                    source=self.name,
+                    description=item.get("titel", ""),
+                    date_posted=item.get("eintrittsdatum", ""),
+                )
+            )
         return jobs
 
 
 # ---------------------------------------------------------------------------
 # USAJobs — US government jobs (free, public API)
 # ---------------------------------------------------------------------------
+
 
 class USAJobsScraper(BaseScraper):
     name = "USAJobs"
@@ -1163,25 +1290,39 @@ class USAJobsScraper(BaseScraper):
         resp = self._safe_get(
             self.base_url,
             params={"Keyword": query, "ResultsPerPage": 25, "RemoteIndicator": "True"},
-            headers={"Authorization-Key": api_key, "User-Agent": email, "Host": "data.usajobs.gov"},
+            headers={
+                "Authorization-Key": api_key,
+                "User-Agent": email,
+                "Host": "data.usajobs.gov",
+            },
         )
         if not resp:
             return []
         jobs = []
         for item in resp.json().get("SearchResult", {}).get("SearchResultItems", []):
             pos = item.get("MatchedObjectDescriptor", {})
-            salary_min = pos.get("PositionRemuneration", [{}])[0].get("MinimumRange", "") if pos.get("PositionRemuneration") else ""
-            salary_max = pos.get("PositionRemuneration", [{}])[0].get("MaximumRange", "") if pos.get("PositionRemuneration") else ""
-            jobs.append(Job(
-                title=pos.get("PositionTitle", ""),
-                company=pos.get("OrganizationName", "US Government"),
-                location=pos.get("PositionLocationDisplay", ""),
-                url=pos.get("PositionURI", ""),
-                source=self.name,
-                description=pos.get("QualificationSummary", ""),
-                salary=f"${salary_min} - ${salary_max}" if salary_min else "",
-                date_posted=pos.get("PublicationStartDate", ""),
-            ))
+            salary_min = (
+                pos.get("PositionRemuneration", [{}])[0].get("MinimumRange", "")
+                if pos.get("PositionRemuneration")
+                else ""
+            )
+            salary_max = (
+                pos.get("PositionRemuneration", [{}])[0].get("MaximumRange", "")
+                if pos.get("PositionRemuneration")
+                else ""
+            )
+            jobs.append(
+                Job(
+                    title=pos.get("PositionTitle", ""),
+                    company=pos.get("OrganizationName", "US Government"),
+                    location=pos.get("PositionLocationDisplay", ""),
+                    url=pos.get("PositionURI", ""),
+                    source=self.name,
+                    description=pos.get("QualificationSummary", ""),
+                    salary=f"${salary_min} - ${salary_max}" if salary_min else "",
+                    date_posted=pos.get("PublicationStartDate", ""),
+                )
+            )
         return jobs
 
 
@@ -1192,12 +1333,14 @@ class USAJobsScraper(BaseScraper):
 # Register: https://serpapi.com/users/sign_up
 # ---------------------------------------------------------------------------
 
+
 class SerpApiGoogleJobsScraper(BaseScraper):
     """
     Official SerpAPI endpoint for Google Jobs.
     Covers Indeed, LinkedIn, Glassdoor, Naukri, ZipRecruiter and ~20 other
     boards in a single query — all through Google's own job index.
     """
+
     name = "GoogleJobs"
     base_url = "https://serpapi.com/search.json"
 
@@ -1207,11 +1350,11 @@ class SerpApiGoogleJobsScraper(BaseScraper):
             return []
 
         params = {
-            "engine":  "google_jobs",
-            "q":       query,
+            "engine": "google_jobs",
+            "q": query,
             "api_key": api_key,
-            "num":     10,          # max per request on free tier
-            "hl":      "en",
+            "num": 10,  # max per request on free tier
+            "hl": "en",
         }
 
         resp = self._safe_get(self.base_url, params=params, timeout=30)
@@ -1229,9 +1372,9 @@ class SerpApiGoogleJobsScraper(BaseScraper):
 
         jobs = []
         for item in data.get("jobs_results", []):
-            title   = item.get("title", "")
+            title = item.get("title", "")
             company = item.get("company_name", "")
-            loc     = item.get("location", "Remote")
+            loc = item.get("location", "Remote")
 
             # Apply link — prefer direct, fall back to the first option
             apply_opts = item.get("apply_options") or []
@@ -1247,19 +1390,25 @@ class SerpApiGoogleJobsScraper(BaseScraper):
             date_posted = ""
             ext = item.get("detected_extensions") or {}
             if isinstance(ext, dict):
-                salary      = ext.get("salary", "")
+                salary = ext.get("salary", "")
                 date_posted = ext.get("posted_at", "")
             elif isinstance(ext, list):
                 for token in ext:
                     tl = token.lower()
-                    if any(c in tl for c in ["$", "£", "€", "₹", "lpa", "salary", "salary range"]):
+                    if any(
+                        c in tl
+                        for c in ["$", "£", "€", "₹", "lpa", "salary", "salary range"]
+                    ):
                         salary = token
-                    elif any(w in tl for w in ["day", "week", "month", "hour", "ago", "just posted"]):
+                    elif any(
+                        w in tl
+                        for w in ["day", "week", "month", "hour", "ago", "just posted"]
+                    ):
                         date_posted = token
 
             # Extensions list also carries job_type hints
             job_type = "remote"
-            for token in (item.get("extensions") or []):
+            for token in item.get("extensions") or []:
                 tl = token.lower()
                 if "full-time" in tl:
                     job_type = "full-time"
@@ -1272,25 +1421,29 @@ class SerpApiGoogleJobsScraper(BaseScraper):
             highlights = item.get("job_highlights") or []
             tags: list[str] = []
             for h in highlights:
-                for line in (h.get("items") or []):
-                    tags += [w.strip() for w in line.split(",") if 3 < len(w.strip()) < 30]
+                for line in h.get("items") or []:
+                    tags += [
+                        w.strip() for w in line.split(",") if 3 < len(w.strip()) < 30
+                    ]
             tags = list(dict.fromkeys(tags))[:10]
 
             if not title or not url:
                 continue
 
-            jobs.append(Job(
-                title=title,
-                company=company,
-                location=loc,
-                url=url,
-                source=self.name,
-                description=description[:3000],
-                salary=salary,
-                tags=tags,
-                date_posted=date_posted,
-                job_type=job_type,
-            ))
+            jobs.append(
+                Job(
+                    title=title,
+                    company=company,
+                    location=loc,
+                    url=url,
+                    source=self.name,
+                    description=description[:3000],
+                    salary=salary,
+                    tags=tags,
+                    date_posted=date_posted,
+                    job_type=job_type,
+                )
+            )
 
         logger.info(f"[{self.name}] Found {len(jobs)} jobs for '{query}'")
         return jobs
@@ -1303,25 +1456,36 @@ class SerpApiGoogleJobsScraper(BaseScraper):
 # Get affid from: https://www.careerjet.com/partners/api/
 # ---------------------------------------------------------------------------
 
+
 class CareerJetScraper(BaseScraper):
     """
     CareerJet's free official partner API.
     No per-request cost; requires free affiliate ID registration.
     Strong India, UK, and APAC coverage via 2,500+ aggregated job boards.
     """
+
     name = "CareerJet"
     base_url = "http://public.api.careerjet.net/search"
 
     # Locale codes for major supported countries
     _LOCALE_MAP = {
-        "india": "en_IN", "in": "en_IN",
-        "united states": "en_US", "us": "en_US", "usa": "en_US",
-        "united kingdom": "en_GB", "uk": "en_GB",
-        "canada": "en_CA", "ca": "en_CA",
-        "australia": "en_AU", "au": "en_AU",
-        "germany": "de_DE", "de": "de_DE",
-        "singapore": "en_SG", "sg": "en_SG",
-        "uae": "en_AE", "ae": "en_AE",
+        "india": "en_IN",
+        "in": "en_IN",
+        "united states": "en_US",
+        "us": "en_US",
+        "usa": "en_US",
+        "united kingdom": "en_GB",
+        "uk": "en_GB",
+        "canada": "en_CA",
+        "ca": "en_CA",
+        "australia": "en_AU",
+        "au": "en_AU",
+        "germany": "de_DE",
+        "de": "de_DE",
+        "singapore": "en_SG",
+        "sg": "en_SG",
+        "uae": "en_AE",
+        "ae": "en_AE",
     }
 
     def fetch_jobs(self, query: str) -> list[Job]:
@@ -1330,19 +1494,19 @@ class CareerJetScraper(BaseScraper):
             return []
 
         country = LOCATION_PREFERENCES.get("default_country", "India").lower()
-        locale  = self._LOCALE_MAP.get(country, "en_IN")
+        locale = self._LOCALE_MAP.get(country, "en_IN")
 
         params = {
-            "affid":       affid,
-            "keywords":    query,
-            "location":    "remote",
+            "affid": affid,
+            "keywords": query,
+            "location": "remote",
             "locale_code": locale,
-            "pagesize":    20,
-            "page":        1,
+            "pagesize": 20,
+            "page": 1,
             # Required fields per CareerJet TOS
-            "user_ip":     "1.1.1.1",          # client IP (1.1.1.1 = anonymous placeholder)
-            "url":         "https://jobbot.app",
-            "user_agent":  "JobBot/1.0",
+            "user_ip": "1.1.1.1",  # client IP (1.1.1.1 = anonymous placeholder)
+            "url": "https://jobbot.app",
+            "user_agent": "JobBot/1.0",
         }
 
         resp = self._safe_get(self.base_url, params=params, timeout=20)
@@ -1359,30 +1523,32 @@ class CareerJetScraper(BaseScraper):
             return []
 
         jobs = []
-        for item in (data.get("jobs") or []):
-            title   = item.get("title", "")
+        for item in data.get("jobs") or []:
+            title = item.get("title", "")
             company = item.get("company", "")
-            loc     = item.get("locations", "Remote")
-            url     = item.get("url", "")
-            desc    = item.get("description", "")
-            salary  = item.get("salary", "")
+            loc = item.get("locations", "Remote")
+            url = item.get("url", "")
+            desc = item.get("description", "")
+            salary = item.get("salary", "")
             date_posted = item.get("date", "")
 
             if not title or not url:
                 continue
 
-            jobs.append(Job(
-                title=title,
-                company=company,
-                location=loc,
-                url=url,
-                source=self.name,
-                description=desc[:3000],
-                salary=salary,
-                tags=[],
-                date_posted=date_posted,
-                job_type="remote",
-            ))
+            jobs.append(
+                Job(
+                    title=title,
+                    company=company,
+                    location=loc,
+                    url=url,
+                    source=self.name,
+                    description=desc[:3000],
+                    salary=salary,
+                    tags=[],
+                    date_posted=date_posted,
+                    job_type="remote",
+                )
+            )
 
         logger.info(f"[{self.name}] Found {len(jobs)} jobs for '{query}'")
         return jobs
@@ -1396,36 +1562,56 @@ import os
 
 ALL_SCRAPERS: list[BaseScraper] = [
     # ── Free public APIs (no key needed) ─────────────────────────────────
-    ArbeitnowScraper(),       # remote-first, EU + global
-    JobicyScraper(),          # remote jobs aggregator
-    TheMuseScraper(),         # curated tech & creative roles
-    HackerNewsScraper(),      # HN Who's Hiring thread
-    RemotiveScraper(),        # remote-only board
-    HimalayasScraper(),       # remote-first, high quality listings
-
+    ArbeitnowScraper(),  # remote-first, EU + global
+    JobicyScraper(),  # remote jobs aggregator
+    TheMuseScraper(),  # curated tech & creative roles
+    HackerNewsScraper(),  # HN Who's Hiring thread
+    RemotiveScraper(),  # remote-only board
+    HimalayasScraper(),  # remote-first, high quality listings
     # ── API key required ─────────────────────────────────────────────────
-    JSearchScraper(),         # RapidAPI · aggregates Indeed + LinkedIn + Glassdoor
-    AdzunaScraper(),          # Adzuna official API · strong India + UK coverage
-    JoobleScraper(),          # Jooble official API · 71-country aggregator
-    ReedScraper(),            # Reed.co.uk official API · strong UK + remote
-    USAJobsScraper(),         # USAJobs.gov · US federal / remote-US roles
-
+    JSearchScraper(),  # RapidAPI · aggregates Indeed + LinkedIn + Glassdoor
+    AdzunaScraper(),  # Adzuna official API · strong India + UK coverage
+    JoobleScraper(),  # Jooble official API · 71-country aggregator
+    ReedScraper(),  # Reed.co.uk official API · strong UK + remote
+    USAJobsScraper(),  # USAJobs.gov · US federal / remote-US roles
     # ── New legitimate APIs ───────────────────────────────────────────────
-    SerpApiGoogleJobsScraper(), # SerpAPI Google Jobs · aggregates Indeed + LinkedIn + Glassdoor + Naukri (SERPAPI_KEY)
-    CareerJetScraper(),         # CareerJet official API · 2,500+ boards, strong India coverage (CAREERJET_AFFID)
+    SerpApiGoogleJobsScraper(),  # SerpAPI Google Jobs · aggregates Indeed + LinkedIn + Glassdoor + Naukri (SERPAPI_KEY)
+    CareerJetScraper(),  # CareerJet official API · 2,500+ boards, strong India coverage (CAREERJET_AFFID)
 ]
 
 
+# ---------------------------------------------------------------------------
+# In-memory scraper result cache — avoids hammering APIs on repeated searches
+# ---------------------------------------------------------------------------
+
+_SCRAPER_CACHE: dict[str, tuple[float, list]] = {}
+_CACHE_TTL = 7200  # 2 hours in seconds
+
+
 def _scrape_task(scraper: BaseScraper, query: str, location: str) -> list[Job]:
-    """Single scrape task for parallel execution."""
+    """Single scrape task with 2-hour in-memory cache per (scraper, query, location)."""
+    cache_key = f"{scraper.name}|{query.lower().strip()}|{location.lower().strip()}"
+    now = time.time()
+
+    # Check cache
+    if cache_key in _SCRAPER_CACHE:
+        ts, cached_jobs = _SCRAPER_CACHE[cache_key]
+        if now - ts < _CACHE_TTL:
+            logger.debug(f"[{scraper.name}] Cache hit for '{query}'")
+            return cached_jobs
+
     try:
-        return scraper.fetch_jobs(query)
+        jobs = scraper.fetch_jobs(query)
+        _SCRAPER_CACHE[cache_key] = (now, jobs)
+        return jobs
     except Exception as e:
         logger.error(f"[{scraper.name}] Error: {e}")
         return []
 
 
-def search_all_boards(queries: list[str] = None, location: str = "remote", country: str = "") -> list[Job]:
+def search_all_boards(
+    queries: list[str] = None, location: str = "remote", country: str = ""
+) -> list[Job]:
     """Search all job boards in parallel with user-provided queries and location.
 
     Args:
@@ -1457,7 +1643,10 @@ def search_all_boards(queries: list[str] = None, location: str = "remote", count
     # Run all tasks in parallel (max 12 threads for more scrapers)
     with ThreadPoolExecutor(max_workers=12) as executor:
         futures = {
-            executor.submit(_scrape_task, scraper, query, location): (scraper.name, query)
+            executor.submit(_scrape_task, scraper, query, location): (
+                scraper.name,
+                query,
+            )
             for scraper, query in tasks
         }
 
@@ -1471,13 +1660,10 @@ def search_all_boards(queries: list[str] = None, location: str = "remote", count
                     # We do NOT accept just because the word "remote" appears in the
                     # description — that would let through "Remote, USA" for India users.
                     desc_lower = job.description.lower()
-                    country_mentioned = (
-                        user_country.lower() in desc_lower
-                        or any(
-                            alias in desc_lower
-                            for alias, canon in _COUNTRY_ALIASES.items()
-                            if canon == _canonical_country(user_country)
-                        )
+                    country_mentioned = user_country.lower() in desc_lower or any(
+                        alias in desc_lower
+                        for alias, canon in _COUNTRY_ALIASES.items()
+                        if canon == _canonical_country(user_country)
                     )
                     if not (("remote" in desc_lower) and country_mentioned):
                         continue
@@ -1491,5 +1677,7 @@ def search_all_boards(queries: list[str] = None, location: str = "remote", count
                             job.salary = extracted
                     all_jobs.append(job)
 
-    logger.info(f"Total unique jobs found: {len(all_jobs)} (country filter: {user_country})")
+    logger.info(
+        f"Total unique jobs found: {len(all_jobs)} (country filter: {user_country})"
+    )
     return all_jobs

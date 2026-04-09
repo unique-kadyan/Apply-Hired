@@ -3,9 +3,27 @@
 from flask import Blueprint, request, jsonify
 
 from config import LOCATION_PREFERENCES
-from middleware import login_required
+from middleware import login_required, get_user_profile
 from services.search_service import get_search_status, is_search_running, start_search
-from tracker import get_stats
+from tracker import get_stats, _get_db
+
+
+_CURRENCY_TO_USD = {
+    "INR": 83.5, "EUR": 0.92, "GBP": 0.79, "AED": 3.67,
+    "SGD": 1.35, "USD": 1.0,
+}
+
+
+def _expected_salary_usd(profile: dict) -> float:
+    """Convert profile expected salary (min) to annual USD for search filtering."""
+    sal_min = profile.get("expected_salary_min")
+    if not sal_min:
+        return 0.0
+    currency = profile.get("expected_salary_currency", "USD")
+    period = profile.get("expected_salary_period", "annually")
+    rate = _CURRENCY_TO_USD.get(currency.upper(), 1.0)
+    annual = float(sal_min) * (12 if period == "monthly" else 1)
+    return annual / rate
 
 search_bp = Blueprint("search", __name__, url_prefix="/api")
 
@@ -18,6 +36,11 @@ def run_search():
         return jsonify({"error": "A search is already running"}), 409
 
     data = request.get_json() or {}
+
+    # Default min_salary from user's expected compensation if not explicitly passed
+    profile = get_user_profile(request.user)
+    default_min_salary = _expected_salary_usd(profile)
+
     params = {
         "job_title": data.get("job_title", ""),
         "skills": data.get("skills", []),
@@ -25,7 +48,7 @@ def run_search():
         "country": data.get("country", LOCATION_PREFERENCES.get("default_country", "India")),
         "levels": data.get("levels", []),
         "min_score": data.get("min_score", 0.3),
-        "min_salary": data.get("min_salary", 0),
+        "min_salary": data.get("min_salary") if data.get("min_salary") is not None else default_min_salary,
     }
     start_search(params, user_id)
     return jsonify({"message": "Search started"})
@@ -46,3 +69,45 @@ def location_prefs():
 @login_required
 def stats():
     return jsonify(get_stats(user_id=request.user["id"]))
+
+
+# ---------------------------------------------------------------------------
+# Auto-search schedule endpoints
+# ---------------------------------------------------------------------------
+
+@search_bp.route("/search/schedule", methods=["GET"])
+@login_required
+def get_schedule():
+    """Return this user's auto-search schedule settings."""
+    db = _get_db()
+    user = db.users.find_one(
+        {"_id": request.user["_id"]},
+        {"auto_search_enabled": 1, "auto_search_interval_hours": 1,
+         "auto_search_params": 1, "auto_search_last_run": 1},
+    )
+    last_run = user.get("auto_search_last_run") if user else None
+    if hasattr(last_run, "isoformat"):
+        last_run = last_run.isoformat()
+    return jsonify({
+        "enabled": bool((user or {}).get("auto_search_enabled", False)),
+        "interval_hours": (user or {}).get("auto_search_interval_hours", 24),
+        "last_run": last_run,
+        "params": (user or {}).get("auto_search_params", {}),
+    })
+
+
+@search_bp.route("/search/schedule", methods=["PUT"])
+@login_required
+def set_schedule():
+    """Save auto-search schedule settings for this user."""
+    data = request.get_json() or {}
+    db = _get_db()
+    db.users.update_one(
+        {"_id": request.user["_id"]},
+        {"$set": {
+            "auto_search_enabled": bool(data.get("enabled", False)),
+            "auto_search_interval_hours": int(data.get("interval_hours", 24)),
+            "auto_search_params": data.get("params", {}),
+        }},
+    )
+    return jsonify({"message": "Schedule saved"})

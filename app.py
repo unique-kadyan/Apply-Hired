@@ -11,6 +11,7 @@ from routes.jobs import jobs_bp
 from routes.search import search_bp
 from routes.payment import payment_bp
 from routes.gmail import gmail_bp
+from services.scheduler import start_scheduler, stop_scheduler
 
 
 def create_app() -> Flask:
@@ -28,6 +29,11 @@ def create_app() -> Flask:
     app.register_blueprint(search_bp)     # /api/search/*, /api/stats
     app.register_blueprint(payment_bp)    # /api/payment/*
     app.register_blueprint(gmail_bp)      # /api/gmail/*
+
+    # Start background scheduler (auto-search + stale pruner)
+    start_scheduler()
+
+    app.teardown_appcontext(lambda _: stop_scheduler())
 
     # Serve React SPA
     @app.route("/")

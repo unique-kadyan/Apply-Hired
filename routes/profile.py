@@ -1,5 +1,7 @@
 """Profile routes — view, update, resume upload, and avatar upload."""
 
+import json
+import logging
 import os
 import io
 import base64
@@ -8,9 +10,11 @@ from flask import Blueprint, request, jsonify, current_app
 from PIL import Image
 
 from middleware import login_required, get_user_profile
-from resume_parser import parse_resume, score_resume
+from resume_parser import parse_resume, score_resume, _build_ai_providers, _call_ai_text, _is_quota_error, extract_text
 from tracker import update_user_profile
 from services.profile_import import import_github, import_linkedin_url, merge_github_into_profile
+
+logger = logging.getLogger(__name__)
 
 profile_bp = Blueprint("profile", __name__, url_prefix="/api/profile")
 
@@ -218,6 +222,99 @@ def get_autofill_data():
         "cover_letter": "",  # filled per-job by the extension
         "notice_period": "Immediate / 15 days",
     })
+
+
+_RESUME_JSON_SCHEMA = """{
+  "personal": { "name": "", "email": "", "phone": "", "location": "", "linkedin": "", "github": "", "website": "" },
+  "title": "",
+  "summary": "",
+  "years_of_experience": 0,
+  "notice_period": "",
+  "expected_salary": { "min": null, "max": null, "currency": "", "period": "" },
+  "skills": {
+    "languages": [],
+    "frameworks": [],
+    "databases": [],
+    "cloud_devops": [],
+    "tools": []
+  },
+  "experience": [
+    { "title": "", "company": "", "period": "", "highlights": [], "technologies": [] }
+  ],
+  "education": "",
+  "certifications": [],
+  "projects": [
+    { "name": "", "description": "", "technologies": [], "url": "" }
+  ],
+  "achievements": []
+}"""
+
+
+@profile_bp.route("/parse-resume-json", methods=["POST"])
+@login_required
+def parse_resume_json():
+    """Parse a resume into a standardised JSON schema using AI."""
+    if "resume" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["resume"]
+    if file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+    if not file.filename.lower().endswith((".pdf", ".docx", ".txt")):
+        return jsonify({"error": "Only PDF, DOCX, and TXT files are supported"}), 400
+
+    upload_dir = current_app.config["UPLOAD_FOLDER"]
+    os.makedirs(upload_dir, exist_ok=True)
+    filepath = os.path.join(upload_dir, file.filename)
+    file.save(filepath)
+
+    try:
+        text = extract_text(filepath)
+        if not text or len(text.strip()) < 50:
+            return jsonify({"error": "Could not extract text from resume"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Text extraction failed: {str(e)}"}), 500
+
+    prompt = f"""You are an expert resume parser. Extract all information from the resume below and return it as a single valid JSON object that strictly follows the schema provided.
+
+RULES:
+1. Return ONLY the JSON object — no markdown, no explanation, no ```json fences.
+2. Keep ALL the exact keys from the schema — never rename or omit keys.
+3. If a field is not found in the resume, use its default (empty string, 0, null, or empty array).
+4. For 'skills': classify each skill into exactly one of: languages, frameworks, databases, cloud_devops, or tools.
+5. For 'experience[].highlights': write complete sentences with metrics where available.
+6. For 'years_of_experience': compute from dates in the resume (integer only).
+7. For 'expected_salary': fill only if explicitly mentioned in the resume; otherwise leave defaults.
+8. For 'notice_period': use exact text if stated, otherwise leave empty string.
+
+TARGET JSON SCHEMA:
+{_RESUME_JSON_SCHEMA}
+
+RESUME TEXT:
+{text[:6000]}
+"""
+
+    providers = _build_ai_providers()
+    for provider in providers:
+        try:
+            result = _call_ai_text(provider, prompt)
+            if not result:
+                continue
+            # Strip accidental markdown fences
+            cleaned = result.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("```", 2)[-1] if cleaned.count("```") >= 2 else cleaned
+                cleaned = cleaned.lstrip("json").strip().rstrip("`").strip()
+            parsed = json.loads(cleaned)
+            logger.info(f"Resume JSON parsed via {provider['name']}")
+            return jsonify({"data": parsed})
+        except (json.JSONDecodeError, Exception) as e:
+            if _is_quota_error(e):
+                continue
+            logger.warning(f"parse-resume-json failed ({provider['name']}): {e}")
+            continue
+
+    return jsonify({"error": "AI parsing failed — all providers exhausted"}), 500
 
 
 @profile_bp.route("/score-resume", methods=["POST"])

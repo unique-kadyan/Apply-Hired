@@ -30,32 +30,76 @@ _GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 
 # Phrases that strongly indicate an interview invitation
 _INTERVIEW_PHRASES = [
-    "invitation to interview", "invite you for an interview", "scheduled for an interview",
-    "selected for interview", "interview invitation", "interview schedule",
-    "we would like to interview", "pleased to invite you", "next round",
-    "technical interview", "hr interview", "coding round", "technical round",
-    "interview details", "please join us for", "meeting scheduled",
+    "invitation to interview",
+    "invite you for an interview",
+    "scheduled for an interview",
+    "selected for interview",
+    "interview invitation",
+    "interview schedule",
+    "we would like to interview",
+    "pleased to invite you",
+    "next round",
+    "technical interview",
+    "hr interview",
+    "coding round",
+    "technical round",
+    "interview details",
+    "please join us for",
+    "meeting scheduled",
 ]
 
 # Phrases that strongly indicate an offer letter
 _OFFER_PHRASES = [
-    "offer letter", "offer of employment", "pleased to offer", "job offer",
-    "employment offer", "formal offer", "offer you the position",
-    "pleased to extend an offer", "offer of the position",
-    "we are delighted to offer", "congratulations on your offer",
-    "joining date", "date of joining", "compensation package",
-    "annual ctc", "cost to company", "welcome to the team",
+    "offer letter",
+    "offer of employment",
+    "pleased to offer",
+    "job offer",
+    "employment offer",
+    "formal offer",
+    "offer you the position",
+    "pleased to extend an offer",
+    "offer of the position",
+    "we are delighted to offer",
+    "congratulations on your offer",
+    "joining date",
+    "date of joining",
+    "compensation package",
+    "annual ctc",
+    "cost to company",
+    "welcome to the team",
 ]
 
 # Weaker signals used for scoring when strong phrases not found
 _INTERVIEW_WEAK = ["interview", "round", "schedule", "zoom", "google meet", "teams"]
-_OFFER_WEAK = ["offer", "salary", "compensation", "ctc", "lpa", "joining", "congratulations"]
+_OFFER_WEAK = [
+    "offer",
+    "salary",
+    "compensation",
+    "ctc",
+    "lpa",
+    "joining",
+    "congratulations",
+]
 
 # Email domains to ignore when extracting company name
 _GENERIC_DOMAINS = {
-    "gmail", "yahoo", "hotmail", "outlook", "live", "icloud",
-    "zoho", "protonmail", "rediff", "aol", "mail", "noreply",
-    "notifications", "jobs", "careers", "recruiting", "no-reply",
+    "gmail",
+    "yahoo",
+    "hotmail",
+    "outlook",
+    "live",
+    "icloud",
+    "zoho",
+    "protonmail",
+    "rediff",
+    "aol",
+    "mail",
+    "noreply",
+    "notifications",
+    "jobs",
+    "careers",
+    "recruiting",
+    "no-reply",
 }
 
 
@@ -63,19 +107,28 @@ _GENERIC_DOMAINS = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _build_gmail_callback_url() -> str:
-    base = os.environ.get("BASE_URL", "http://localhost:5000").rstrip("/")
-    return f"{base}/api/gmail/callback"
+    """Build Gmail callback URL dynamically, matching the actual request domain."""
+    url = request.url_root.rstrip("/") + "/api/gmail/callback"
+    # Force HTTPS for non-localhost production environments
+    if url.startswith("http://") and "localhost" not in url and "127.0.0.1" not in url:
+        url = url.replace("http://", "https://", 1)
+    return url
 
 
 def _refresh_access_token(refresh_token: str) -> str | None:
     try:
-        resp = http_requests.post(_GOOGLE_TOKEN_URL, data={
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
-            "refresh_token": refresh_token,
-            "grant_type": "refresh_token",
-        }, timeout=10)
+        resp = http_requests.post(
+            _GOOGLE_TOKEN_URL,
+            data={
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+            timeout=10,
+        )
         return resp.json().get("access_token")
     except Exception as e:
         logger.warning(f"Gmail token refresh failed: {e}")
@@ -145,8 +198,10 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
     """
     text = f"{subject}\n{body}"
 
-    details: dict = {"notes": f"Auto-detected from Gmail — {subject[:100]}",
-                     "saved_at": datetime.now().isoformat()}
+    details: dict = {
+        "notes": f"Auto-detected from Gmail — {subject[:100]}",
+        "saved_at": datetime.now().isoformat(),
+    }
 
     # ── Date ──────────────────────────────────────────────────────────────────
     # Matches: "on 15th April 2026", "on April 15, 2026", "on 15/04/2026",
@@ -170,7 +225,8 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
     # Matches: "at 2:30 PM", "at 14:30", "at 10 AM IST"
     time_m = re.search(
         r"\bat\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b(?:\s*(ist|gmt|utc[+\-]?\d*|pst|est|cst|mst))?",
-        text, re.IGNORECASE
+        text,
+        re.IGNORECASE,
     )
     if time_m:
         details["time"] = time_m.group(1).strip()
@@ -179,7 +235,9 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
 
     # ── Timezone standalone ────────────────────────────────────────────────────
     if "timezone" not in details:
-        tz_m = re.search(r"\b(IST|GMT[+\-]?\d*|UTC[+\-]?\d*|PST|EST|CST|MST|AEST|CET|BST)\b", text)
+        tz_m = re.search(
+            r"\b(IST|GMT[+\-]?\d*|UTC[+\-]?\d*|PST|EST|CST|MST|AEST|CET|BST)\b", text
+        )
         if tz_m:
             details["timezone"] = tz_m.group(1)
 
@@ -187,7 +245,8 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
     round_m = re.search(
         r"((?:hr|technical|coding|system design|behavioral|managerial|final|panel|"
         r"screening|phone|video|round\s*\d+|round\s+[a-z]+)\s+(?:round|interview|screen|call)?)",
-        text, re.IGNORECASE
+        text,
+        re.IGNORECASE,
     )
     if round_m:
         details["round"] = round_m.group(1).strip().title()
@@ -196,7 +255,8 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
     link_m = re.search(
         r"(https?://(?:meet\.google\.com|zoom\.us/j|teams\.microsoft\.com|"
         r"webex\.com|whereby\.com|meet\.jit\.si)[^\s\"<>]+)",
-        text, re.IGNORECASE
+        text,
+        re.IGNORECASE,
     )
     if link_m:
         details["meeting_link"] = link_m.group(1)
@@ -222,7 +282,7 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
     interviewer_m = re.search(
         r"(?:with|interviewer[:\s]+|conducted by[:\s]+|meet\s+(?:with\s+)?|"
         r"your\s+interviewer\s+(?:is|will be)\s+)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})",
-        text
+        text,
     )
     if interviewer_m:
         name = interviewer_m.group(1).strip()
@@ -240,8 +300,10 @@ def _extract_offer_details(subject: str, body: str) -> dict:
     """
     text = f"{subject}\n{body}"
 
-    details: dict = {"notes": f"Auto-detected from Gmail — {subject[:100]}",
-                     "saved_at": datetime.now().isoformat()}
+    details: dict = {
+        "notes": f"Auto-detected from Gmail — {subject[:100]}",
+        "saved_at": datetime.now().isoformat(),
+    }
 
     # ── Salary / CTC ──────────────────────────────────────────────────────────
     # Matches: "₹25 LPA", "25 LPA", "$120,000", "INR 25,00,000", "CTC of ₹18 LPA"
@@ -275,7 +337,8 @@ def _extract_offer_details(subject: str, body: str) -> dict:
         r"\d{1,2}(?:st|nd|rd|th)?[\s\-/]+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
         r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
         r"[\s\-/,]+(?:20\d{2})?|\d{1,2}[/\-]\d{1,2}[/\-](?:20)?\d{2})",
-        text, re.IGNORECASE
+        text,
+        re.IGNORECASE,
     )
     if join_m:
         details["joining_date"] = join_m.group(1).strip()
@@ -285,7 +348,8 @@ def _extract_offer_details(subject: str, body: str) -> dict:
         r"(?:accept(?:ance)?|respond|revert|reply)\s+(?:by|before|within)[:\s]+"
         r"((?:\d{1,2}[\s\-/]+(?:jan(?:uary)?|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*"
         r"[\s\-/]*(?:20\d{2})?|\d{1,2}[/\-]\d{1,2}[/\-](?:20)?\d{2}|\d+\s+(?:business\s+)?days?))",
-        text, re.IGNORECASE
+        text,
+        re.IGNORECASE,
     )
     if deadline_m:
         details["deadline"] = deadline_m.group(1).strip()
@@ -295,15 +359,15 @@ def _extract_offer_details(subject: str, body: str) -> dict:
         r"(?:work\s+(?:location|from)|location|office|based\s+(?:out\s+of|in))[:\s]+"
         r"((?:remote|hybrid|work from home|wfh|on.?site|bengaluru|bangalore|mumbai|delhi|"
         r"hyderabad|chennai|pune|noida|gurgaon|gurugram|[a-z\s]{3,30}))",
-        text, re.IGNORECASE
+        text,
+        re.IGNORECASE,
     )
     if location_m:
         details["location"] = location_m.group(1).strip().title()
 
     # ── Benefits snippet (grab the sentence mentioning benefits/perks) ─────────
     benefits_m = re.search(
-        r"(?:benefits?|perks?|includes?)[:\s]+([^\n.]{10,120})",
-        text, re.IGNORECASE
+        r"(?:benefits?|perks?|includes?)[:\s]+([^\n.]{10,120})", text, re.IGNORECASE
     )
     if benefits_m:
         details["benefits"] = benefits_m.group(1).strip()
@@ -328,6 +392,7 @@ def _extract_company_hint(sender: str, subject: str, body: str) -> str:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @gmail_bp.route("/auth")
 @login_required
 def gmail_auth():
@@ -339,58 +404,107 @@ def gmail_auth():
     session["gmail_oauth_state"] = state
     session["gmail_user_id"] = str(request.user["id"])
 
-    params = urlencode({
-        "client_id":     GOOGLE_CLIENT_ID,
-        "redirect_uri":  _build_gmail_callback_url(),
-        "response_type": "code",
-        "scope":         "https://www.googleapis.com/auth/gmail.readonly",
-        "access_type":   "offline",
-        "state":         state,
-        "prompt":        "consent",   # always returns refresh_token
-    })
+    params = urlencode(
+        {
+            "client_id": GOOGLE_CLIENT_ID,
+            "redirect_uri": _build_gmail_callback_url(),
+            "response_type": "code",
+            "scope": "https://www.googleapis.com/auth/gmail.readonly",
+            "access_type": "offline",
+            "state": state,
+            "prompt": "consent",  # always returns refresh_token
+        }
+    )
     return redirect(f"{_GOOGLE_AUTH_URL}?{params}")
+
+
+def _popup_response(success: bool, message: str = "") -> str:
+    """Return an HTML page that notifies the opener via postMessage and auto-closes."""
+    msg_type = "gmail_connected" if success else "gmail_error"
+    msg_detail = message if not success else ""
+    fallback_url = f"/?gmail_connected=1" if success else f"/?gmail_error={message}"
+    status_icon = "✅" if success else "❌"
+    status_text = "Gmail Connected!" if success else f"Connection failed: {message}"
+    status_color = "#6ee7b7" if success else "#f87171"
+    return f"""<!DOCTYPE html>
+<html><head><title>Gmail OAuth</title></head>
+<body style="font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;
+             height:100vh;margin:0;background:#0f172a;color:#e2e8f0;flex-direction:column;gap:1rem;">
+  <div style="font-size:2.5rem">{status_icon}</div>
+  <p style="font-size:1.1rem;font-weight:700;color:{status_color};margin:0">{status_text}</p>
+  <p style="color:#94a3b8;font-size:0.85rem;margin:0">Closing this window automatically…</p>
+  <script>
+    (function() {{
+      var sent = false;
+      function notify() {{
+        if (sent) return; sent = true;
+        try {{
+          if (window.opener && !window.opener.closed) {{
+            window.opener.postMessage({{type: '{msg_type}', detail: '{msg_detail}'}}, '*');
+          }}
+        }} catch(e) {{}}
+      }}
+      notify();
+      setTimeout(function() {{
+        notify();
+        try {{ window.close(); }} catch(e) {{
+          window.location.href = '{fallback_url}';
+        }}
+      }}, 1800);
+    }})();
+  </script>
+</body></html>"""
 
 
 @gmail_bp.route("/callback")
 def gmail_callback():
-    """Handle Gmail OAuth callback — persist tokens to user profile."""
+    """Handle Gmail OAuth callback — persist tokens and close the popup window."""
     if request.args.get("error"):
-        return redirect("/?gmail_error=" + request.args["error"])
+        return _popup_response(False, request.args["error"])
 
     code = request.args.get("code")
     state = request.args.get("state")
 
     if not state or state != session.pop("gmail_oauth_state", None):
-        return redirect("/?gmail_error=invalid_state")
+        return _popup_response(False, "invalid_state")
 
     user_id = session.pop("gmail_user_id", None)
     if not user_id:
-        return redirect("/?gmail_error=no_session")
+        return _popup_response(False, "no_session")
 
     try:
-        token_resp = http_requests.post(_GOOGLE_TOKEN_URL, data={
-            "code":          code,
-            "client_id":     GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
-            "redirect_uri":  _build_gmail_callback_url(),
-            "grant_type":    "authorization_code",
-        }, timeout=10)
+        token_resp = http_requests.post(
+            _GOOGLE_TOKEN_URL,
+            data={
+                "code": code,
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": _build_gmail_callback_url(),
+                "grant_type": "authorization_code",
+            },
+            timeout=10,
+        )
         token_data = token_resp.json()
     except Exception:
-        return redirect("/?gmail_error=token_exchange_failed")
+        return _popup_response(False, "token_exchange_failed")
 
     access_token = token_data.get("access_token")
     if not access_token:
-        return redirect("/?gmail_error=no_access_token")
+        return _popup_response(False, "no_access_token")
 
     db = _get_db()
     oid = _to_object_id(user_id)
-    db.users.update_one({"_id": oid}, {"$set": {
-        "gmail_access_token":   access_token,
-        "gmail_refresh_token":  token_data.get("refresh_token", ""),
-        "gmail_connected_at":   datetime.now().isoformat(),
-    }})
-    return redirect("/?gmail_connected=1")
+    db.users.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "gmail_access_token": access_token,
+                "gmail_refresh_token": token_data.get("refresh_token", ""),
+                "gmail_connected_at": datetime.now().isoformat(),
+            }
+        },
+    )
+    return _popup_response(True)
 
 
 @gmail_bp.route("/status", methods=["GET"])
@@ -398,15 +512,18 @@ def gmail_callback():
 def gmail_status():
     db = _get_db()
     oid = _to_object_id(request.user["id"])
-    user = db.users.find_one({"_id": oid}, {
-        "gmail_access_token": 1, "gmail_connected_at": 1, "gmail_last_sync": 1
-    })
+    user = db.users.find_one(
+        {"_id": oid},
+        {"gmail_access_token": 1, "gmail_connected_at": 1, "gmail_last_sync": 1},
+    )
     connected = bool(user and user.get("gmail_access_token"))
-    return jsonify({
-        "connected":    connected,
-        "connected_at": (user or {}).get("gmail_connected_at", ""),
-        "last_sync":    (user or {}).get("gmail_last_sync", ""),
-    })
+    return jsonify(
+        {
+            "connected": connected,
+            "connected_at": (user or {}).get("gmail_connected_at", ""),
+            "last_sync": (user or {}).get("gmail_last_sync", ""),
+        }
+    )
 
 
 @gmail_bp.route("/disconnect", methods=["POST"])
@@ -414,12 +531,17 @@ def gmail_status():
 def gmail_disconnect():
     db = _get_db()
     oid = _to_object_id(request.user["id"])
-    db.users.update_one({"_id": oid}, {"$unset": {
-        "gmail_access_token":  "",
-        "gmail_refresh_token": "",
-        "gmail_connected_at":  "",
-        "gmail_last_sync":     "",
-    }})
+    db.users.update_one(
+        {"_id": oid},
+        {
+            "$unset": {
+                "gmail_access_token": "",
+                "gmail_refresh_token": "",
+                "gmail_connected_at": "",
+                "gmail_last_sync": "",
+            }
+        },
+    )
     return jsonify({"message": "Gmail disconnected"})
 
 
@@ -434,9 +556,9 @@ def gmail_sync():
     """
     db = _get_db()
     oid = _to_object_id(request.user["id"])
-    user = db.users.find_one({"_id": oid}, {
-        "gmail_access_token": 1, "gmail_refresh_token": 1
-    })
+    user = db.users.find_one(
+        {"_id": oid}, {"gmail_access_token": 1, "gmail_refresh_token": 1}
+    )
 
     if not user or not user.get("gmail_access_token"):
         return jsonify({"error": "Gmail not connected"}), 400
@@ -445,8 +567,7 @@ def gmail_sync():
 
     # Validate / refresh token
     probe = http_requests.get(
-        f"{_GMAIL_API_BASE}/profile",
-        headers=_headers(access_token), timeout=8
+        f"{_GMAIL_API_BASE}/profile", headers=_headers(access_token), timeout=8
     )
     if probe.status_code == 401:
         refresh_token = user.get("gmail_refresh_token", "")
@@ -454,8 +575,13 @@ def gmail_sync():
             return jsonify({"error": "Gmail session expired. Please reconnect."}), 401
         access_token = _refresh_access_token(refresh_token)
         if not access_token:
-            return jsonify({"error": "Could not refresh Gmail token. Please reconnect."}), 401
-        db.users.update_one({"_id": oid}, {"$set": {"gmail_access_token": access_token}})
+            return (
+                jsonify({"error": "Could not refresh Gmail token. Please reconnect."}),
+                401,
+            )
+        db.users.update_one(
+            {"_id": oid}, {"$set": {"gmail_access_token": access_token}}
+        )
 
     # Build search query — broad enough to catch invitations and offers
     search_q = (
@@ -474,13 +600,20 @@ def gmail_sync():
     except Exception as e:
         return jsonify({"error": f"Gmail API error: {e}"}), 500
 
-    STATUS_RANK = {"new": 0, "saved": 0, "previous": 0, "applied": 1, "interview": 2, "offer": 3}
+    STATUS_RANK = {
+        "new": 0,
+        "saved": 0,
+        "previous": 0,
+        "applied": 1,
+        "interview": 2,
+        "offer": 3,
+    }
 
     updates = []
     interview_count = 0
     offer_count = 0
 
-    for msg_ref in messages[:30]:   # cap to avoid rate limits
+    for msg_ref in messages[:30]:  # cap to avoid rate limits
         try:
             msg_resp = http_requests.get(
                 f"{_GMAIL_API_BASE}/messages/{msg_ref['id']}",
@@ -492,10 +625,10 @@ def gmail_sync():
         except Exception:
             continue
 
-        hdrs    = msg.get("payload", {}).get("headers", [])
+        hdrs = msg.get("payload", {}).get("headers", [])
         subject = _get_header(hdrs, "subject")
-        sender  = _get_header(hdrs, "from")
-        body    = _extract_body(msg.get("payload", {}))[:2000]
+        sender = _get_header(hdrs, "from")
+        body = _extract_body(msg.get("payload", {}))[:2000]
 
         category = _classify_email(subject, body)
         if not category:
@@ -507,29 +640,31 @@ def gmail_sync():
 
         # Find best matching job for this user
         pattern = {"$regex": company_hint, "$options": "i"}
-        job = db.jobs.find_one({
-            "user_id": str(request.user["id"]),
-            "status":  {"$in": ["applied", "new", "saved", "previous", "interview"]},
-            "$or":     [{"company": pattern}, {"title": pattern}],
-        })
+        job = db.jobs.find_one(
+            {
+                "user_id": str(request.user["id"]),
+                "status": {"$in": ["applied", "new", "saved", "previous", "interview"]},
+                "$or": [{"company": pattern}, {"title": pattern}],
+            }
+        )
         if not job:
             continue
 
-        current_rank  = STATUS_RANK.get(job.get("status", ""), 0)
-        new_rank      = STATUS_RANK.get(category, 0)
+        current_rank = STATUS_RANK.get(job.get("status", ""), 0)
+        new_rank = STATUS_RANK.get(category, 0)
 
         # Only upgrade — never downgrade
         if new_rank <= current_rank:
             continue
 
         update_fields = {
-            "status":     category,
+            "status": category,
             "updated_at": datetime.now().isoformat(),
         }
 
         if category == "interview":
             extracted = _extract_interview_details(subject, body, date_str)
-            existing  = job.get("interview_details") or {}
+            existing = job.get("interview_details") or {}
             # Merge: newly extracted values override, but keep existing if we got nothing
             update_fields["interview_details"] = {
                 **existing,
@@ -537,7 +672,7 @@ def gmail_sync():
             }
         elif category == "offer":
             extracted = _extract_offer_details(subject, body)
-            existing  = job.get("offer_details") or {}
+            existing = job.get("offer_details") or {}
             update_fields["offer_details"] = {
                 **existing,
                 **{k: v for k, v in extracted.items() if v},
@@ -551,29 +686,54 @@ def gmail_sync():
             offer_count += 1
 
         entry = {
-            "job_title":     job.get("title", ""),
-            "company":       job.get("company", ""),
-            "status":        category,
+            "job_title": job.get("title", ""),
+            "company": job.get("company", ""),
+            "status": category,
             "email_subject": subject[:80],
-            "email_from":    sender[:60],
+            "email_from": sender[:60],
         }
         # Surface extracted fields so the UI can show what was parsed
         if category == "interview":
             d = update_fields.get("interview_details", {})
-            entry["extracted"] = {k: d[k] for k in ("date","time","timezone","round","platform","meeting_link","interviewer") if d.get(k)}
+            entry["extracted"] = {
+                k: d[k]
+                for k in (
+                    "date",
+                    "time",
+                    "timezone",
+                    "round",
+                    "platform",
+                    "meeting_link",
+                    "interviewer",
+                )
+                if d.get(k)
+            }
         else:
             d = update_fields.get("offer_details", {})
-            entry["extracted"] = {k: d[k] for k in ("salary","currency","joining_date","deadline","location","benefits") if d.get(k)}
+            entry["extracted"] = {
+                k: d[k]
+                for k in (
+                    "salary",
+                    "currency",
+                    "joining_date",
+                    "deadline",
+                    "location",
+                    "benefits",
+                )
+                if d.get(k)
+            }
         updates.append(entry)
 
-    db.users.update_one({"_id": oid}, {"$set": {
-        "gmail_last_sync": datetime.now().isoformat()
-    }})
+    db.users.update_one(
+        {"_id": oid}, {"$set": {"gmail_last_sync": datetime.now().isoformat()}}
+    )
 
-    return jsonify({
-        "found":     len(messages),
-        "scanned":   min(len(messages), 30),
-        "interview": interview_count,
-        "offer":     offer_count,
-        "updates":   updates,
-    })
+    return jsonify(
+        {
+            "found": len(messages),
+            "scanned": min(len(messages), 30),
+            "interview": interview_count,
+            "offer": offer_count,
+            "updates": updates,
+        }
+    )

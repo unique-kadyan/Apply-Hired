@@ -145,3 +145,62 @@ def salary_in_usd(salary_str: str, location: str = "") -> float | None:
     max_num *= multiplier
     rate = USD_RATES.get(currency.upper(), 1.0)
     return max_num / rate if rate else max_num
+
+
+# ---------------------------------------------------------------------------
+# Normalised annual USD salary — handles LPA, monthly, k-suffix, multi-currency
+# ---------------------------------------------------------------------------
+
+_LPA_RE = re.compile(
+    r'(\d+(?:\.\d+)?)\s*(?:lpa|l\.p\.a\.?|lakh(?:s)?\s+per\s+ann|lac\s+per\s+ann)',
+    re.IGNORECASE,
+)
+_MONTHLY_RE = re.compile(r'per\s+month|/\s*month|p\.?m\.?\b|monthly', re.IGNORECASE)
+_HOURLY_RE  = re.compile(r'per\s+hour|/\s*hr|/\s*hour|hourly', re.IGNORECASE)
+
+
+def normalize_salary_annual_usd(salary_str: str, location: str = "") -> float | None:
+    """
+    Parse any salary string and return the maximum annualised value in USD.
+
+    Handles:
+    - Indian LPA:  "₹25 LPA" → 25 × 100,000 ÷ INR_rate
+    - k-suffix:    "$120k"   → 120,000
+    - Monthly:     "£4,000/month" → 48,000 ÷ GBP_rate
+    - Hourly:      "$50/hr"  → 50 × 2080 (standard work-year hours)
+    - Plain range: "80,000 – 1,00,000" → take max
+    Returns None if no numeric value can be found.
+    """
+    if not salary_str or not salary_str.strip():
+        return None
+
+    text = salary_str.strip()
+    currency = detect_currency(text, location)
+    rate = USD_RATES.get(currency.upper(), 1.0)
+
+    # --- LPA (Indian Lakhs Per Annum) ---
+    m = _LPA_RE.search(text)
+    if m:
+        lpa = float(m.group(1))
+        annual_inr = lpa * 100_000
+        # Always convert from INR regardless of detected currency symbol
+        return annual_inr / USD_RATES.get("INR", 83.5)
+
+    # Extract all numeric values
+    nums = re.findall(r'[\d,]+(?:\.\d+)?', text)
+    if not nums:
+        return None
+    values = [float(n.replace(',', '')) for n in nums]
+    max_val = max(values)
+
+    # k-suffix (e.g. "120k", "₹80k")
+    if re.search(r'\d\s*k\b', text, re.IGNORECASE):
+        max_val *= 1_000
+
+    # Annualise if monthly or hourly
+    if _MONTHLY_RE.search(text):
+        max_val *= 12
+    elif _HOURLY_RE.search(text):
+        max_val *= 2_080  # 40 hrs/week × 52 weeks
+
+    return max_val / rate if rate else max_val

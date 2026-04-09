@@ -164,6 +164,7 @@
             const [githubRateLimit, setGithubRateLimit] = useState(false);
             const [githubTokenInput, setGithubTokenInput] = useState(profile.github_token ? '••••••••' : '');
             const [editingToken, setEditingToken] = useState(false);
+            const [showAllProjects, setShowAllProjects] = useState(false);
 
             // Gmail state
             const [gmailStatus, setGmailStatus] = useState(null); // null = loading, {connected, last_sync}
@@ -174,14 +175,37 @@
                 api.get('/api/gmail/status').then(r => setGmailStatus(r)).catch(() => setGmailStatus({ connected: false }));
             }, []);
 
-            // Handle ?gmail_connected=1 redirect from OAuth callback
+            // Handle Gmail OAuth popup postMessage + legacy URL redirect fallback
             useEffect(() => {
+                // Popup sends postMessage when auth completes
+                const onMessage = (e) => {
+                    if (e.data?.type === 'gmail_connected') {
+                        api.get('/api/gmail/status').then(r => setGmailStatus(r));
+                        showToast('Gmail connected! Click "Sync Now" to scan for interview & offer emails.', 'success');
+                    } else if (e.data?.type === 'gmail_error') {
+                        showToast(`Gmail connection failed: ${e.data.detail || 'unknown error'}`, 'error');
+                    }
+                };
+                window.addEventListener('message', onMessage);
+                // Legacy fallback: user landed back via redirect (no popup support)
                 if (new URLSearchParams(window.location.search).get('gmail_connected')) {
                     window.history.replaceState({}, '', '/');
                     api.get('/api/gmail/status').then(r => setGmailStatus(r));
                     showToast('Gmail connected! Click "Sync Now" to scan for interview & offer emails.', 'success');
                 }
+                return () => window.removeEventListener('message', onMessage);
             }, []);
+
+            const connectGmail = () => {
+                const w = 600, h = 700;
+                const left = Math.max(0, (screen.width - w) / 2);
+                const top  = Math.max(0, (screen.height - h) / 2);
+                window.open(
+                    '/api/gmail/auth',
+                    'gmail_oauth',
+                    `width=${w},height=${h},top=${top},left=${left},menubar=no,toolbar=no,location=no,status=no`
+                );
+            };
 
             const gmailSync = async () => {
                 setGmailSyncing(true);
@@ -311,8 +335,11 @@
                                         </a>
                                     </div>
                                     <button onClick={() => { setEditing(acc.key); acc.setInput(acc.display || ''); }}
-                                        style={{ background: 'none', border: 'none', color: 'var(--accent2)', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}>
-                                        Edit
+                                        title="Edit"
+                                        style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)', color: '#818cf8', cursor: 'pointer', borderRadius: 8, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.18s', flexShrink: 0 }}
+                                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.22)'; e.currentTarget.style.borderColor = '#818cf8'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.1)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.25)'; }}>
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                     </button>
                                 </div>
                             ) : (
@@ -411,18 +438,85 @@
                         </div>
                     )}
 
-                    {profile.projects && profile.projects.length > 0 && (
-                        <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem' }}>
-                            <h3 style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '0.5rem' }}>GitHub Projects</h3>
-                            {profile.projects.map((p, i) => (
-                                <div key={i} style={{ marginBottom: '0.4rem' }}>
-                                    <a href={p.url} target="_blank" rel="noopener" style={{ fontWeight: 600, fontSize: '0.88rem' }}>{p.name}</a>
-                                    {p.language && <span style={{ background: 'var(--bg3)', color: 'var(--muted)', padding: '0.1rem 0.4rem', borderRadius: 4, fontSize: '0.72rem', marginLeft: '0.5rem' }}>{p.language}</span>}
-                                    {p.description && <p style={{ color: 'var(--muted)', fontSize: '0.82rem', margin: '0.1rem 0 0' }}>{p.description}</p>}
+                    {profile.projects && profile.projects.length > 0 && (() => {
+                        const LANG_COLORS = {
+                            JavaScript: { bg: 'rgba(234,179,8,0.15)', color: '#fbbf24', border: 'rgba(234,179,8,0.3)' },
+                            TypeScript: { bg: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: 'rgba(59,130,246,0.3)' },
+                            Python:     { bg: 'rgba(34,197,94,0.15)',  color: '#4ade80', border: 'rgba(34,197,94,0.3)'  },
+                            Java:       { bg: 'rgba(239,68,68,0.15)',  color: '#f87171', border: 'rgba(239,68,68,0.3)'  },
+                            Go:         { bg: 'rgba(6,182,212,0.15)',  color: '#22d3ee', border: 'rgba(6,182,212,0.3)'  },
+                            Rust:       { bg: 'rgba(249,115,22,0.15)', color: '#fb923c', border: 'rgba(249,115,22,0.3)' },
+                            HTML:       { bg: 'rgba(249,115,22,0.12)', color: '#fdba74', border: 'rgba(249,115,22,0.25)' },
+                            CSS:        { bg: 'rgba(139,92,246,0.15)', color: '#a78bfa', border: 'rgba(139,92,246,0.3)' },
+                            Kotlin:     { bg: 'rgba(168,85,247,0.15)', color: '#c084fc', border: 'rgba(168,85,247,0.3)' },
+                            Swift:      { bg: 'rgba(251,146,60,0.15)', color: '#fb923c', border: 'rgba(251,146,60,0.3)' },
+                            Ruby:       { bg: 'rgba(239,68,68,0.12)',  color: '#fca5a5', border: 'rgba(239,68,68,0.25)' },
+                            Shell:      { bg: 'rgba(15,118,110,0.15)', color: '#2dd4bf', border: 'rgba(15,118,110,0.3)' },
+                            _default:   { bg: 'rgba(100,116,139,0.15)', color: 'var(--muted)', border: 'rgba(100,116,139,0.25)' },
+                        };
+                        const tagStyle = (lang) => {
+                            const c = LANG_COLORS[lang] || LANG_COLORS._default;
+                            return { background: c.bg, color: c.color, border: `1px solid ${c.border}`, padding: '0.1rem 0.45rem', borderRadius: 20, fontSize: '0.68rem', fontWeight: 600, whiteSpace: 'nowrap' };
+                        };
+                        const topicStyle = { background: 'rgba(99,102,241,0.12)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.25)', padding: '0.1rem 0.4rem', borderRadius: 20, fontSize: '0.66rem', fontWeight: 500, whiteSpace: 'nowrap' };
+                        const visible = showAllProjects ? profile.projects : profile.projects.slice(0, 5);
+                        const hasMore = profile.projects.length > 5;
+                        return (
+                            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+                                    <h3 style={{ fontSize: '0.85rem', color: 'var(--muted)', margin: 0 }}>
+                                        GitHub Projects
+                                        <span style={{ marginLeft: '0.5rem', background: 'rgba(99,102,241,0.15)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 20, padding: '0.05rem 0.5rem', fontSize: '0.7rem', fontWeight: 700 }}>
+                                            {profile.projects.length}
+                                        </span>
+                                    </h3>
+                                    {hasMore && (
+                                        <button onClick={() => setShowAllProjects(v => !v)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', color: '#818cf8', borderRadius: 20, padding: '0.2rem 0.75rem', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+                                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.22)'; e.currentTarget.style.borderColor = '#818cf8'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.1)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)'; }}>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                                style={{ transition: 'transform 0.25s', transform: showAllProjects ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                                                <polyline points="6 9 12 15 18 9"/>
+                                            </svg>
+                                            {showAllProjects ? 'View Less' : `View More (${profile.projects.length - 5} more)`}
+                                        </button>
+                                    )}
                                 </div>
-                            ))}
-                        </div>
-                    )}
+                                {visible.map((p, i) => (
+                                    <div key={i} style={{ marginBottom: '0.65rem', padding: '0.55rem 0.7rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8, transition: 'border-color 0.2s' }}
+                                        onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(99,102,241,0.4)'}
+                                        onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
+                                        {/* Skills/Language pills row */}
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.35rem', alignItems: 'center' }}>
+                                            {p.language && <span style={tagStyle(p.language)}>{p.language}</span>}
+                                            {(p.topics || []).slice(0, 4).map((t, ti) => (
+                                                <span key={ti} style={topicStyle}>{t}</span>
+                                            ))}
+                                            {p.stars > 0 && (
+                                                <span style={{ marginLeft: 'auto', color: '#fbbf24', fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                                                    {p.stars}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {/* Project name + link */}
+                                        <a href={p.url} target="_blank" rel="noopener" style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                            {p.name}
+                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                        </a>
+                                        {p.description && <p style={{ color: 'var(--muted)', fontSize: '0.79rem', margin: '0.2rem 0 0', lineHeight: 1.4 }}>{p.description}</p>}
+                                    </div>
+                                ))}
+                                {hasMore && !showAllProjects && (
+                                    <div style={{ textAlign: 'center', marginTop: '0.25rem' }}>
+                                        <button onClick={() => setShowAllProjects(true)} style={{ background: 'none', border: 'none', color: '#818cf8', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline', opacity: 0.8 }}>
+                                            + {profile.projects.length - 5} more projects
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {/* ── Gmail Integration ─────────────────────────────── */}
                     <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border)' }}>
@@ -505,11 +599,11 @@
                             </div>
                         ) : (
                             <div>
-                                <a href="/api/gmail/auth"
-                                    style={{ ...styles.btn, background: 'linear-gradient(135deg,#4285f4,#34a853)', color: '#fff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem', padding: '0.5rem 1.2rem' }}>
+                                <button onClick={connectGmail}
+                                    style={{ ...styles.btn, background: 'linear-gradient(135deg,#4285f4,#34a853)', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.88rem', padding: '0.5rem 1.2rem', border: 'none', cursor: 'pointer' }}>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4C2.9 4 2 4.9 2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 2-8 5-8-5h16zm0 12H4V8l8 5 8-5v10z"/></svg>
                                     Connect Gmail
-                                </a>
+                                </button>
                                 <p style={{ color: 'var(--muted)', fontSize: '0.75rem', marginTop: '0.5rem' }}>
                                     You'll be asked to grant <strong>read-only</strong> Gmail access. JobBot never reads personal emails — only scans for subject lines containing "interview", "offer", or "congratulations".
                                 </p>
@@ -1026,6 +1120,63 @@
                         </div>
                     )}
 
+                    {/* Analytics row: Response Rate by Source + Cover Letter A/B */}
+                    {((stats.source_conversion || []).length > 0 || (stats.cover_letter_ab || []).length > 1) && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            {/* Response rate by source board */}
+                            {(stats.source_conversion || []).length > 0 && (
+                                <div style={styles.card}>
+                                    <h3 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.9rem' }}>
+                                        Interview Rate by Job Board
+                                    </h3>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                                        {(stats.source_conversion || []).map((s, i) => (
+                                            <div key={i}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                                                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text)' }}>{s.source}</span>
+                                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                        <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{s.interviews}/{s.applied}</span>
+                                                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: s.rate >= 20 ? '#4ade80' : s.rate >= 10 ? '#fbbf24' : '#f87171', minWidth: 36, textAlign: 'right' }}>{s.rate}%</span>
+                                                    </div>
+                                                </div>
+                                                <div style={{ background: 'var(--bg3)', borderRadius: 4, height: 5, overflow: 'hidden' }}>
+                                                    <div style={{ height: '100%', borderRadius: 4, width: `${Math.min(s.rate * 2, 100)}%`, background: s.rate >= 20 ? '#22c55e' : s.rate >= 10 ? '#f59e0b' : '#3b82f6', transition: 'width 0.5s' }} />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Cover letter A/B tone insight */}
+                            {(stats.cover_letter_ab || []).length > 1 && (
+                                <div style={styles.card}>
+                                    <h3 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.9rem' }}>
+                                        Cover Letter A/B — Tone vs Callbacks
+                                    </h3>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                        {(stats.cover_letter_ab || []).map((ab, i) => (
+                                            <div key={i} style={{ padding: '0.7rem 0.9rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                <div style={{ fontSize: '1.4rem' }}>{ab.tone === 'formal' ? '🎩' : '👋'}</div>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <span style={{ fontWeight: 700, fontSize: '0.88rem', textTransform: 'capitalize' }}>{ab.tone}</span>
+                                                        <span style={{ fontSize: '0.88rem', fontWeight: 800, color: ab.rate >= 15 ? '#4ade80' : '#fbbf24' }}>{ab.rate}%</span>
+                                                    </div>
+                                                    <div style={{ color: 'var(--muted)', fontSize: '0.75rem', marginTop: '0.15rem' }}>{ab.interviews} interviews from {ab.total} letters</div>
+                                                    <div style={{ background: 'var(--bg3)', borderRadius: 4, height: 4, marginTop: '0.4rem', overflow: 'hidden' }}>
+                                                        <div style={{ height: '100%', borderRadius: 4, width: `${Math.min(ab.rate * 3, 100)}%`, background: ab.tone === 'formal' ? '#6366f1' : '#f59e0b', transition: 'width 0.5s' }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <p style={{ fontSize: '0.75rem', color: 'var(--muted)', textAlign: 'center', marginTop: '0.2rem' }}>More data accumulates as you generate cover letters</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Recent jobs grouped by status */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem' }}>
                         {[
@@ -1045,7 +1196,10 @@
                                             style={{ padding: '0.6rem 1rem', borderBottom: '1px solid rgba(51,65,85,0.5)', cursor: 'pointer', transition: 'background 0.1s' }}
                                             onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                                             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                                            <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#93c5fd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={j.title}>{j.title}</div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                                <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#93c5fd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={j.title}>{j.title}</div>
+                                                {j.followup_due && <span title={`Applied ${j.days_since_applied} days ago — follow up`} style={{ fontSize: '0.62rem', color: '#fde68a', background: 'rgba(234,179,8,0.2)', border: '1px solid rgba(234,179,8,0.4)', padding: '0.05rem 0.35rem', borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0 }}>⏰ {j.days_since_applied}d</span>}
+                                            </div>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem' }}>
                                                 <span style={{ color: 'var(--muted)', fontSize: '0.76rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{j.company}</span>
                                                 <Badge score={j.score} />
@@ -1254,14 +1408,12 @@
             const [niSavedReasons, setNiSavedReasons] = useState([]);
             const [niSaving, setNiSaving] = useState(false);
 
-            // Skip-filter state (derived from custom not-interested reasons)
-            const [skipKeywords, setSkipKeywords] = useState([]);
-            const [skipReasons, setSkipReasons] = useState([]);   // source custom reasons
+            // Skip-filter state — full custom reason texts used to filter searches
+            const [skipReasons, setSkipReasons] = useState([]);
             const [showSkipPanel, setShowSkipPanel] = useState(false);
 
             const loadSkipKeywords = useCallback(() => {
                 api.get('/api/jobs/skip-keywords').then(r => {
-                    setSkipKeywords(r.keywords || []);
                     setSkipReasons(r.custom_reasons || []);
                 });
             }, []);
@@ -1497,13 +1649,13 @@
                         })}
                     </div>
 
-                    {/* Skip-filter info bar — shown on not_applied tab when keywords are active */}
-                    {tab === 'not_applied' && skipKeywords.length > 0 && (
-                        <div style={{ marginBottom: '0.75rem', background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.25)', borderRadius: 10, padding: '0.55rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '0.8rem', color: '#f87171', fontWeight: 600, whiteSpace: 'nowrap' }}>🚫 {skipKeywords.length} topic{skipKeywords.length !== 1 ? 's' : ''} filtered</span>
+                    {/* Skip-filter info bar — shown when user has custom skip reasons */}
+                    {tab === 'not_applied' && skipReasons.length > 0 && (
+                        <div style={{ marginBottom: '0.75rem', background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.25)', borderRadius: 10, padding: '0.55rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.8rem', color: '#f87171', fontWeight: 600, whiteSpace: 'nowrap' }}>🚫 {skipReasons.length} skip topic{skipReasons.length !== 1 ? 's' : ''} active</span>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', flex: 1 }}>
-                                {skipKeywords.map(kw => (
-                                    <span key={kw} style={{ background: 'rgba(220,38,38,0.15)', color: '#fca5a5', padding: '0.15rem 0.55rem', borderRadius: 20, fontSize: '0.75rem', fontWeight: 500 }}>{kw}</span>
+                                {skipReasons.map(r => (
+                                    <span key={r} style={{ background: 'rgba(220,38,38,0.15)', color: '#fca5a5', padding: '0.15rem 0.6rem', borderRadius: 20, fontSize: '0.75rem', fontWeight: 500 }}>{r}</span>
                                 ))}
                             </div>
                             <button onClick={() => setShowSkipPanel(p => !p)}
@@ -1516,19 +1668,22 @@
                     {/* Skip-filter management panel */}
                     {showSkipPanel && tab === 'not_applied' && (
                         <div style={{ marginBottom: '0.75rem', background: 'var(--bg2)', border: '1px solid rgba(220,38,38,0.3)', borderRadius: 10, padding: '0.85rem 1rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
-                                <h4 style={{ fontSize: '0.85rem', color: '#f87171', margin: 0 }}>Skip Topics — jobs matching these won't appear in "Not Applied"</h4>
-                                <button onClick={() => setShowSkipPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1 }}>×</button>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                <div>
+                                    <h4 style={{ fontSize: '0.85rem', color: '#f87171', margin: 0 }}>Skip Topics</h4>
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--muted)', margin: '0.2rem 0 0' }}>Jobs whose title or description matches these reasons are excluded from future searches.</p>
+                                </div>
+                                <button onClick={() => setShowSkipPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, flexShrink: 0 }}>×</button>
                             </div>
                             {skipReasons.length === 0 ? (
-                                <p style={{ fontSize: '0.82rem', color: 'var(--muted)', margin: 0 }}>No custom skip topics yet. When you skip jobs with a custom reason, keywords are extracted automatically.</p>
+                                <p style={{ fontSize: '0.82rem', color: 'var(--muted)', margin: 0 }}>No custom skip topics yet. Skip a job with your own reason to add one.</p>
                             ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.6rem' }}>
                                     {skipReasons.map(reason => (
                                         <div key={reason} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.45rem 0.75rem', gap: '0.5rem' }}>
                                             <span style={{ fontSize: '0.85rem', color: 'var(--text2)', flex: 1 }}>{reason}</span>
                                             <button onClick={() => removeSkipReason(reason)}
-                                                title="Remove this skip topic"
+                                                title="Remove — matching jobs will appear again in next search"
                                                 style={{ background: 'rgba(220,38,38,0.12)', border: '1px solid rgba(220,38,38,0.3)', borderRadius: 6, color: '#f87171', cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.55rem', flexShrink: 0, whiteSpace: 'nowrap' }}>
                                                 ✕ Remove
                                             </button>
@@ -1536,9 +1691,6 @@
                                     ))}
                                 </div>
                             )}
-                            <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.65rem', marginBottom: 0 }}>
-                                Only custom reasons produce keywords. Predefined reasons (Salary, Location, etc.) are too generic and are not used for filtering.
-                            </p>
                         </div>
                     )}
 
@@ -1664,6 +1816,7 @@
                                             <td style={{ padding: '0.5rem 0.6rem' }}>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
                                                     <StatusBadge status={j.status} />
+                                                    {j.followup_due && <span title={`Applied ${j.days_since_applied} days ago — consider following up`} style={{ fontSize: '0.66rem', color: '#fde68a', background: 'rgba(234,179,8,0.18)', border: '1px solid rgba(234,179,8,0.35)', padding: '0.1rem 0.4rem', borderRadius: 8, whiteSpace: 'nowrap', cursor: 'default' }}>⏰ Follow up ({j.days_since_applied}d)</span>}
                                                     {j.interview_details?.date && <span title={`Interview: ${j.interview_details.round || 'Scheduled'} on ${j.interview_details.date}`} style={{ fontSize: '0.68rem', color: '#d8b4fe', background: '#2d1b4e', padding: '0.1rem 0.4rem', borderRadius: 8, whiteSpace: 'nowrap' }}>📅 {j.interview_details.date}</span>}
                                                     {j.offer_details?.salary && <span title={`Offer: ${j.offer_details.salary}`} style={{ fontSize: '0.68rem', color: '#86efac', background: '#14532d', padding: '0.1rem 0.4rem', borderRadius: 8, whiteSpace: 'nowrap' }}>💰 {j.offer_details.salary}</span>}
                                                 </div>
@@ -2389,6 +2542,11 @@
             const [minScore, setMinScore] = useState(30);
             const [minSalary, setMinSalary] = useState(0);
             const [searchStatus, setSearchStatus] = useState(null);
+            const [scheduleEnabled, setScheduleEnabled] = useState(false);
+            const [scheduleInterval, setScheduleInterval] = useState(24);
+            const [scheduleLastRun, setScheduleLastRun] = useState(null);
+            const [scheduleSaving, setScheduleSaving] = useState(false);
+            const [showSchedule, setShowSchedule] = useState(false);
             const pollRef = useRef(null);
 
             const toggleSkill = (skill) => {
@@ -2441,8 +2599,31 @@
 
             useEffect(() => {
                 api.get('/api/search/status').then(s => { setSearchStatus(s); if (s.running) pollStatus(); });
+                api.get('/api/search/schedule').then(s => {
+                    setScheduleEnabled(s.enabled || false);
+                    setScheduleInterval(s.interval_hours || 24);
+                    setScheduleLastRun(s.last_run || null);
+                }).catch(() => {});
                 return () => { if (pollRef.current) clearInterval(pollRef.current); };
             }, []);
+
+            const saveSchedule = async () => {
+                setScheduleSaving(true);
+                const customSkillList = customSkills.split(',').map(s => s.trim()).filter(Boolean);
+                const allSkills = [...selectedSkills, ...customSkillList];
+                let location = 'remote';
+                if (locationType === 'remote_country') location = `remote ${remoteCountry}`;
+                else if (locationType === 'custom') location = customLocation;
+                try {
+                    await api.put('/api/search/schedule', {
+                        enabled: scheduleEnabled,
+                        interval_hours: scheduleInterval,
+                        params: { job_title: jobTitle, skills: allSkills, location, levels: [...levels], min_score: minScore / 100, min_salary: minSalary },
+                    });
+                    showToast(scheduleEnabled ? `Auto-search enabled (every ${scheduleInterval}h)` : 'Auto-search disabled', 'success');
+                } catch { showToast('Failed to save schedule', 'error'); }
+                setScheduleSaving(false);
+            };
 
             return (
                 <div style={styles.container}>
@@ -2586,6 +2767,59 @@
                     </div>
 
                     {/* Progress */}
+                    {/* Auto-Search Schedule Panel */}
+                    <div style={styles.card}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => setShowSchedule(v => !v)}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                <span style={{ fontSize: '1.1rem' }}>🕐</span>
+                                <div>
+                                    <span style={{ fontWeight: 700, fontSize: '0.92rem' }}>Auto-Search Schedule</span>
+                                    {scheduleEnabled
+                                        ? <span style={{ marginLeft: '0.5rem', background: 'rgba(5,150,105,0.15)', color: '#6ee7b7', border: '1px solid rgba(5,150,105,0.3)', borderRadius: 20, padding: '0.05rem 0.5rem', fontSize: '0.72rem', fontWeight: 700 }}>Every {scheduleInterval}h</span>
+                                        : <span style={{ marginLeft: '0.5rem', color: 'var(--muted)', fontSize: '0.78rem' }}>Off</span>
+                                    }
+                                </div>
+                            </div>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                style={{ transition: 'transform 0.25s', transform: showSchedule ? 'rotate(180deg)' : 'rotate(0deg)', color: 'var(--muted)' }}>
+                                <polyline points="6 9 12 15 18 9"/>
+                            </svg>
+                        </div>
+                        {showSchedule && (
+                            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                                <p style={{ color: 'var(--muted)', fontSize: '0.82rem', marginBottom: '0.9rem' }}>
+                                    Automatically search with your current filters every N hours. Uses the title, skills, and levels selected above.
+                                    {scheduleLastRun && <span style={{ marginLeft: '0.4rem' }}>Last run: <strong>{new Date(scheduleLastRun).toLocaleString()}</strong></span>}
+                                </p>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+                                    {/* Enable toggle */}
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', userSelect: 'none' }}>
+                                        <div onClick={() => setScheduleEnabled(v => !v)} style={{ width: 38, height: 22, borderRadius: 11, background: scheduleEnabled ? '#059669' : '#334155', position: 'relative', transition: 'background 0.2s', cursor: 'pointer', flexShrink: 0 }}>
+                                            <div style={{ position: 'absolute', top: 3, left: scheduleEnabled ? 19 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
+                                        </div>
+                                        <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>{scheduleEnabled ? 'Enabled' : 'Disabled'}</span>
+                                    </label>
+                                    {/* Interval selector */}
+                                    {scheduleEnabled && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Every</span>
+                                            {[6, 12, 24, 48].map(h => (
+                                                <button key={h} onClick={() => setScheduleInterval(h)}
+                                                    style={{ ...styles.btn, ...styles.btnSm, background: scheduleInterval === h ? 'var(--accent)' : 'var(--bg3)', color: scheduleInterval === h ? '#fff' : 'var(--muted)', fontWeight: scheduleInterval === h ? 700 : 400, border: scheduleInterval === h ? '1px solid var(--accent)' : '1px solid var(--border)', minWidth: 40 }}>
+                                                    {h}h
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <button onClick={saveSchedule} disabled={scheduleSaving}
+                                        style={{ ...styles.btn, ...styles.btnSm, background: '#059669', color: '#fff', marginLeft: 'auto' }}>
+                                        {scheduleSaving ? 'Saving…' : 'Save Schedule'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     {searchStatus && (searchStatus.running || searchStatus.progress > 0) && (
                         <div style={styles.card}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
@@ -2828,6 +3062,12 @@
             const [uploading, setUploading] = useState(false);
             const [avatarHover, setAvatarHover] = useState(false);
             const [avatarUploading, setAvatarUploading] = useState(false);
+            const [noticePeriod, setNoticePeriod] = useState(profile.notice_period || '');
+            const [salaryMin, setSalaryMin] = useState(profile.expected_salary_min || '');
+            const [salaryMax, setSalaryMax] = useState(profile.expected_salary_max || '');
+            const [salaryCurrency, setSalaryCurrency] = useState(profile.expected_salary_currency || 'INR');
+            const [salaryPeriod, setSalaryPeriod] = useState(profile.expected_salary_period || 'annually');
+            const [prefSaving, setPrefSaving] = useState(false);
 
             const uploadAvatar = async (e) => {
                 const file = e.target.files[0];
@@ -2856,6 +3096,47 @@
                     else { setProfile(res.profile); showToast('Resume parsed successfully! Profile updated.', 'success'); }
                 } catch (err) { showToast('Upload failed', 'error'); }
                 setUploading(false);
+                e.target.value = '';
+            };
+
+            const [jsonParsing, setJsonParsing] = useState(false);
+            const jsonRef = useRef(null);
+            const parseResumeJson = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setJsonParsing(true);
+                const fd = new FormData();
+                fd.append('resume', file);
+                try {
+                    const res = await api.upload('/api/profile/parse-resume-json', fd);
+                    if (res.error) { showToast(res.error, 'error'); }
+                    else {
+                        const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url; a.download = 'resume_structured.json'; a.click();
+                        URL.revokeObjectURL(url);
+                        showToast('Structured JSON downloaded!', 'success');
+                    }
+                } catch (err) { showToast('Parsing failed', 'error'); }
+                setJsonParsing(false);
+                e.target.value = '';
+            };
+
+            const savePreferences = async () => {
+                setPrefSaving(true);
+                try {
+                    const res = await api.put('/api/profile', {
+                        notice_period: noticePeriod,
+                        expected_salary_min: salaryMin !== '' ? Number(salaryMin) : null,
+                        expected_salary_max: salaryMax !== '' ? Number(salaryMax) : null,
+                        expected_salary_currency: salaryCurrency,
+                        expected_salary_period: salaryPeriod,
+                    });
+                    if (res.error) showToast(res.error, 'error');
+                    else { setProfile(res); showToast('Job preferences saved!', 'success'); }
+                } catch (err) { showToast('Save failed', 'error'); }
+                setPrefSaving(false);
             };
 
             return (
@@ -2921,9 +3202,13 @@
                         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                             <input ref={fileRef} type="file" accept=".pdf,.docx,.txt" onChange={uploadResume} style={{ display: 'none' }} />
                             <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => fileRef.current.click()} disabled={uploading}>
-                                {uploading ? '⏳ Parsing resume...' : '📤 Choose File & Upload'}
+                                {uploading ? '⏳ Parsing resume...' : '📤 Upload & Parse'}
                             </button>
-                            <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Supports PDF, DOCX, TXT</span>
+                            <input ref={jsonRef} type="file" accept=".pdf,.docx,.txt" onChange={parseResumeJson} style={{ display: 'none' }} />
+                            <button style={{ ...styles.btn, background: 'rgba(16,185,129,0.12)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)' }} onClick={() => jsonRef.current.click()} disabled={jsonParsing} title="Parse resume and download as standardised JSON">
+                                {jsonParsing ? '⏳ Generating...' : '⬇ Export as JSON'}
+                            </button>
+                            <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>PDF, DOCX, TXT</span>
                         </div>
                     </div>
 
@@ -2937,6 +3222,53 @@
                     {(!profile.resume_score || profile.resume_score.total_score < 100) && (
                         <ResumeOptimizer profile={profile} setProfile={setProfile} showToast={showToast} />
                     )}
+
+                    {/* Job Preferences */}
+                    <div style={styles.card}>
+                        <h2 style={{ fontSize: '1.1rem', marginBottom: '1.2rem' }}>Job Preferences</h2>
+
+                        {/* Notice Period */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={{ display: 'block', fontWeight: 600, color: 'var(--muted)', fontSize: '0.8rem', marginBottom: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Notice Period</label>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                {['Immediate', '15 days', '30 days', '45 days', '60 days', '90 days'].map(opt => (
+                                    <label key={opt} onClick={() => setNoticePeriod(opt)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', padding: '0.4rem 0.9rem', borderRadius: 20, border: '1px solid ' + (noticePeriod === opt ? '#3b82f6' : 'var(--border)'), background: noticePeriod === opt ? 'rgba(59,130,246,0.15)' : 'transparent', color: noticePeriod === opt ? '#60a5fa' : 'var(--text2)', fontSize: '0.87rem', fontWeight: noticePeriod === opt ? 600 : 400, transition: 'all 0.15s', userSelect: 'none' }}>
+                                        <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid ' + (noticePeriod === opt ? '#3b82f6' : '#475569'), background: noticePeriod === opt ? '#3b82f6' : 'transparent', display: 'inline-block', flexShrink: 0, transition: 'all 0.15s' }}></span>
+                                        {opt}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Expected Compensation */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={{ display: 'block', fontWeight: 600, color: 'var(--muted)', fontSize: '0.8rem', marginBottom: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Expected Compensation</label>
+                            <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <select value={salaryCurrency} onChange={e => setSalaryCurrency(e.target.value)} style={{ ...styles.input, width: 90, padding: '0.5rem 0.5rem' }}>
+                                    {['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'].map(c => <option key={c}>{c}</option>)}
+                                </select>
+                                <input type="number" placeholder="Min" value={salaryMin} onChange={e => setSalaryMin(e.target.value)} style={{ ...styles.input, width: 120, padding: '0.5rem 0.7rem' }} min={0} />
+                                <span style={{ color: 'var(--muted)', fontSize: '1.1rem' }}>–</span>
+                                <input type="number" placeholder="Max" value={salaryMax} onChange={e => setSalaryMax(e.target.value)} style={{ ...styles.input, width: 120, padding: '0.5rem 0.7rem' }} min={0} />
+                                <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                                    {['monthly', 'annually'].map(p => (
+                                        <button key={p} type="button" onClick={() => setSalaryPeriod(p)} style={{ padding: '0.45rem 0.85rem', background: salaryPeriod === p ? '#3b82f6' : 'transparent', color: salaryPeriod === p ? '#fff' : 'var(--muted)', border: 'none', cursor: 'pointer', fontSize: '0.84rem', fontWeight: salaryPeriod === p ? 600 : 400, transition: 'all 0.15s' }}>
+                                            {p.charAt(0).toUpperCase() + p.slice(1)}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            {(salaryMin || salaryMax) && (
+                                <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+                                    {salaryCurrency} {salaryMin && salaryMax ? `${Number(salaryMin).toLocaleString()} – ${Number(salaryMax).toLocaleString()}` : salaryMin ? `from ${Number(salaryMin).toLocaleString()}` : `up to ${Number(salaryMax).toLocaleString()}`} / {salaryPeriod}
+                                </p>
+                            )}
+                        </div>
+
+                        <button onClick={savePreferences} disabled={prefSaving} style={{ ...styles.btn, ...styles.btnPrimary }}>
+                            {prefSaving ? '⏳ Saving...' : 'Save Preferences'}
+                        </button>
+                    </div>
 
                     {/* Skills */}
                     <div style={styles.card}>

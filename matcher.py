@@ -42,11 +42,11 @@ def _title_relevance(job_title: str) -> float:
     """Bonus score if the job title closely matches target roles."""
     title_lower = job_title.lower()
     for role in SEARCH_PREFERENCES["target_roles"]:
-        if role.lower() in title_lower or title_lower in role.lower():
+        if re.search(rf"\b{re.escape(role.lower())}\b", title_lower):
             return 0.2
-    # Partial matches
+    # Partial word-boundary matches — use \b so "java" doesn't match "javascript"
     role_keywords = {"senior", "backend", "engineer", "developer", "java", "python", "spring", "full stack", "sde", "platform"}
-    matches = sum(1 for kw in role_keywords if kw in title_lower)
+    matches = sum(1 for kw in role_keywords if re.search(rf"\b{re.escape(kw)}\b", title_lower))
     return min(matches * 0.05, 0.15)
 
 
@@ -119,12 +119,44 @@ def _seniority_check(job_title: str, job_description: str,
     return score
 
 
+def _location_score(job_location: str) -> float:
+    """Bonus score if the job location matches the user's city/country preference.
+
+    Remote jobs always get +0.05 (broadly applicable).
+    City/country match gives +0.10 (more targeted).
+    """
+    from config import PROFILE, LOCATION_PREFERENCES
+    user_loc = PROFILE.get("location", "").lower()  # e.g. "rohtak, india"
+    job_loc  = (job_location or "").lower()
+
+    if not job_loc:
+        return 0.0
+
+    # Remote is always a positive signal
+    if "remote" in job_loc or "worldwide" in job_loc or "anywhere" in job_loc:
+        return 0.05
+
+    # Match any token from user's location string (city, state, country)
+    user_tokens = [t.strip() for t in re.split(r"[,/]", user_loc) if len(t.strip()) > 2]
+    for token in user_tokens:
+        if token in job_loc:
+            return 0.10
+
+    # Allowed locations from config
+    for allowed in LOCATION_PREFERENCES.get("allowed_locations", []):
+        if allowed.lower() in job_loc:
+            return 0.08
+
+    return 0.0
+
+
 def score_job_local(job, selected_levels: list[str] | None = None) -> float:
     """Score a job using local keyword matching. Returns 0.0–1.0."""
     base = _keyword_score(job.title, job.description, job.tags)
     title_bonus = _title_relevance(job.title)
     seniority = _seniority_check(job.title, job.description, selected_levels)
-    return max(0.0, min(1.0, base + title_bonus + seniority))
+    location_bonus = _location_score(job.location)
+    return max(0.0, min(1.0, base + title_bonus + seniority + location_bonus))
 
 
 # ---------------------------------------------------------------------------

@@ -59,9 +59,9 @@ def import_github(username: str, token: str = "") -> dict:
         if resp.status_code != 200:
             return {"error": f"GitHub API error {resp.status_code}: {msg}"}
 
-        # Top repos (by stars)
+        # Repos sorted by most recently pushed (recency-first)
         repos_resp = requests.get(
-            f"https://api.github.com/users/{username}/repos?sort=stars&per_page=20",
+            f"https://api.github.com/users/{username}/repos?sort=pushed&direction=desc&per_page=50",
             headers=headers,
             timeout=15,
         )
@@ -76,17 +76,19 @@ def import_github(username: str, token: str = "") -> dict:
 
         top_languages = sorted(languages, key=languages.get, reverse=True)[:10]
 
-        # Top projects
+        # All non-fork repos with topics (for full list in frontend)
         top_repos = []
-        for repo in (repos if isinstance(repos, list) else [])[:5]:
+        for repo in (repos if isinstance(repos, list) else []):
             if repo.get("fork"):
                 continue
             top_repos.append({
                 "name": repo.get("name", ""),
                 "description": repo.get("description", "") or "",
                 "url": repo.get("html_url", ""),
-                "language": repo.get("language", ""),
+                "language": repo.get("language", "") or "",
                 "stars": repo.get("stargazers_count", 0),
+                "topics": repo.get("topics", []),
+                "pushed_at": repo.get("pushed_at", ""),
             })
 
         # Extract topics/skills from repos

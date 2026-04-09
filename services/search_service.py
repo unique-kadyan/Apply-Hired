@@ -4,11 +4,11 @@ import re
 import threading
 from datetime import datetime, timezone, timedelta
 
-from config import LOCATION_PREFERENCES
+from config import LOCATION_PREFERENCES, PROFILE, SEARCH_PREFERENCES
 from scrapers import search_all_boards, ALL_SCRAPERS
 from matcher import rank_jobs
-from tracker import save_jobs_bulk, log_search_run
-from services.currency import usd_to, detect_currency
+from tracker import save_jobs_bulk, log_search_run, get_not_interested_reasons, _PREDEFINED_REASONS
+from services.currency import normalize_salary_annual_usd
 
 # Per-user search status keyed by user_id
 _status_map: dict[int, dict] = {}
@@ -48,28 +48,96 @@ def _run_search(params: dict, user_id: int):
         min_score = params.get("min_score", 0.3)
         min_salary = params.get("min_salary", 0)
 
-        # Build search queries
+        # Build targeted search queries
         queries = []
+        level_prefix = levels[0] if levels else ""
+
+        # 1. Explicit job title (with optional level prefix)
         if job_title:
             queries.append(job_title)
-            if location and location.lower() != "remote":
-                queries.append(f"{job_title} {location}")
+            if level_prefix:
+                queries.append(f"{level_prefix} {job_title}")
 
+        # 2. Skill-based queries
         if skills:
-            for skill in skills[:5]:
-                query = f"{levels[0]} {skill} developer" if levels else skill
-                queries.append(query)
+            for skill in skills[:4]:
+                queries.append(f"{level_prefix} {skill} developer".strip() if level_prefix else f"{skill} developer")
+            # Pair combinations (broader coverage)
             for i in range(0, min(len(skills), 6), 2):
-                queries.append(" ".join(skills[i:i + 2]))
+                pair = " ".join(skills[i:i + 2])
+                queries.append(pair)
+
+        # 3. Profile-driven combination queries (framework + skill pairs)
+        profile_backends = PROFILE.get("skills", {}).get("backend", [])[:2]
+        if skills and profile_backends:
+            queries.append(f"{skills[0]} {profile_backends[0]}")
+        if level_prefix and profile_backends:
+            queries.append(f"{level_prefix} {profile_backends[0]} developer")
+
+        # 4. Target roles from SEARCH_PREFERENCES (adds breadth when no title given)
+        if not job_title and not skills:
+            for role in SEARCH_PREFERENCES.get("target_roles", [])[:3]:
+                queries.append(role)
 
         if not queries:
             queries = ["software engineer", "backend developer", "full stack developer"]
 
-        queries = list(dict.fromkeys(queries))[:8]
+        queries = list(dict.fromkeys(q.strip() for q in queries if q.strip()))[:10]
 
         _update(user_id, message=f"Searching for: {', '.join(queries[:3])}...", progress=20)
 
         all_jobs = search_all_boards(queries, location=location, country=country)
+
+        # Post-scrape skill conflict filter:
+        # Job boards do substring matching, so a "java" query returns javascript jobs.
+        # For each skill that is a known prefix of another tech name, drop jobs whose
+        # TITLE contains the conflicting tech but NOT the user's exact skill.
+        #
+        # Only applied when the user explicitly passed specific skills — not for
+        # generic title-only searches where no skills were selected.
+        if skills:
+            # Map: user skill → list of longer tech names that contain it as a substring
+            _CONFLICTS: dict[str, list[str]] = {
+                "java":       ["javascript", "javafx"],
+                "c":          ["c++", "c#", "objective-c", "cobol", "clojure"],
+                "go":         ["golang"],   # "go" alone is ambiguous; golang is explicit
+                "r":          ["ruby", "rust", "rails"],
+                "python":     [],           # no common conflicts
+                "kotlin":     [],
+                "swift":      [],
+                "rust":       ["rustic"],
+                "perl":       ["perlite"],
+                "dart":       [],
+                "scala":      [],
+                "spring":     [],
+            }
+            skill_set_lower = {s.lower() for s in skills}
+            conflict_filters = []
+
+            for skill in skill_set_lower:
+                conflicts = _CONFLICTS.get(skill, [])
+                # Find conflicting names that are NOT also in the user's skill set
+                active_conflicts = [c for c in conflicts if c not in skill_set_lower]
+                if active_conflicts:
+                    conflict_filters.append((skill, active_conflicts))
+
+            if conflict_filters:
+                def _title_ok(job) -> bool:
+                    title = job.title.lower()
+                    for skill, conflicts in conflict_filters:
+                        # Job title mentions a conflicting tech
+                        for conflict in conflicts:
+                            if re.search(rf"\b{re.escape(conflict)}\b", title):
+                                # Allow only if the exact skill is also present as a standalone word
+                                if not re.search(rf"\b{re.escape(skill)}\b", title):
+                                    return False
+                    return True
+
+                before = len(all_jobs)
+                all_jobs = [j for j in all_jobs if _title_ok(j)]
+                dropped = before - len(all_jobs)
+                if dropped:
+                    _update(user_id, message=f"Filtered {dropped} mismatched skill jobs (e.g. JavaScript ≠ Java).")
 
         # Filter out jobs older than 4 months
         cutoff = datetime.now(timezone.utc) - timedelta(days=120)
@@ -97,37 +165,38 @@ def _run_search(params: dict, user_id: int):
                 fresh.append(job)
         all_jobs = fresh
 
-        # Filter by minimum salary (min_salary is in USD).
-        # Convert the threshold to the job's native currency before comparing.
+        # Filter by minimum salary (min_salary is in USD, annual).
+        # normalize_salary_annual_usd handles LPA, monthly, hourly, k-suffix, multi-currency.
         if min_salary and min_salary > 0:
             filtered = []
             for job in all_jobs:
                 if not job.salary or not job.salary.strip():
                     continue  # skip jobs with no salary info
-
-                salary_text = job.salary
-                location_hint = job.location or ""
-
-                # Detect the currency the job uses
-                currency = detect_currency(salary_text, location_hint)
-
-                # Convert user's USD threshold to that currency
-                threshold_local = usd_to(min_salary, currency)
-
-                # Extract all numbers from salary string
-                raw_nums = re.findall(r'[\d,]+', salary_text)
-                if not raw_nums:
-                    continue
-
-                nums = [int(n.replace(',', '')) for n in raw_nums]
-
-                # Handle 'k' suffix (e.g. "₹80k" stored as "80")
-                multiplier = 1000 if 'k' in salary_text.lower() else 1
-                max_num = max(nums) * multiplier
-
-                if max_num >= threshold_local:
+                annual_usd = normalize_salary_annual_usd(job.salary, job.location or "")
+                if annual_usd is not None and annual_usd >= min_salary:
                     filtered.append(job)
             all_jobs = filtered
+
+        # Filter out jobs that match topics the user has explicitly skipped.
+        # Uses the full custom reason text (not tokenized keywords) matched against
+        # job title + description. Predefined generic reasons are ignored.
+        custom_reasons = [
+            r for r in get_not_interested_reasons(user_id)
+            if r not in _PREDEFINED_REASONS
+        ]
+        if custom_reasons:
+            skip_patterns = [re.compile(re.escape(r), re.IGNORECASE) for r in custom_reasons]
+            before = len(all_jobs)
+            all_jobs = [
+                job for job in all_jobs
+                if not any(
+                    p.search(job.title) or p.search(job.description or "")
+                    for p in skip_patterns
+                )
+            ]
+            skipped = before - len(all_jobs)
+            if skipped:
+                _update(user_id, message=f"Filtered {skipped} jobs matching your skip topics.")
 
         _update(user_id, message=f"Found {len(all_jobs)} jobs. Scoring...", progress=60)
 
