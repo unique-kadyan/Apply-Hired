@@ -264,7 +264,7 @@ def rank_jobs(jobs: list, min_score: float | None = None,
     scored = []
     with ThreadPoolExecutor(max_workers=8) as executor:
         for job, score_data in executor.map(lambda j: _score_one(j), jobs):
-            if min_score and score_data["final_score"] < min_score:
+            if min_score is not None and score_data["final_score"] < min_score:
                 continue
             scored.append((job, score_data))
 

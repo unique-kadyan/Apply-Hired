@@ -205,8 +205,8 @@ def _run_search(params: dict, user_id: int):
 
         _update(user_id, message=f"Found {len(all_jobs)} jobs. Scoring...", progress=60)
 
-        ranked = rank_jobs(all_jobs, min_score=0, selected_levels=levels or None)
-        matched_count = sum(1 for _, sd in ranked if sd["final_score"] >= min_score)
+        ranked = rank_jobs(all_jobs, min_score=min_score, selected_levels=levels or None)
+        matched_count = len(ranked)
 
         _update(user_id, message=f"Saving {len(ranked)} jobs...", progress=80)
 

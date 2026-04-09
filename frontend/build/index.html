@@ -1649,21 +1649,6 @@
                         })}
                     </div>
 
-                    {/* Skip-filter info bar — shown when user has custom skip reasons */}
-                    {tab === 'not_applied' && skipReasons.length > 0 && (
-                        <div style={{ marginBottom: '0.75rem', background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.25)', borderRadius: 10, padding: '0.55rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '0.8rem', color: '#f87171', fontWeight: 600, whiteSpace: 'nowrap' }}>🚫 {skipReasons.length} skip topic{skipReasons.length !== 1 ? 's' : ''} active</span>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', flex: 1 }}>
-                                {skipReasons.map(r => (
-                                    <span key={r} style={{ background: 'rgba(220,38,38,0.15)', color: '#fca5a5', padding: '0.15rem 0.6rem', borderRadius: 20, fontSize: '0.75rem', fontWeight: 500 }}>{r}</span>
-                                ))}
-                            </div>
-                            <button onClick={() => setShowSkipPanel(p => !p)}
-                                style={{ background: 'none', border: '1px solid rgba(220,38,38,0.35)', borderRadius: 7, color: '#f87171', cursor: 'pointer', fontSize: '0.75rem', padding: '0.25rem 0.6rem', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                {showSkipPanel ? 'Hide' : 'Manage'}
-                            </button>
-                        </div>
-                    )}
 
                     {/* Skip-filter management panel */}
                     {showSkipPanel && tab === 'not_applied' && (
@@ -1822,7 +1807,16 @@
                                                 </div>
                                             </td>
                                             <td className="action-cell" style={{ padding: '0.4rem 0.6rem', width: '1%' }} onClick={e => e.stopPropagation()}>
-                                                {tab === 'applied' || tab === 'not_interested' ? (
+                                                {tab === 'not_interested' ? (
+                                                    <div className="action-btns">
+                                                        <a href={j.url} target="_blank" rel="noopener"
+                                                            title="View Job"
+                                                            className="action-btn"
+                                                            style={{ background: 'var(--bg3)', color: 'var(--muted)', textDecoration: 'none' }}>
+                                                            ↗<span className="btn-label">View</span>
+                                                        </a>
+                                                    </div>
+                                                ) : tab === 'applied' ? (
                                                     <div className="action-btns">
                                                         <a href={j.url} target="_blank" rel="noopener"
                                                             title="View Job"

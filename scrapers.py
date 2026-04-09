@@ -910,6 +910,23 @@ _GLOBAL_REMOTE_TERMS = {
     "fully remote",
 }
 
+# Regional restriction map: region keyword → set of ISO alpha-2 codes in that region.
+# Used to reject jobs whose location restricts to a region that excludes the user's country.
+_REGION_INCLUDES: dict[str, set] = {
+    "americas":       {"US", "CA", "MX", "BR", "AR", "CL", "CO", "PE", "VE", "EC", "BO", "UY", "PY", "GY", "SR"},
+    "north america":  {"US", "CA", "MX"},
+    "south america":  {"BR", "AR", "CL", "CO", "PE", "VE", "EC", "BO", "UY", "PY", "GY", "SR"},
+    "latin america":  {"MX", "BR", "AR", "CL", "CO", "PE", "VE", "EC", "BO", "CR", "GT", "HN", "SV", "NI", "PA", "CU", "DO"},
+    "europe":         {"GB", "DE", "FR", "NL", "SE", "NO", "DK", "FI", "CH", "AT", "BE", "ES", "IT", "PT", "PL", "CZ", "RO", "HU", "SK", "BG", "HR", "GR", "IE", "LT", "LV", "EE", "SI", "LU", "MT", "CY", "IS", "LI", "MC", "SM", "AD"},
+    "emea":           {"GB", "DE", "FR", "NL", "SE", "NO", "DK", "FI", "CH", "AT", "BE", "ES", "IT", "PT", "PL", "CZ", "RO", "AE", "SA", "ZA", "EG", "NG", "KE", "IL", "TR", "MA", "GH", "ET"},
+    "apac":           {"IN", "CN", "JP", "KR", "SG", "AU", "NZ", "HK", "TW", "TH", "VN", "MY", "ID", "PH", "BD", "PK", "LK"},
+    "asia pacific":   {"IN", "CN", "JP", "KR", "SG", "AU", "NZ", "HK", "TW", "TH", "VN", "MY", "ID", "PH", "BD", "PK", "LK"},
+    "asia-pacific":   {"IN", "CN", "JP", "KR", "SG", "AU", "NZ", "HK", "TW", "TH", "VN", "MY", "ID", "PH", "BD", "PK", "LK"},
+    "asia":           {"IN", "CN", "JP", "KR", "SG", "HK", "TW", "TH", "VN", "MY", "ID", "PH", "BD", "PK", "LK", "NP", "BT", "MV", "MM", "KH", "LA"},
+    "south asia":     {"IN", "BD", "PK", "LK", "NP", "BT", "MV"},
+    "southeast asia": {"SG", "TH", "VN", "MY", "ID", "PH", "MM", "KH", "LA", "BN", "TL"},
+}
+
 # Extra common-language names/abbreviations not in ISO that pycountry won't know
 _EXTRA_ALIASES: dict[str, str] = {
     "usa": "US",
@@ -1059,6 +1076,19 @@ def _matches_location_preference(job_location: str, user_country: str) -> bool:
         return True
 
     has_remote = "remote" in loc_lower
+
+    # Rule 3.5 — regional restriction check
+    # If the location names specific regions, accept only if the user's country is in one of them.
+    matched_regions = [
+        included for term, included in _REGION_INCLUDES.items()
+        if term in loc_lower
+    ]
+    if matched_regions:
+        # User is in at least one of the named regions → accept
+        if user_alpha2 and any(user_alpha2 in included for included in matched_regions):
+            return True
+        # Regions were named but user isn't in any of them → reject
+        return False
 
     # Rule 4 — "remote" + a different country → reject
     if has_remote and user_alpha2:
