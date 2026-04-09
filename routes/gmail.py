@@ -46,6 +46,44 @@ _INTERVIEW_PHRASES = [
     "interview details",
     "please join us for",
     "meeting scheduled",
+    # Indian / ATS common phrases
+    "shortlisted for",
+    "you have been shortlisted",
+    "you've been shortlisted",
+    "selected for the next",
+    "move to the next round",
+    "moving to the next",
+    "proceed to the next",
+    "advance to the next",
+    "next step in the",
+    "next steps for your",
+    "online assessment",
+    "online test",
+    "hackerrank",
+    "hackerearth",
+    "codility",
+    "mettl",
+    "assessment link",
+    "test link",
+    "complete the assessment",
+    "complete your assessment",
+    "schedule your interview",
+    "book your interview",
+    "pick a time",
+    "please select a slot",
+    "choose a time slot",
+    "calendly",
+    "zoom link",
+    "meet link",
+    "teams link",
+    "joining link",
+    "we are pleased to inform",
+    "happy to inform you",
+    "we are happy to let you know",
+    "you have cleared",
+    "successfully cleared",
+    "application has been reviewed",
+    "your profile has been shortlisted",
 ]
 
 # Phrases that strongly indicate an offer letter
@@ -583,20 +621,35 @@ def gmail_sync():
             {"_id": oid}, {"$set": {"gmail_access_token": access_token}}
         )
 
-    # Build search query — broad enough to catch invitations and offers
-    search_q = (
-        "subject:(interview OR offer OR congratulations OR selected OR invitation OR joining) "
-        "newer_than:90d"
+    # Build search query — broad enough to catch invitations and offers.
+    # Uses two passes: primary (high-confidence subjects) + secondary (broader net).
+    _primary_q = (
+        "subject:(interview OR offer OR shortlisted OR selected OR invitation OR "
+        "congratulations OR joining OR assessment OR \"next round\" OR \"next step\" OR "
+        "\"test link\" OR \"zoom link\" OR calendly OR hackerrank OR hackerearth OR codility OR mettl) "
+        "newer_than:180d"
+    )
+    _secondary_q = (
+        "subject:(application OR hiring OR recruiter OR opportunity OR position OR role OR "
+        "\"move forward\" OR \"next steps\" OR \"online test\" OR \"coding test\" OR "
+        "\"technical test\" OR \"schedule\" OR \"you have been\") "
+        "newer_than:180d"
     )
 
+    messages = []
+    seen_ids: set = set()
     try:
-        list_resp = http_requests.get(
-            f"{_GMAIL_API_BASE}/messages",
-            headers=_headers(access_token),
-            params={"q": search_q, "maxResults": 50},
-            timeout=15,
-        )
-        messages = list_resp.json().get("messages", [])
+        for q in [_primary_q, _secondary_q]:
+            resp = http_requests.get(
+                f"{_GMAIL_API_BASE}/messages",
+                headers=_headers(access_token),
+                params={"q": q, "maxResults": 75},
+                timeout=15,
+            )
+            for m in resp.json().get("messages", []):
+                if m["id"] not in seen_ids:
+                    seen_ids.add(m["id"])
+                    messages.append(m)
     except Exception as e:
         return jsonify({"error": f"Gmail API error: {e}"}), 500
 
@@ -613,7 +666,7 @@ def gmail_sync():
     interview_count = 0
     offer_count = 0
 
-    for msg_ref in messages[:30]:  # cap to avoid rate limits
+    for msg_ref in messages[:60]:  # cap to avoid rate limits
         try:
             msg_resp = http_requests.get(
                 f"{_GMAIL_API_BASE}/messages/{msg_ref['id']}",
@@ -648,47 +701,46 @@ def gmail_sync():
                 "$or": [{"company": pattern}, {"title": pattern}],
             }
         )
-        if not job:
-            continue
-
-        current_rank = STATUS_RANK.get(job.get("status", ""), 0)
-        new_rank = STATUS_RANK.get(category, 0)
-
-        # Only upgrade — never downgrade
-        if new_rank <= current_rank:
-            continue
-
-        update_fields = {
-            "status": category,
-            "updated_at": datetime.now().isoformat(),
-        }
 
         if category == "interview":
             extracted = _extract_interview_details(subject, body, date_str)
-            existing = job.get("interview_details") or {}
-            # Merge: newly extracted values override, but keep existing if we got nothing
-            update_fields["interview_details"] = {
-                **existing,
-                **{k: v for k, v in extracted.items() if v},
-            }
-        elif category == "offer":
+        else:
             extracted = _extract_offer_details(subject, body)
-            existing = job.get("offer_details") or {}
-            update_fields["offer_details"] = {
-                **existing,
-                **{k: v for k, v in extracted.items() if v},
-            }
 
-        db.jobs.update_one({"_id": job["_id"]}, {"$set": update_fields})
+        if job:
+            current_rank = STATUS_RANK.get(job.get("status", ""), 0)
+            new_rank = STATUS_RANK.get(category, 0)
 
+            # Only upgrade — never downgrade
+            if new_rank > current_rank:
+                update_fields: dict = {
+                    "status": category,
+                    "updated_at": datetime.now().isoformat(),
+                }
+                if category == "interview":
+                    existing = job.get("interview_details") or {}
+                    update_fields["interview_details"] = {
+                        **existing,
+                        **{k: v for k, v in extracted.items() if v},
+                    }
+                else:
+                    existing = job.get("offer_details") or {}
+                    update_fields["offer_details"] = {
+                        **existing,
+                        **{k: v for k, v in extracted.items() if v},
+                    }
+                db.jobs.update_one({"_id": job["_id"]}, {"$set": update_fields})
+
+        # Count and surface regardless of job match
         if category == "interview":
             interview_count += 1
         else:
             offer_count += 1
 
         entry = {
-            "job_title": job.get("title", ""),
-            "company": job.get("company", ""),
+            "job_title": job.get("title", "") if job else "",
+            "company": job.get("company", "") if job else company_hint,
+            "matched": bool(job),
             "status": category,
             "email_subject": subject[:80],
             "email_from": sender[:60],
@@ -732,7 +784,7 @@ def gmail_sync():
     return jsonify(
         {
             "found": len(messages),
-            "scanned": min(len(messages), 30),
+            "scanned": min(len(messages), 60),
             "interview": interview_count,
             "offer": offer_count,
             "updates": updates,

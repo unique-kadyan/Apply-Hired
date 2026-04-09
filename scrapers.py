@@ -1106,6 +1106,125 @@ def _matches_location_preference(job_location: str, user_country: str) -> bool:
     return False
 
 
+_REMOTE_LOC_TERMS = {
+    "remote", "wfh", "work from home", "work-from-home",
+    "anywhere", "worldwide", "global", "distributed", "virtual",
+    "telework", "telecommute", "home-based", "home based",
+}
+
+# Indian cities commonly seen in job location fields
+_ONSITE_CITY_HINTS = {
+    "bangalore", "bengaluru", "mumbai", "delhi", "hyderabad", "chennai",
+    "pune", "kolkata", "noida", "gurgaon", "gurugram", "ahmedabad",
+    "jaipur", "lucknow", "chandigarh", "indore", "coimbatore", "kochi",
+    "nagpur", "surat", "vadodara", "visakhapatnam", "bhopal", "patna",
+}
+
+
+def _is_remote_job(job: "Job") -> bool:
+    """Return True only if the job is genuinely remote/WFH.
+
+    Checks (in order):
+    1. job.job_type == "remote"
+    2. Location string contains a known remote term
+    3. Location is a bare country/region (no city comma) AND description mentions remote
+    4. Otherwise → treat as onsite, reject
+    """
+    if job.job_type == "remote":
+        return True
+
+    loc = (job.location or "").lower().strip()
+
+    if any(term in loc for term in _REMOTE_LOC_TERMS):
+        return True
+
+    # Location contains a known onsite city → definitely onsite
+    if any(city in loc for city in _ONSITE_CITY_HINTS):
+        return False
+
+    # Location has a comma → likely "City, Country" → onsite
+    if "," in loc:
+        # Unless one of the comma-parts is a remote term
+        parts = [p.strip() for p in loc.split(",")]
+        if any(any(t in p for t in _REMOTE_LOC_TERMS) for p in parts):
+            return True
+        return False
+
+    # Bare country / short location (e.g. "India", "IN") — defer to description
+    desc_lower = (job.description or "").lower()
+    if any(term in desc_lower for term in {"remote", "wfh", "work from home", "work-from-home"}):
+        return True
+
+    # Empty location → assume remote (many remote-only boards omit it)
+    if not loc:
+        return True
+
+    return False
+
+
+# Phrases that signal a job is restricted to workers in a specific country.
+# Maps canonical country name → list of exclusive-access phrases in job descriptions.
+_COUNTRY_ONLY_PHRASES: dict[str, list] = {
+    "United States": [
+        "authorized to work in the us",
+        "authorized to work in the united states",
+        "must be authorized to work in the u.s",
+        "legally authorized to work in the united states",
+        "us work authorization",
+        "us citizens and permanent residents",
+        "requires us citizenship",
+        "united states citizens only",
+        "must reside in the united states",
+        "must be located in the us",
+        "must be located in the united states",
+        "only consider candidates in the us",
+        "only consider candidates in the united states",
+        "w-2 employee",
+        "w2 only",
+        "1099 contractor",
+    ],
+    "United Kingdom": [
+        "must have the right to work in the uk",
+        "right to work in the united kingdom",
+        "uk work authorization",
+        "must be based in the uk",
+        "must reside in the uk",
+    ],
+    "Canada": [
+        "authorized to work in canada",
+        "canadian work authorization",
+        "must be based in canada",
+        "must reside in canada",
+    ],
+    "Australia": [
+        "authorized to work in australia",
+        "australian work authorization",
+        "must reside in australia",
+    ],
+}
+
+# Countries that should NOT be treated as restrictive for India users
+_INDIA_INCLUSIVE_COUNTRIES = {"India"}
+
+
+def _is_job_open_to_country(job: "Job", user_country: str) -> bool:
+    """Return False if the job description explicitly restricts to a country
+    that is NOT the user's country.
+
+    Only applies when the user's country is not the restricted country.
+    Bare "Remote" jobs without restriction phrases are allowed through.
+    """
+    if not user_country:
+        return True
+    desc_lower = (job.description or "").lower()
+    for restricted_country, phrases in _COUNTRY_ONLY_PHRASES.items():
+        if restricted_country.lower() == user_country.lower():
+            continue  # restriction is for user's own country → fine
+        if any(phrase in desc_lower for phrase in phrases):
+            return False  # job explicitly restricted to a different country
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Aggregator
 # ---------------------------------------------------------------------------
@@ -1681,13 +1800,12 @@ def search_all_boards(
 
         for future in as_completed(futures):
             jobs = future.result()
+            is_remote_search = location.lower().startswith("remote")
             for job in jobs:
                 # Primary location filter: uses country-aware logic
                 if not _matches_location_preference(job.location, user_country):
                     # Secondary fallback: description explicitly says "remote" AND
                     # mentions the user's country — then accept despite ambiguous location.
-                    # We do NOT accept just because the word "remote" appears in the
-                    # description — that would let through "Remote, USA" for India users.
                     desc_lower = job.description.lower()
                     country_mentioned = user_country.lower() in desc_lower or any(
                         alias in desc_lower
@@ -1696,6 +1814,16 @@ def search_all_boards(
                     )
                     if not (("remote" in desc_lower) and country_mentioned):
                         continue
+
+                # Remote enforcement: if user chose "remote" or "remote <country>",
+                # reject any job that is onsite/hybrid even if country matches.
+                if is_remote_search and not _is_remote_job(job):
+                    continue
+
+                # Country-exclusivity check: reject jobs whose description
+                # explicitly restricts to a different country (e.g. "US only").
+                if is_remote_search and user_country and not _is_job_open_to_country(job, user_country):
+                    continue
 
                 if job.url and job.url not in seen_urls:
                     seen_urls.add(job.url)

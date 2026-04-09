@@ -27,6 +27,8 @@
         ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
         @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.9; } }
 
         /* ---- Responsive ---- */
         /* hide-lg: hidden below 1024px (optional wide columns) */
@@ -981,12 +983,13 @@
         // Dashboard Page
         // ============================================================
         function Dashboard({ navigate }) {
-            const [stats, setStats] = useState(null);
+            const _emptyStats = { new: 0, applied: 0, interview: 0, offer: 0, not_interested: 0, total: 0, response_rate: 0, sources: {}, cover_letter_ab: {} };
+            const [stats, setStats] = useState(_emptyStats);
+            const [statsLoading, setStatsLoading] = useState(true);
             const [recentJobs, setRecentJobs] = useState({ new: [], applied: [], interview: [] });
 
             useEffect(() => {
-                api.get('/api/stats').then(setStats);
-                // Load recent jobs grouped by status
+                api.get('/api/stats').then(s => { setStats(s); setStatsLoading(false); }).catch(() => setStatsLoading(false));
                 const fetches = [
                     api.get('/api/jobs?tab=not_applied&per_page=5&sort_by=score&sort_dir=desc'),
                     api.get('/api/jobs?tab=applied&per_page=5&sort_by=updated_at&sort_dir=desc'),
@@ -998,13 +1001,17 @@
                         applied: apJobs.filter(j => j.status === 'applied'),
                         interview: apJobs.filter(j => j.status === 'interview' || j.status === 'offer'),
                     });
-                });
+                }).catch(() => {});
             }, []);
 
-            if (!stats) return (
+            const _Spinner = () => React.createElement('span', {
+                style: { display: 'inline-block', width: 14, height: 14, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.7s linear infinite', flexShrink: 0 }
+            });
+
+            if (false) return (  /* never block — dashboard renders immediately */
                 <div style={styles.container}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--muted)', paddingTop: '3rem' }}>
-                        <span style={{ fontSize: '1.5rem' }}>⏳</span> Loading dashboard…
+                        <_Spinner /> Loading dashboard…
                     </div>
                 </div>
             );
@@ -1055,12 +1062,12 @@
                             { n: stats.interview,                      l: 'Interviews',    c: '#d8b4fe', icon: '🎯' },
                             { n: stats.offer || 0,                     l: 'Offers',        c: '#fcd34d', icon: '🏆' },
                             { n: stats.not_interested,                 l: 'Skipped',       c: '#f87171', icon: '⏭' },
-                            { n: `${Math.round(stats.avg_score * 100)}%`, l: 'Avg Match', c: '#fb923c', icon: '📊' },
+                            { n: `${Math.round((stats.avg_score || 0) * 100)}%`, l: 'Avg Match', c: '#fb923c', icon: '📊' },
                         ].map((s, i) => (
-                            <div key={i} style={{ ...styles.card, textAlign: 'center', padding: '0.9rem 0.5rem', cursor: i < 3 ? 'pointer' : 'default' }}
+                            <div key={i} style={{ ...styles.card, textAlign: 'center', padding: '0.9rem 0.5rem', cursor: i < 3 ? 'pointer' : 'default', animation: statsLoading ? 'pulse 1.4s ease-in-out infinite' : 'none' }}
                                 onClick={() => { if (i === 0 || i === 1) navigate('jobs'); if (i === 2) navigate('jobs'); }}>
                                 <div style={{ fontSize: '1.3rem', marginBottom: '0.2rem' }}>{s.icon}</div>
-                                <div style={{ fontSize: '1.7rem', fontWeight: 800, color: s.c, lineHeight: 1 }}>{s.n}</div>
+                                <div style={{ fontSize: '1.7rem', fontWeight: 800, color: s.c, lineHeight: 1 }}>{statsLoading ? '—' : s.n}</div>
                                 <div style={{ color: 'var(--muted)', fontSize: '0.75rem', marginTop: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{s.l}</div>
                             </div>
                         ))}
@@ -1852,7 +1859,18 @@
                                                         <button
                                                             title="Mark as Applied"
                                                             disabled={j._marking}
-                                                            onClick={async (e) => { e.stopPropagation(); j._marking = true; e.target.disabled = true; await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast('Marked applied', 'success'); loadJobs(); }}
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                j._marking = true;
+                                                                e.currentTarget.disabled = true;
+                                                                await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' });
+                                                                // Immediately remove from current list and switch to applied tab
+                                                                setJobs(prev => prev.filter(x => x.id !== j.id));
+                                                                setTotal(prev => Math.max(0, prev - 1));
+                                                                refreshCounts();
+                                                                showToast('Moved to Applied ✓', 'success');
+                                                                setTimeout(() => { setTab('applied'); setPage(1); setFilters({ status: '', min_score: 0, salary: '' }); }, 800);
+                                                            }}
                                                             className="action-btn"
                                                             style={{ background: 'var(--green)', color: '#fff' }}>
                                                             ✓<span className="btn-label">Applied</span>
@@ -2098,7 +2116,7 @@
                                             </button>
                                         )}
                                         {tab !== 'applied' && tab !== 'not_interested' && (<>
-                                            <button onClick={async () => { await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); showToast('Marked as Applied!', 'success'); setJobPanel(null); loadJobs(); }}
+                                            <button onClick={async () => { await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); setJobPanel(null); setJobs(prev => prev.filter(x => x.id !== j.id)); setTotal(prev => Math.max(0, prev - 1)); refreshCounts(); showToast('Moved to Applied ✓', 'success'); setTimeout(() => { setTab('applied'); setPage(1); setFilters({ status: '', min_score: 0, salary: '' }); }, 800); }}
                                                 style={{ ...styles.btn, ...styles.btnSuccess, flex: 1, fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>✓ Applied</button>
                                             <button onClick={() => { setJobPanel(null); openNiModal(j); }}
                                                 style={{ ...styles.btn, flex: 1, background: 'rgba(220,38,38,0.15)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.3)', fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>✕ Skip</button>
@@ -2543,6 +2561,8 @@
             const [scheduleSaving, setScheduleSaving] = useState(false);
             const [showSchedule, setShowSchedule] = useState(false);
             const [scheduleEditing, setScheduleEditing] = useState(true);
+            const [scheduleLocType, setScheduleLocType] = useState('remote');
+            const [scheduleCountry, setScheduleCountry] = useState('India');
             const _computeNextRun = (lastRun, intervalH) => {
                 if (!lastRun) return new Date(Date.now() + intervalH * 3600 * 1000);
                 return new Date(new Date(lastRun).getTime() + intervalH * 3600 * 1000);
@@ -2604,6 +2624,10 @@
                     setScheduleInterval(s.interval_hours || 24);
                     setScheduleLastRun(s.last_run || null);
                     if (s.enabled) setScheduleEditing(false);
+                    const savedLoc = (s.params || {}).location || 'remote';
+                    if (savedLoc === 'remote') { setScheduleLocType('remote'); }
+                    else if (savedLoc.startsWith('remote ')) { setScheduleLocType('remote_country'); setScheduleCountry(savedLoc.replace('remote ', '')); }
+                    else { setScheduleLocType('custom'); setScheduleCountry(savedLoc); }
                 }).catch(() => {});
                 return () => { if (pollRef.current) clearInterval(pollRef.current); };
             }, []);
@@ -2612,14 +2636,15 @@
                 setScheduleSaving(true);
                 const customSkillList = customSkills.split(',').map(s => s.trim()).filter(Boolean);
                 const allSkills = [...selectedSkills, ...customSkillList];
-                let location = 'remote';
-                if (locationType === 'remote_country') location = `remote ${remoteCountry}`;
-                else if (locationType === 'custom') location = customLocation;
+                let schedLocation = 'remote';
+                let schedCountryVal = scheduleCountry.trim();
+                if (scheduleLocType === 'remote_country') schedLocation = `remote ${schedCountryVal}`;
+                else if (scheduleLocType === 'custom') schedLocation = schedCountryVal;
                 try {
                     await api.put('/api/search/schedule', {
                         enabled: scheduleEnabled,
                         interval_hours: scheduleInterval,
-                        params: { job_title: jobTitle, skills: allSkills, location, levels: [...levels], min_score: minScore / 100, min_salary: minSalary },
+                        params: { job_title: jobTitle, skills: allSkills, location: schedLocation, country: scheduleLocType === 'remote_country' ? schedCountryVal : '', levels: [...levels], min_score: minScore / 100, min_salary: minSalary },
                     });
                     showToast(scheduleEnabled ? `Auto-search enabled (every ${scheduleInterval}h)` : 'Auto-search disabled', 'success');
                     setScheduleLastRun(new Date().toISOString());
@@ -2799,6 +2824,12 @@
                                                 {scheduleEnabled ? `Enabled — every ${scheduleInterval}h` : 'Disabled'}
                                             </span>
                                         </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 110 }}>Location</span>
+                                            <span style={{ color: '#e2e8f0', fontSize: '0.88rem' }}>
+                                                {scheduleLocType === 'remote' ? 'Remote (Any Country)' : scheduleLocType === 'remote_country' ? `Remote — ${scheduleCountry}` : scheduleCountry || 'Custom'}
+                                            </span>
+                                        </div>
                                         {scheduleEnabled && (
                                             <>
                                                 {scheduleLastRun && (
@@ -2828,6 +2859,32 @@
                                         <p style={{ color: 'var(--muted)', fontSize: '0.82rem', marginBottom: '0.9rem' }}>
                                             Automatically search with your current filters every N hours. Uses the title, skills, and levels selected above.
                                         </p>
+
+                                        {/* Work mode + location */}
+                                        <div style={{ marginBottom: '1rem' }}>
+                                            <label style={{ display: 'block', fontWeight: 600, color: 'var(--muted)', fontSize: '0.78rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Work Mode & Location</label>
+                                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                                {[
+                                                    { v: 'remote', l: 'Remote (Any Country)' },
+                                                    { v: 'remote_country', l: 'Remote in Country' },
+                                                    { v: 'custom', l: 'Custom' },
+                                                ].map(opt => (
+                                                    <label key={opt.v} onClick={() => setScheduleLocType(opt.v)} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', padding: '0.35rem 0.8rem', borderRadius: 20, border: '1px solid ' + (scheduleLocType === opt.v ? '#3b82f6' : 'var(--border)'), background: scheduleLocType === opt.v ? 'rgba(59,130,246,0.15)' : 'transparent', color: scheduleLocType === opt.v ? '#60a5fa' : 'var(--text2)', fontSize: '0.82rem', fontWeight: scheduleLocType === opt.v ? 600 : 400, userSelect: 'none' }}>
+                                                        <span style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid ' + (scheduleLocType === opt.v ? '#3b82f6' : '#475569'), background: scheduleLocType === opt.v ? '#3b82f6' : 'transparent', display: 'inline-block', flexShrink: 0 }}></span>
+                                                        {opt.l}
+                                                    </label>
+                                                ))}
+                                                {(scheduleLocType === 'remote_country' || scheduleLocType === 'custom') && (
+                                                    <input
+                                                        value={scheduleCountry}
+                                                        onChange={e => setScheduleCountry(e.target.value)}
+                                                        placeholder={scheduleLocType === 'remote_country' ? 'e.g. India' : 'e.g. Bangalore'}
+                                                        style={{ ...styles.input, width: 140, padding: '0.35rem 0.7rem', fontSize: '0.85rem' }}
+                                                    />
+                                                )}
+                                            </div>
+                                        </div>
+
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
                                             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', userSelect: 'none' }}>
                                                 <div onClick={() => setScheduleEnabled(v => !v)} style={{ width: 38, height: 22, borderRadius: 11, background: scheduleEnabled ? '#059669' : '#334155', position: 'relative', transition: 'background 0.2s', cursor: 'pointer', flexShrink: 0 }}>
