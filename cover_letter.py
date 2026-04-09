@@ -164,15 +164,15 @@ def _company_hook(job, signals: dict) -> str:
     """Generate a specific sentence about why this company/role is appealing."""
     hooks = []
     if signals.get("scale"):
-        hooks.append(f"building high-scale systems is exactly the engineering challenge I thrive in")
+        hooks.append("building high-scale systems is exactly the engineering challenge I thrive in")
     if signals.get("distributed"):
-        hooks.append(f"the event-driven, distributed architecture aligns with systems I've built for production")
+        hooks.append("the event-driven, distributed architecture aligns with systems I've built for production")
     if signals.get("leadership"):
-        hooks.append(f"the opportunity to drive architecture decisions and mentor engineers is where I do my best work")
+        hooks.append("the opportunity to drive architecture decisions and mentor engineers is where I do my best work")
     if signals.get("startup"):
-        hooks.append(f"the fast-paced, ownership-driven environment matches how I've worked best")
+        hooks.append("the fast-paced, ownership-driven environment matches how I've worked best")
     if signals.get("fintech"):
-        hooks.append(f"I have a proven track record in high-compliance, high-stakes financial systems")
+        hooks.append("I have a proven track record in high-compliance, high-stakes financial systems")
     return hooks[0] if hooks else ""
 
 

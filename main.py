@@ -13,7 +13,6 @@ Usage:
 import sys
 import os
 import csv
-import json
 import logging
 import time
 from datetime import datetime
@@ -29,14 +28,13 @@ if sys.platform == "win32":
 
 import schedule
 from rich.console import Console
-from rich.progress import Progress, TextColumn, BarColumn
 from rich.panel import Panel
 
 from config import SEARCH_PREFERENCES
 from scrapers import search_all_boards, ALL_SCRAPERS
 from matcher import rank_jobs
 from cover_letter import generate_cover_letter
-from tracker import save_job, get_jobs, get_stats, log_search_run, init_db
+from tracker import save_job, get_jobs, log_search_run, init_db
 from dashboard import show_stats, show_jobs, interactive_menu, show_job_detail
 
 console = Console()

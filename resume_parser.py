@@ -31,8 +31,8 @@ def _quality_score(text: str) -> int:
     headers = len(re.findall(r'\b(?:EXPERIENCE|EDUCATION|SKILLS|SUMMARY|PROJECTS|CERTIFICATIONS|ACHIEVEMENTS)\b', text, re.IGNORECASE))
     score += min(15, headers * 3)
     # Penalty for fragmented short lines (sign of bad extraction)
-    lines = [l.strip() for l in text.split('\n') if l.strip()]
-    short_fragments = sum(1 for l in lines if len(l) < 4 and l[0].isalpha())
+    lines = [ln.strip() for ln in text.split('\n') if ln.strip()]
+    short_fragments = sum(1 for ln in lines if len(ln) < 4 and ln[0].isalpha())
     score -= short_fragments * 5
     # Penalty for broken words (e.g. "Sof" on one line, "tware" on next)
     broken = len(re.findall(r'\b[A-Z][a-z]{0,3}\n\s*[a-z]', text))
@@ -540,7 +540,7 @@ def _extract_phone(text: str) -> str:
 
 def _extract_name(text: str) -> str:
     """Attempt to extract name from first few lines."""
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
     for line in lines[:5]:
         # Name is typically the first non-empty line, all caps or title case
         clean = re.sub(r"[^a-zA-Z\s]", "", line).strip()
@@ -818,15 +818,22 @@ def _score_resume_local(text: str) -> dict:
 
     # 1. Contact info (10 pts)
     contact = 0
-    if _extract_email(text): contact += 3
-    if _extract_phone(text): contact += 3
-    if re.search(r"linkedin|github", text, re.IGNORECASE): contact += 4
+    if _extract_email(text):
+        contact += 3
+    if _extract_phone(text):
+        contact += 3
+    if re.search(r"linkedin|github", text, re.IGNORECASE):
+        contact += 4
     scores["contact_info"] = {"score": contact, "max": 10, "tips": []}
     if contact < 10:
-        if not _extract_email(text): scores["contact_info"]["tips"].append("Add your email address")
-        if not _extract_phone(text): scores["contact_info"]["tips"].append("Add your phone number")
-        if not re.search(r"linkedin", text, re.IGNORECASE): scores["contact_info"]["tips"].append("Add your LinkedIn profile URL")
-        if not re.search(r"github", text, re.IGNORECASE): scores["contact_info"]["tips"].append("Add your GitHub profile URL")
+        if not _extract_email(text):
+            scores["contact_info"]["tips"].append("Add your email address")
+        if not _extract_phone(text):
+            scores["contact_info"]["tips"].append("Add your phone number")
+        if not re.search(r"linkedin", text, re.IGNORECASE):
+            scores["contact_info"]["tips"].append("Add your LinkedIn profile URL")
+        if not re.search(r"github", text, re.IGNORECASE):
+            scores["contact_info"]["tips"].append("Add your GitHub profile URL")
     total += contact
 
     # 2. Summary/Objective (10 pts)
@@ -834,13 +841,18 @@ def _score_resume_local(text: str) -> dict:
     summary_score = 0
     if summary:
         words = len(summary.split())
-        if words >= 30: summary_score = 10
-        elif words >= 15: summary_score = 7
-        else: summary_score = 4
+        if words >= 30:
+            summary_score = 10
+        elif words >= 15:
+            summary_score = 7
+        else:
+            summary_score = 4
     scores["summary"] = {"score": summary_score, "max": 10, "tips": []}
     if summary_score < 10:
-        if not summary: scores["summary"]["tips"].append("Add a professional summary at the top of your resume")
-        elif len(summary.split()) < 30: scores["summary"]["tips"].append("Expand your summary to 2-3 sentences with measurable impact")
+        if not summary:
+            scores["summary"]["tips"].append("Add a professional summary at the top of your resume")
+        elif len(summary.split()) < 30:
+            scores["summary"]["tips"].append("Expand your summary to 2-3 sentences with measurable impact")
     total += summary_score
 
     # 3. Skills (15 pts)
@@ -850,12 +862,15 @@ def _score_resume_local(text: str) -> dict:
     scores["skills"] = {"score": round(skill_score), "max": 15, "tips": []}
     if skill_score < 15:
         scores["skills"]["tips"].append(f"Found {skill_count} skills — aim for 10+ relevant technical skills")
-        if not skills.get("cloud_devops"): scores["skills"]["tips"].append("Add cloud/DevOps skills (AWS, Docker, CI/CD)")
+        if not skills.get("cloud_devops"):
+            scores["skills"]["tips"].append("Add cloud/DevOps skills (AWS, Docker, CI/CD)")
     total += skill_score
 
     # 4. Experience (25 pts)
     exp = _extract_experience(text)
     exp_score = 0
+    bullet_count = 0
+    metrics = 0
     if exp:
         exp_score += min(10, len(exp) * 3)  # up to 10 for number of roles
         bullet_count = sum(len(e.get("highlights", [])) for e in exp)
@@ -865,9 +880,12 @@ def _score_resume_local(text: str) -> dict:
         exp_score += min(5, metrics * 1.5)  # up to 5 for metrics
     scores["experience"] = {"score": round(min(25, exp_score)), "max": 25, "tips": []}
     if exp_score < 25:
-        if not exp: scores["experience"]["tips"].append("Add your work experience with company names and dates")
-        elif bullet_count < 6: scores["experience"]["tips"].append("Add more bullet points to each role (3-5 per job)")
-        if metrics < 3: scores["experience"]["tips"].append("Quantify achievements with numbers (%, $, users, etc.)")
+        if not exp:
+            scores["experience"]["tips"].append("Add your work experience with company names and dates")
+        elif bullet_count < 6:
+            scores["experience"]["tips"].append("Add more bullet points to each role (3-5 per job)")
+        if metrics < 3:
+            scores["experience"]["tips"].append("Quantify achievements with numbers (%, $, users, etc.)")
     total += min(25, exp_score)
 
     # 5. Education (10 pts)
@@ -881,15 +899,22 @@ def _score_resume_local(text: str) -> dict:
     # 6. Formatting & length (15 pts)
     word_count = len(text.split())
     format_score = 0
-    if 300 <= word_count <= 1200: format_score += 5
-    elif word_count > 100: format_score += 3
-    if len(re.findall(r'[•\-\*]\s', text)) >= 5: format_score += 5  # uses bullet points
-    if re.search(r'(?:EXPERIENCE|EDUCATION|SKILLS|SUMMARY|PROJECTS)', text, re.IGNORECASE): format_score += 5  # has section headers
+    if 300 <= word_count <= 1200:
+        format_score += 5
+    elif word_count > 100:
+        format_score += 3
+    if len(re.findall(r'[•\-\*]\s', text)) >= 5:
+        format_score += 5  # uses bullet points
+    if re.search(r'(?:EXPERIENCE|EDUCATION|SKILLS|SUMMARY|PROJECTS)', text, re.IGNORECASE):
+        format_score += 5  # has section headers
     scores["formatting"] = {"score": min(15, format_score), "max": 15, "tips": []}
     if format_score < 15:
-        if word_count < 300: scores["formatting"]["tips"].append("Resume seems too short — aim for 400-800 words")
-        elif word_count > 1200: scores["formatting"]["tips"].append("Resume is too long — keep it to 1-2 pages")
-        if len(re.findall(r'[•\-\*]\s', text)) < 5: scores["formatting"]["tips"].append("Use bullet points for achievements instead of paragraphs")
+        if word_count < 300:
+            scores["formatting"]["tips"].append("Resume seems too short — aim for 400-800 words")
+        elif word_count > 1200:
+            scores["formatting"]["tips"].append("Resume is too long — keep it to 1-2 pages")
+        if len(re.findall(r'[•\-\*]\s', text)) < 5:
+            scores["formatting"]["tips"].append("Use bullet points for achievements instead of paragraphs")
     total += min(15, format_score)
 
     # 7. Keywords & ATS (15 pts)

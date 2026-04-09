@@ -1,7 +1,6 @@
 """Import profile data from GitHub and LinkedIn."""
 
 import os
-import re
 import logging
 import requests
 

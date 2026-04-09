@@ -458,7 +458,6 @@ def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
     from pymongo import InsertOne, UpdateOne
     from pymongo.errors import BulkWriteError
     from datetime import timedelta
-    import re as _re
 
     db = _get_db()
     docs = [_build_job_doc(job, score_data, user_id=user_id) for job, score_data in ranked]
@@ -611,7 +610,6 @@ def get_jobs(
     user_id=None,
 ) -> tuple[list[dict], int]:
     """Retrieve paginated jobs with optional filters, search, and sort."""
-    import re as _re
     from pymongo import ASCENDING
 
     db = _get_db()

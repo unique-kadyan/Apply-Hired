@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 import requests as http_requests
 from flask import Blueprint, request, jsonify, session, redirect
 
-from middleware import DEFAULT_PROFILE, get_user_profile
+from middleware import DEFAULT_PROFILE
 from services.email_service import is_smtp_configured, send_otp_email
 from tracker import (
     create_user, authenticate_user, get_user_by_id,
@@ -183,7 +183,6 @@ def forgot_password():
     reset_url = f"{base_url}/?reset_token={token}"
 
     # Send email
-    from services.email_service import send_otp_email as _send_email
     _send_reset_email(email, reset_url)
 
     return jsonify({"message": "If that email exists, a reset link has been sent."})

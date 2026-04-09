@@ -9,7 +9,6 @@ from rich.panel import Panel
 from rich.columns import Columns
 from rich.prompt import Prompt, IntPrompt, Confirm
 from rich.text import Text
-from rich.markdown import Markdown
 
 from tracker import get_jobs, get_stats, get_job_by_id, update_job_status
 from cover_letter import generate_cover_letter

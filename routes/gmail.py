@@ -422,7 +422,7 @@ def _popup_response(success: bool, message: str = "") -> str:
     """Return an HTML page that notifies the opener via postMessage and auto-closes."""
     msg_type = "gmail_connected" if success else "gmail_error"
     msg_detail = message if not success else ""
-    fallback_url = f"/?gmail_connected=1" if success else f"/?gmail_error={message}"
+    fallback_url = "/?gmail_connected=1" if success else f"/?gmail_error={message}"
     status_icon = "✅" if success else "❌"
     status_text = "Gmail Connected!" if success else f"Connection failed: {message}"
     status_color = "#6ee7b7" if success else "#f87171"
@@ -628,6 +628,7 @@ def gmail_sync():
         hdrs = msg.get("payload", {}).get("headers", [])
         subject = _get_header(hdrs, "subject")
         sender = _get_header(hdrs, "from")
+        date_str = _get_header(hdrs, "date")
         body = _extract_body(msg.get("payload", {}))[:2000]
 
         category = _classify_email(subject, body)

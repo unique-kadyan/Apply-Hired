@@ -1,5 +1,6 @@
 """Job scrapers for multiple free job boards and APIs."""
 
+import os
 import re
 import time
 import logging
@@ -739,7 +740,7 @@ class TheMuseScraper(BaseScraper):
                 continue
 
             levels = item.get("levels", [])
-            level_names = [l.get("name", "") for l in levels]
+            level_names = [lvl.get("name", "") for lvl in levels]
 
             jobs.append(
                 Job(
@@ -1557,8 +1558,6 @@ class CareerJetScraper(BaseScraper):
 # ---------------------------------------------------------------------------
 # All scrapers
 # ---------------------------------------------------------------------------
-
-import os
 
 ALL_SCRAPERS: list[BaseScraper] = [
     # ── Free public APIs (no key needed) ─────────────────────────────────

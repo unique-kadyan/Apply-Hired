@@ -6,7 +6,6 @@ import json
 import logging
 import re
 import webbrowser
-from typing import Optional
 
 from config import PROFILE, OPENAI_API_KEY
 
