@@ -1162,67 +1162,239 @@ def _is_remote_job(job: "Job") -> bool:
     return False
 
 
-# Phrases that signal a job is restricted to workers in a specific country.
-# Maps canonical country name → list of exclusive-access phrases in job descriptions.
-_COUNTRY_ONLY_PHRASES: dict[str, list] = {
-    "United States": [
-        "authorized to work in the us",
-        "authorized to work in the united states",
-        "must be authorized to work in the u.s",
-        "legally authorized to work in the united states",
-        "us work authorization",
-        "us citizens and permanent residents",
-        "requires us citizenship",
-        "united states citizens only",
-        "must reside in the united states",
-        "must be located in the us",
-        "must be located in the united states",
-        "only consider candidates in the us",
-        "only consider candidates in the united states",
-        "w-2 employee",
-        "w2 only",
-        "1099 contractor",
-    ],
-    "United Kingdom": [
-        "must have the right to work in the uk",
-        "right to work in the united kingdom",
-        "uk work authorization",
-        "must be based in the uk",
-        "must reside in the uk",
-    ],
-    "Canada": [
-        "authorized to work in canada",
-        "canadian work authorization",
-        "must be based in canada",
-        "must reside in canada",
-    ],
-    "Australia": [
-        "authorized to work in australia",
-        "australian work authorization",
-        "must reside in australia",
-    ],
+# ---------------------------------------------------------------------------
+# ISO country code matching — abbrev/name/code → alpha-2
+# ---------------------------------------------------------------------------
+
+# Common abbreviations and shorthands → ISO alpha-2
+_ABBREV_TO_ISO: dict[str, str] = {
+    # North America
+    "US": "US", "USA": "US", "U.S": "US", "U.S.A": "US",
+    "CA": "CA", "CAN": "CA",
+    "MX": "MX",
+    # Europe
+    "UK": "GB", "U.K": "GB", "GB": "GB",
+    "DE": "DE", "GER": "DE",
+    "FR": "FR", "FRA": "FR",
+    "NL": "NL",
+    "SE": "SE", "SWE": "SE",
+    "NO": "NO", "NOR": "NO",
+    "FI": "FI",
+    "DK": "DK",
+    "CH": "CH",
+    "AT": "AT",
+    "BE": "BE",
+    "PL": "PL",
+    "CZ": "CZ",
+    "HU": "HU",
+    "RO": "RO",
+    "PT": "PT",
+    "ES": "ES",
+    "IT": "IT",
+    "IE": "IE",
+    "UA": "UA",
+    "TR": "TR",
+    "GR": "GR",
+    "LV": "LV",
+    "LT": "LT",
+    "EE": "EE",
+    "SK": "SK",
+    "HR": "HR",
+    "RS": "RS",
+    # Asia-Pacific
+    "IN": "IN", "IND": "IN",
+    "SG": "SG", "SGP": "SG",
+    "AU": "AU", "AUS": "AU",
+    "NZ": "NZ",
+    "JP": "JP", "JPN": "JP",
+    "KR": "KR",
+    "CN": "CN",
+    "HK": "HK",
+    "TW": "TW",
+    "PH": "PH",
+    "ID": "ID",
+    "MY": "MY",
+    "TH": "TH",
+    "VN": "VN",
+    "PK": "PK",
+    "BD": "BD",
+    "LK": "LK",
+    # Middle East / Africa
+    "AE": "AE", "UAE": "AE",
+    "IL": "IL",
+    "SA": "SA",
+    "ZA": "ZA",
+    "NG": "NG",
+    "KE": "KE",
+    "EG": "EG",
+    # Latin America
+    "BR": "BR", "BRA": "BR",
+    "AR": "AR",
+    "CO": "CO",
+    "CL": "CL",
+    "PE": "PE",
 }
 
-# Countries that should NOT be treated as restrictive for India users
-_INDIA_INCLUSIVE_COUNTRIES = {"India"}
+# Full country name → ISO alpha-2 (handles names pycountry may not cover cleanly)
+_NAME_TO_ISO: dict[str, str] = {
+    "united states": "US", "united states of america": "US", "america": "US",
+    "united kingdom": "GB", "britain": "GB", "great britain": "GB", "england": "GB",
+    "india": "IN",
+    "canada": "CA",
+    "australia": "AU",
+    "germany": "DE",
+    "france": "FR",
+    "netherlands": "NL",
+    "sweden": "SE",
+    "norway": "NO",
+    "finland": "FI",
+    "denmark": "DK",
+    "switzerland": "CH",
+    "austria": "AT",
+    "belgium": "BE",
+    "poland": "PL",
+    "czechia": "CZ", "czech republic": "CZ",
+    "hungary": "HU",
+    "romania": "RO",
+    "portugal": "PT",
+    "spain": "ES",
+    "italy": "IT",
+    "ireland": "IE",
+    "ukraine": "UA",
+    "turkey": "TR",
+    "greece": "GR",
+    "latvia": "LV",
+    "lithuania": "LT",
+    "estonia": "EE",
+    "new zealand": "NZ",
+    "singapore": "SG",
+    "japan": "JP",
+    "south korea": "KR", "korea": "KR",
+    "china": "CN",
+    "hong kong": "HK",
+    "taiwan": "TW",
+    "philippines": "PH",
+    "indonesia": "ID",
+    "malaysia": "MY",
+    "thailand": "TH",
+    "vietnam": "VN",
+    "pakistan": "PK",
+    "bangladesh": "BD",
+    "sri lanka": "LK",
+    "united arab emirates": "AE", "uae": "AE",
+    "israel": "IL",
+    "saudi arabia": "SA",
+    "south africa": "ZA",
+    "nigeria": "NG",
+    "kenya": "KE",
+    "egypt": "EG",
+    "brazil": "BR",
+    "argentina": "AR",
+    "colombia": "CO",
+    "chile": "CL",
+    "peru": "PE",
+    "mexico": "MX",
+    "russia": "RU",
+}
+
+# Terms that mean "global/no restriction" — allow these through unconditionally
+_GLOBAL_TERMS = {"worldwide", "global", "anywhere", "international", "all countries"}
+
+
+def _to_iso(text: str) -> str | None:
+    """Convert any country mention (name, abbreviation, ISO code) to ISO alpha-2.
+
+    Returns None if no country can be identified.
+    """
+    if not text:
+        return None
+    text = text.strip()
+    text_lower = text.lower()
+
+    # Check if it's a global/unrestricted term
+    for term in _GLOBAL_TERMS:
+        if term in text_lower:
+            return "GLOBAL"
+
+    # Full name match (longest first to avoid 'Korea' matching inside 'South Korea')
+    for name, iso in sorted(_NAME_TO_ISO.items(), key=lambda x: len(x[0]), reverse=True):
+        if re.search(rf"\b{re.escape(name)}\b", text_lower):
+            return iso
+
+    # Abbreviation match on original casing (US, UK, CA etc.)
+    abbrev_pattern = r"\b(" + "|".join(re.escape(k) for k in _ABBREV_TO_ISO) + r")\b"
+    m = re.search(abbrev_pattern, text, re.IGNORECASE)
+    if m:
+        iso = _ABBREV_TO_ISO.get(m.group(1).upper())
+        if iso:
+            return iso
+
+    # Fallback: pycountry full name search
+    try:
+        import pycountry
+        for country in pycountry.countries:
+            if re.search(rf"\b{re.escape(country.name.lower())}\b", text_lower):
+                return country.alpha_2
+            if country.alpha_2.lower() == text_lower or country.alpha_3.lower() == text_lower:
+                return country.alpha_2
+    except Exception:
+        pass
+
+    return None
+
+
+def _extract_job_country_iso(job: "Job") -> str | None:
+    """Extract the country ISO code a job is targeting.
+
+    Priority order:
+    1. Location field — most explicit signal (e.g. 'REMOTE (US)', 'Remote India')
+    2. First 400 chars of description — covers inline statements like 'Remote in India'
+    3. Returns None if no specific country found (treat as global remote → allow)
+    """
+    location = job.location or ""
+
+    # Skip bare global-remote signals in location
+    loc_lower = location.lower()
+    skip_bare = {"remote", "work from home", "wfh", "telecommute", "distributed"}
+    if loc_lower.strip() in skip_bare:
+        return None  # no country specified
+
+    loc_iso = _to_iso(location)
+    if loc_iso == "GLOBAL":
+        return None  # worldwide → no restriction
+    if loc_iso:
+        return loc_iso
+
+    # Scan first 400 chars of description for inline country mentions
+    desc_head = (job.description or "")[:400]
+    desc_iso = _to_iso(desc_head)
+    if desc_iso == "GLOBAL":
+        return None
+    return desc_iso  # may still be None → no restriction found
 
 
 def _is_job_open_to_country(job: "Job", user_country: str) -> bool:
-    """Return False if the job description explicitly restricts to a country
-    that is NOT the user's country.
+    """Return True if the job is open to the user's country.
 
-    Only applies when the user's country is not the restricted country.
-    Bare "Remote" jobs without restriction phrases are allowed through.
+    Algorithm:
+    - Convert user_country → ISO alpha-2
+    - Extract job's target country ISO from location field / description head
+    - If job has no specific country → allow (global remote)
+    - If job's country ISO == user's ISO → allow
+    - Otherwise → reject
     """
     if not user_country:
         return True
-    desc_lower = (job.description or "").lower()
-    for restricted_country, phrases in _COUNTRY_ONLY_PHRASES.items():
-        if restricted_country.lower() == user_country.lower():
-            continue  # restriction is for user's own country → fine
-        if any(phrase in desc_lower for phrase in phrases):
-            return False  # job explicitly restricted to a different country
-    return True
+
+    user_iso = _to_iso(user_country)
+    if not user_iso or user_iso == "GLOBAL":
+        return True  # can't determine user country → don't filter
+
+    job_iso = _extract_job_country_iso(job)
+    if job_iso is None:
+        return True  # no country specified in job → global remote → allow
+
+    return job_iso == user_iso
 
 
 # ---------------------------------------------------------------------------

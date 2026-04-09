@@ -484,39 +484,40 @@
                                         </button>
                                     )}
                                 </div>
-                                {visible.map((p, i) => (
-                                    <div key={i} style={{ marginBottom: '0.65rem', padding: '0.55rem 0.7rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8, transition: 'border-color 0.2s' }}
+                                {visible.map((p, i) => {
+                                    const allLangs = (p.languages && p.languages.length > 0) ? p.languages : (p.language ? [p.language] : []);
+                                    return (
+                                    <div key={i} style={{ marginBottom: '0.65rem', padding: '0.55rem 0.7rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8, transition: 'border-color 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}
                                         onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(99,102,241,0.4)'}
                                         onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
-                                        {/* Project name (left) + language/topics/stars (right) */}
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-                                            <a href={p.url} target="_blank" rel="noopener" style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--accent)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.3rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {/* Left: project name + description stacked */}
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <a href={p.url} target="_blank" rel="noopener" style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                 {p.name}
                                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5, flexShrink: 0 }}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                                             </a>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}>
-                                                {p.language && <span style={tagStyle(p.language)}>{p.language}</span>}
-                                                {(p.topics || []).slice(0, 3).map((t, ti) => (
+                                            {p.description && <p style={{ color: 'var(--muted)', fontSize: '0.79rem', margin: '0.25rem 0 0', lineHeight: 1.4 }}>{p.description}</p>}
+                                        </div>
+                                        {/* Right: language badges + topics + stars — always vertically centered */}
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', gap: '0.25rem', flexShrink: 0 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                                {allLangs.map((lang, li) => (
+                                                    <span key={li} style={tagStyle(lang)}>{lang}</span>
+                                                ))}
+                                                {(p.topics || []).slice(0, 2).map((t, ti) => (
                                                     <span key={ti} style={topicStyle}>{t}</span>
                                                 ))}
                                                 {p.stars > 0 && (
-                                                    <span style={{ color: '#fbbf24', fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: '0.2rem', marginLeft: '0.15rem' }}>
+                                                    <span style={{ color: '#fbbf24', fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: '0.2rem', marginLeft: '0.1rem' }}>
                                                         <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                                                         {p.stars}
                                                     </span>
                                                 )}
                                             </div>
                                         </div>
-                                        {p.description && <p style={{ color: 'var(--muted)', fontSize: '0.79rem', margin: '0.3rem 0 0', lineHeight: 1.4 }}>{p.description}</p>}
                                     </div>
-                                ))}
-                                {hasMore && !showAllProjects && (
-                                    <div style={{ textAlign: 'center', marginTop: '0.25rem' }}>
-                                        <button onClick={() => setShowAllProjects(true)} style={{ background: 'none', border: 'none', color: '#818cf8', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline', opacity: 0.8 }}>
-                                            + {profile.projects.length - 5} more projects
-                                        </button>
-                                    </div>
-                                )}
+                                    );
+                                })}
                             </div>
                         );
                     })()}

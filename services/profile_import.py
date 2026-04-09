@@ -77,19 +77,37 @@ def import_github(username: str, token: str = "") -> dict:
         top_languages = sorted(languages, key=languages.get, reverse=True)[:10]
 
         # All non-fork repos with topics (for full list in frontend)
-        top_repos = []
-        for repo in (repos if isinstance(repos, list) else []):
+        # Fetch per-repo language breakdown (top-5 by bytes) in parallel
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _fetch_repo_languages(repo):
             if repo.get("fork"):
-                continue
-            top_repos.append({
+                return None
+            lang_resp = requests.get(
+                repo["languages_url"],
+                headers=headers,
+                timeout=10,
+            )
+            lang_bytes = lang_resp.json() if lang_resp.status_code == 200 else {}
+            # Sort by bytes descending, take top 5
+            all_langs = sorted(lang_bytes, key=lang_bytes.get, reverse=True)[:5]
+            return {
                 "name": repo.get("name", ""),
                 "description": repo.get("description", "") or "",
                 "url": repo.get("html_url", ""),
                 "language": repo.get("language", "") or "",
+                "languages": all_langs,
                 "stars": repo.get("stargazers_count", 0),
                 "topics": repo.get("topics", []),
                 "pushed_at": repo.get("pushed_at", ""),
-            })
+            }
+
+        top_repos = []
+        non_fork_repos = [r for r in (repos if isinstance(repos, list) else []) if not r.get("fork")]
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            for result in ex.map(_fetch_repo_languages, non_fork_repos):
+                if result:
+                    top_repos.append(result)
 
         # Extract topics/skills from repos
         all_topics = []
