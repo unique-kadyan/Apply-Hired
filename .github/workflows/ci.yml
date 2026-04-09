@@ -182,9 +182,14 @@ jobs:
           EOF
 
       - name: Verify all route blueprints are present
+        env:
+          SECRET_KEY: ci-test-secret
+          MONGO_URI: mongodb://localhost:27017/test
         run: |
           python - <<'EOF'
           import importlib, sys
+          import unittest.mock as mock
+
           blueprints = [
               "routes.auth",
               "routes.profile",
@@ -194,13 +199,15 @@ jobs:
               "routes.gmail",
           ]
           failed = []
-          for bp in blueprints:
-              try:
-                  importlib.import_module(bp)
-                  print(f"  ✅  {bp}")
-              except ImportError as e:
-                  print(f"  ❌  {bp}: {e}", file=sys.stderr)
-                  failed.append(bp)
+          with mock.patch("pymongo.MongoClient") as mc:
+              mc.return_value.__getitem__ = lambda s, k: mock.MagicMock()
+              for bp in blueprints:
+                  try:
+                      importlib.import_module(bp)
+                      print(f"  ✅  {bp}")
+                  except ImportError as e:
+                      print(f"  ❌  {bp}: {e}", file=sys.stderr)
+                      failed.append(bp)
           if failed:
               sys.exit(1)
           EOF
