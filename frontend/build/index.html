@@ -3068,6 +3068,8 @@
             const [salaryCurrency, setSalaryCurrency] = useState(profile.expected_salary_currency || 'INR');
             const [salaryPeriod, setSalaryPeriod] = useState(profile.expected_salary_period || 'annually');
             const [prefSaving, setPrefSaving] = useState(false);
+            const _prefSaved = !!(profile.notice_period || profile.expected_salary_min || profile.expected_salary_max);
+            const [prefEditing, setPrefEditing] = useState(!_prefSaved);
 
             const uploadAvatar = async (e) => {
                 const file = e.target.files[0];
@@ -3225,49 +3227,76 @@
 
                     {/* Job Preferences */}
                     <div style={styles.card}>
-                        <h2 style={{ fontSize: '1.1rem', marginBottom: '1.2rem' }}>Job Preferences</h2>
-
-                        {/* Notice Period */}
-                        <div style={{ marginBottom: '1.5rem' }}>
-                            <label style={{ display: 'block', fontWeight: 600, color: 'var(--muted)', fontSize: '0.8rem', marginBottom: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Notice Period</label>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                {['Immediate', '15 days', '30 days', '45 days', '60 days', '90 days'].map(opt => (
-                                    <label key={opt} onClick={() => setNoticePeriod(opt)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', padding: '0.4rem 0.9rem', borderRadius: 20, border: '1px solid ' + (noticePeriod === opt ? '#3b82f6' : 'var(--border)'), background: noticePeriod === opt ? 'rgba(59,130,246,0.15)' : 'transparent', color: noticePeriod === opt ? '#60a5fa' : 'var(--text2)', fontSize: '0.87rem', fontWeight: noticePeriod === opt ? 600 : 400, transition: 'all 0.15s', userSelect: 'none' }}>
-                                        <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid ' + (noticePeriod === opt ? '#3b82f6' : '#475569'), background: noticePeriod === opt ? '#3b82f6' : 'transparent', display: 'inline-block', flexShrink: 0, transition: 'all 0.15s' }}></span>
-                                        {opt}
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Expected Compensation */}
-                        <div style={{ marginBottom: '1.5rem' }}>
-                            <label style={{ display: 'block', fontWeight: 600, color: 'var(--muted)', fontSize: '0.8rem', marginBottom: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Expected Compensation</label>
-                            <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                                <select value={salaryCurrency} onChange={e => setSalaryCurrency(e.target.value)} style={{ ...styles.input, width: 90, padding: '0.5rem 0.5rem' }}>
-                                    {['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'].map(c => <option key={c}>{c}</option>)}
-                                </select>
-                                <input type="number" placeholder="Min" value={salaryMin} onChange={e => setSalaryMin(e.target.value)} style={{ ...styles.input, width: 120, padding: '0.5rem 0.7rem' }} min={0} />
-                                <span style={{ color: 'var(--muted)', fontSize: '1.1rem' }}>–</span>
-                                <input type="number" placeholder="Max" value={salaryMax} onChange={e => setSalaryMax(e.target.value)} style={{ ...styles.input, width: 120, padding: '0.5rem 0.7rem' }} min={0} />
-                                <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                                    {['monthly', 'annually'].map(p => (
-                                        <button key={p} type="button" onClick={() => setSalaryPeriod(p)} style={{ padding: '0.45rem 0.85rem', background: salaryPeriod === p ? '#3b82f6' : 'transparent', color: salaryPeriod === p ? '#fff' : 'var(--muted)', border: 'none', cursor: 'pointer', fontSize: '0.84rem', fontWeight: salaryPeriod === p ? 600 : 400, transition: 'all 0.15s' }}>
-                                            {p.charAt(0).toUpperCase() + p.slice(1)}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            {(salaryMin || salaryMax) && (
-                                <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '0.5rem' }}>
-                                    {salaryCurrency} {salaryMin && salaryMax ? `${Number(salaryMin).toLocaleString()} – ${Number(salaryMax).toLocaleString()}` : salaryMin ? `from ${Number(salaryMin).toLocaleString()}` : `up to ${Number(salaryMax).toLocaleString()}`} / {salaryPeriod}
-                                </p>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: prefEditing ? '1.2rem' : '1rem' }}>
+                            <h2 style={{ fontSize: '1.1rem', margin: 0 }}>Job Preferences</h2>
+                            {!prefEditing && (
+                                <button onClick={() => setPrefEditing(true)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '0.35rem 0.85rem', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.35rem', transition: 'all 0.15s' }}>
+                                    ✏️ Edit
+                                </button>
                             )}
                         </div>
 
-                        <button onClick={savePreferences} disabled={prefSaving} style={{ ...styles.btn, ...styles.btnPrimary }}>
-                            {prefSaving ? '⏳ Saving...' : 'Save Preferences'}
-                        </button>
+                        {prefEditing ? (
+                            React.createElement(React.Fragment, null,
+                                /* Notice Period */
+                                React.createElement('div', { style: { marginBottom: '1.5rem' } },
+                                    React.createElement('label', { style: { display: 'block', fontWeight: 600, color: 'var(--muted)', fontSize: '0.8rem', marginBottom: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em' } }, 'Notice Period'),
+                                    React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem' } },
+                                        ['Immediate', '15 days', '30 days', '45 days', '60 days', '90 days'].map(opt =>
+                                            React.createElement('label', { key: opt, onClick: () => setNoticePeriod(opt), style: { display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', padding: '0.4rem 0.9rem', borderRadius: 20, border: '1px solid ' + (noticePeriod === opt ? '#3b82f6' : 'var(--border)'), background: noticePeriod === opt ? 'rgba(59,130,246,0.15)' : 'transparent', color: noticePeriod === opt ? '#60a5fa' : 'var(--text2)', fontSize: '0.87rem', fontWeight: noticePeriod === opt ? 600 : 400, transition: 'all 0.15s', userSelect: 'none' } },
+                                                React.createElement('span', { style: { width: 12, height: 12, borderRadius: '50%', border: '2px solid ' + (noticePeriod === opt ? '#3b82f6' : '#475569'), background: noticePeriod === opt ? '#3b82f6' : 'transparent', display: 'inline-block', flexShrink: 0, transition: 'all 0.15s' } }),
+                                                opt
+                                            )
+                                        )
+                                    )
+                                ),
+                                /* Expected Compensation */
+                                React.createElement('div', { style: { marginBottom: '1.5rem' } },
+                                    React.createElement('label', { style: { display: 'block', fontWeight: 600, color: 'var(--muted)', fontSize: '0.8rem', marginBottom: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.06em' } }, 'Expected Compensation'),
+                                    React.createElement('div', { style: { display: 'flex', gap: '0.65rem', flexWrap: 'wrap', alignItems: 'center' } },
+                                        React.createElement('select', { value: salaryCurrency, onChange: e => setSalaryCurrency(e.target.value), style: { ...styles.input, width: 90, padding: '0.5rem 0.5rem' } },
+                                            ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'].map(c => React.createElement('option', { key: c }, c))
+                                        ),
+                                        React.createElement('input', { type: 'number', placeholder: 'Min', value: salaryMin, onChange: e => setSalaryMin(e.target.value), style: { ...styles.input, width: 120, padding: '0.5rem 0.7rem' }, min: 0 }),
+                                        React.createElement('span', { style: { color: 'var(--muted)', fontSize: '1.1rem' } }, '–'),
+                                        React.createElement('input', { type: 'number', placeholder: 'Max', value: salaryMax, onChange: e => setSalaryMax(e.target.value), style: { ...styles.input, width: 120, padding: '0.5rem 0.7rem' }, min: 0 }),
+                                        React.createElement('div', { style: { display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' } },
+                                            ['monthly', 'annually'].map(p =>
+                                                React.createElement('button', { key: p, type: 'button', onClick: () => setSalaryPeriod(p), style: { padding: '0.45rem 0.85rem', background: salaryPeriod === p ? '#3b82f6' : 'transparent', color: salaryPeriod === p ? '#fff' : 'var(--muted)', border: 'none', cursor: 'pointer', fontSize: '0.84rem', fontWeight: salaryPeriod === p ? 600 : 400, transition: 'all 0.15s' } },
+                                                    p.charAt(0).toUpperCase() + p.slice(1)
+                                                )
+                                            )
+                                        )
+                                    ),
+                                    (salaryMin || salaryMax) && React.createElement('p', { style: { color: '#94a3b8', fontSize: '0.8rem', marginTop: '0.5rem' } },
+                                        `${salaryCurrency} ${salaryMin && salaryMax ? `${Number(salaryMin).toLocaleString()} – ${Number(salaryMax).toLocaleString()}` : salaryMin ? `from ${Number(salaryMin).toLocaleString()}` : `up to ${Number(salaryMax).toLocaleString()}`} / ${salaryPeriod}`
+                                    )
+                                ),
+                                /* Actions */
+                                React.createElement('div', { style: { display: 'flex', gap: '0.75rem', alignItems: 'center' } },
+                                    React.createElement('button', { onClick: async () => { await savePreferences(); setPrefEditing(false); }, disabled: prefSaving, style: { ...styles.btn, ...styles.btnPrimary } },
+                                        prefSaving ? 'Saving…' : 'Save Preferences'
+                                    ),
+                                    _prefSaved && React.createElement('button', { type: 'button', onClick: () => setPrefEditing(false), style: { background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '0.85rem', padding: '0.4rem 0.5rem' } }, 'Cancel')
+                                )
+                            )
+                        ) : (
+                            /* Read-only summary view */
+                            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '0.85rem' } },
+                                noticePeriod && React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '1rem' } },
+                                    React.createElement('span', { style: { fontSize: '0.78rem', fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 130 } }, 'Notice Period'),
+                                    React.createElement('span', { style: { background: 'rgba(59,130,246,0.12)', color: '#60a5fa', padding: '0.3rem 0.9rem', borderRadius: 20, fontSize: '0.87rem', fontWeight: 600, border: '1px solid rgba(59,130,246,0.25)' } }, noticePeriod)
+                                ),
+                                (salaryMin || salaryMax) && React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '1rem' } },
+                                    React.createElement('span', { style: { fontSize: '0.78rem', fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 130 } }, 'Compensation'),
+                                    React.createElement('span', { style: { color: '#e2e8f0', fontSize: '0.95rem', fontWeight: 500 } },
+                                        `${salaryCurrency} ${salaryMin && salaryMax ? `${Number(salaryMin).toLocaleString()} – ${Number(salaryMax).toLocaleString()}` : salaryMin ? `from ${Number(salaryMin).toLocaleString()}` : `up to ${Number(salaryMax).toLocaleString()}`}`,
+                                        React.createElement('span', { style: { color: 'var(--muted)', fontSize: '0.82rem', marginLeft: '0.4rem' } }, `/ ${salaryPeriod}`)
+                                    )
+                                ),
+                                !noticePeriod && !salaryMin && !salaryMax && React.createElement('p', { style: { color: 'var(--muted)', fontSize: '0.88rem', margin: 0 } }, 'No preferences set yet.')
+                            )
+                        )}
                     </div>
 
                     {/* Skills */}

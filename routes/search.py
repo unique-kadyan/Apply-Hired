@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from config import LOCATION_PREFERENCES
 from middleware import get_user_profile, login_required
 from services.search_service import get_search_status, is_search_running, start_search
-from tracker import _get_db, get_stats
+from tracker import _get_db, _to_object_id, get_stats
 
 _CURRENCY_TO_USD = {
     "INR": 83.5, "EUR": 0.92, "GBP": 0.79, "AED": 3.67,
@@ -80,7 +80,7 @@ def get_schedule():
     """Return this user's auto-search schedule settings."""
     db = _get_db()
     user = db.users.find_one(
-        {"_id": request.user["_id"]},
+        {"_id": _to_object_id(request.user["id"])},
         {"auto_search_enabled": 1, "auto_search_interval_hours": 1,
          "auto_search_params": 1, "auto_search_last_run": 1},
     )
@@ -102,7 +102,7 @@ def set_schedule():
     data = request.get_json() or {}
     db = _get_db()
     db.users.update_one(
-        {"_id": request.user["_id"]},
+        {"_id": _to_object_id(request.user["id"])},
         {"$set": {
             "auto_search_enabled": bool(data.get("enabled", False)),
             "auto_search_interval_hours": int(data.get("interval_hours", 24)),
