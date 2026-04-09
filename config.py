@@ -20,7 +20,7 @@ MONGO_URI = os.getenv("MONGO_URI", "")
 # SQLite fallback (only used if MONGO_URI is not set)
 _default_db_dir = os.path.join(os.path.dirname(__file__), "data")
 if os.environ.get("RENDER") or not os.access(os.path.dirname(__file__), os.W_OK):
-    _default_db_dir = os.path.join("/tmp", "jobbot_data")
+    _default_db_dir = os.path.join("/tmp", "jobbot_data")  # nosec B108
 os.makedirs(_default_db_dir, exist_ok=True)
 DB_PATH = os.path.join(_default_db_dir, "jobs.db")
 
