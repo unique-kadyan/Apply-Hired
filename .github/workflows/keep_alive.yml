@@ -1,33 +1,41 @@
 name: Keep Render Instance Alive
 
-# Starts a new long-running job every 4 hours.
-# Each job loops internally, pinging /health every 30 s for ~3h 55m.
-# GitHub only needs to be reliable every 4 hours (not every 5 min).
-# Public repo → unlimited free minutes.
+# Two staggered cron schedules = effectively triggers every hour.
+# Each job runs for 2 hours pinging every 15s.
+# Consecutive jobs overlap by 1 hour.
+#
+# Worst-case: GitHub delays a trigger by 45 min → previous job still has 15 min left → no gap.
+# Ping cycle: curl(5s max) + sleep(10s) = 15s → well under Render's 40s inactivity threshold.
+# Public repo = unlimited free GitHub Actions minutes.
 
 on:
   schedule:
-    - cron: "0 */4 * * *"   # 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC
-  workflow_dispatch:         # manual trigger to start immediately
+    - cron: "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *"   # even hours UTC
+    - cron: "0 1,3,5,7,9,11,13,15,17,19,21,23 * * *"   # odd hours UTC
+  workflow_dispatch:
 
 jobs:
   keep_alive:
     runs-on: ubuntu-latest
-    timeout-minutes: 235     # 3h 55m — stays under GitHub's 6h job limit
+    timeout-minutes: 125     # 2h 5m — safely above the 2h run target
 
     steps:
-      - name: Ping /health every 30 seconds for ~4 hours
+      - name: Ping /health every 15 seconds for 2 hours
         run: |
           URL="https://apply-hired.onrender.com/health"
-          DURATION=14100      # 3h 55m in seconds
+          DURATION=7200       # 2 hours in seconds
           END=$(( $(date +%s) + DURATION ))
 
-          echo "Keep-alive started. Will ping $URL every 30s until $(date -u -d @$END 2>/dev/null || date -u -r $END)"
+          echo "Started at $(date -u '+%H:%M:%S UTC') — pinging every 15s for 2 hours"
 
           while [ $(date +%s) -lt $END ]; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$URL" 2>/dev/null || echo "ERR")
+            CYCLE_START=$(date +%s)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$URL" 2>/dev/null || echo "ERR")
             echo "$(date -u '+%H:%M:%S') → $STATUS"
-            sleep 30
+            # Sleep only the remaining time to keep cycle exactly 15s
+            ELAPSED=$(( $(date +%s) - CYCLE_START ))
+            WAIT=$(( 10 - ELAPSED ))
+            [ "$WAIT" -gt 0 ] && sleep "$WAIT"
           done
 
-          echo "Session complete. Next job scheduled in 5 minutes."
+          echo "Session done — overlapping job already running."
