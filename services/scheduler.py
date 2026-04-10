@@ -4,12 +4,33 @@ Registered jobs:
   auto_search   — checks all users with auto_search_enabled every hour,
                   triggers a search when their chosen interval has elapsed.
   stale_pruner  — probes old job URLs for 404/410 once per week.
+  keep_alive    — pings /health every 25 seconds to prevent Render free-tier
+                  instance suspension (threshold: ~40 s of inactivity).
 """
 
 import logging
+import os
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Keep-alive ping (Render free tier)
+# ---------------------------------------------------------------------------
+
+def _keep_alive():
+    """Self-ping /health so Render never sees 40 s of inactivity."""
+    app_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("APP_URL", "")
+    if not app_url:
+        return  # local dev — skip
+    try:
+        import urllib.request
+        url = app_url.rstrip("/") + "/health"
+        with urllib.request.urlopen(url, timeout=10) as resp:  # nosec B310
+            logger.debug(f"Keep-alive ping → {resp.status}")
+    except Exception as e:
+        logger.debug(f"Keep-alive ping failed (non-critical): {e}")
 
 _scheduler = None  # BackgroundScheduler instance (initialised lazily)
 
@@ -106,6 +127,17 @@ def start_scheduler():
             id="stale_pruner",
             replace_existing=True,
         )
+
+        # Keep-alive: ping /health every 25 s (Render free tier suspends at ~40 s inactivity)
+        # Only active when RENDER_EXTERNAL_URL or APP_URL env var is set.
+        if os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("APP_URL"):
+            _scheduler.add_job(
+                _keep_alive,
+                IntervalTrigger(seconds=25),
+                id="keep_alive",
+                replace_existing=True,
+            )
+            logger.info("Keep-alive ping registered (every 25 s)")
 
         _scheduler.start()
         logger.info("Background scheduler started (auto-search: hourly, stale-pruner: weekly)")

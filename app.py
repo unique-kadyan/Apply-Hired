@@ -35,6 +35,11 @@ def create_app() -> Flask:
 
     app.teardown_appcontext(lambda _: stop_scheduler())
 
+    # Health / keep-alive endpoint (also used by Render uptime checks)
+    @app.route("/health")
+    def health():
+        return jsonify({"status": "ok"}), 200
+
     # Serve React SPA
     @app.route("/")
     def index():
