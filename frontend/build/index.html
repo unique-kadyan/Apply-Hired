@@ -1509,12 +1509,16 @@
                     setNiSavedReasons(res.reasons || niSavedReasons);
                 }
 
-                await api.post(`/api/jobs/${niModal.id}/status`, { status: 'not_interested', notes: finalReason });
+                const removedId = niModal.id;
+                await api.post(`/api/jobs/${removedId}/status`, { status: 'not_interested', notes: finalReason });
                 showToast(`Marked as Not Interested: "${finalReason}"`, 'success');
                 setNiModal(null);
                 setNiSaving(false);
-                loadSkipKeywords();  // refresh skip pills in case a new custom keyword was added
-                loadJobs();
+                setJobPanel(null);
+                setJobs(prev => prev.filter(x => x.id !== removedId));
+                setTotal(prev => Math.max(0, prev - 1));
+                refreshCounts();
+                loadSkipKeywords();
             };
 
             // Cover letter modal state
@@ -1924,7 +1928,6 @@
                                                                 setTotal(prev => Math.max(0, prev - 1));
                                                                 refreshCounts();
                                                                 showToast('Moved to Applied ✓', 'success');
-                                                                setTimeout(() => { setTab('applied'); setPage(1); setFilters({ status: '', min_score: 0, salary: '' }); }, 800);
                                                             }}
                                                             className="action-btn"
                                                             style={{ background: 'var(--green)', color: '#fff' }}>
@@ -2171,7 +2174,7 @@
                                             </button>
                                         )}
                                         {tab !== 'applied' && tab !== 'not_interested' && (<>
-                                            <button onClick={async () => { await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); setJobPanel(null); setJobs(prev => prev.filter(x => x.id !== j.id)); setTotal(prev => Math.max(0, prev - 1)); refreshCounts(); showToast('Moved to Applied ✓', 'success'); setTimeout(() => { setTab('applied'); setPage(1); setFilters({ status: '', min_score: 0, salary: '' }); }, 800); }}
+                                            <button onClick={async () => { await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); setJobPanel(null); setJobs(prev => prev.filter(x => x.id !== j.id)); setTotal(prev => Math.max(0, prev - 1)); refreshCounts(); showToast('Moved to Applied ✓', 'success'); }}
                                                 style={{ ...styles.btn, ...styles.btnSuccess, flex: 1, fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>✓ Applied</button>
                                             <button onClick={() => { setJobPanel(null); openNiModal(j); }}
                                                 style={{ ...styles.btn, flex: 1, background: 'rgba(220,38,38,0.15)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.3)', fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>✕ Skip</button>
