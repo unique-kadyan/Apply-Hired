@@ -1,25 +1,21 @@
-name: Keep Render Instance Alive (Manual / Backup)
-
-# NOTE: Primary keep-alive is cron-job.org pinging /health every 1 minute.
-# This workflow is a manual backup trigger only — GitHub Actions scheduled
-# crons are NOT reliable (can be delayed 15+ min by GitHub under load).
-#
-# Setup cron-job.org (free, 1-min intervals):
-#   1. Sign up at https://cron-job.org
-#   2. Create job → URL: https://<your-app>.onrender.com/health
-#   3. Interval: every 1 minute
-#   4. Done — no secrets or tokens needed.
+name: Keep Render Instance Alive
 
 on:
-  workflow_dispatch:   # manual trigger only
+  schedule:
+    - cron: "*/5 * * * *"   # fires every 5 min; loop inside pings every 45s
+  workflow_dispatch:
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping /health
+      - name: Ping /health every 45 seconds
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            --max-time 15 \
-            "${{ secrets.RENDER_APP_URL }}/health")
-          echo "Response: $STATUS"
+          URL="https://apply-hired.onrender.com/health"
+          for i in $(seq 1 7); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "$URL")
+            echo "Ping $i → $STATUS"
+            if [ $i -lt 7 ]; then
+              sleep 45
+            fi
+          done
