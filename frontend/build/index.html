@@ -1368,12 +1368,61 @@
             const searchTimer = useRef(null);
             const [perPage, setPerPage] = useState(30);
 
+            // Derive work mode from job_type + location
+            const _jobMode = (j) => {
+                const jt = (j.job_type || '').toLowerCase();
+                const loc = (j.location || '').toLowerCase();
+                if (jt === 'remote' || loc.includes('remote') || loc.includes('wfh') || loc.includes('work from home') || loc.includes('telecommute')) return 'Remote';
+                if (loc.includes('hybrid')) return 'Hybrid';
+                return 'Onsite';
+            };
+
+            // Derive country display name from location string
+            const _COUNTRY_MAP = [
+                ['india', 'India'], ['united states', 'USA'], ['(us)', 'USA'], [' us,', 'USA'], ['us-', 'USA'],
+                ['united kingdom', 'UK'], ['(uk)', 'UK'], [' uk,', 'UK'], ['britain', 'UK'], ['england', 'UK'],
+                ['canada', 'Canada'], ['(ca)', 'Canada'], ['australia', 'Australia'], ['(au)', 'Australia'],
+                ['germany', 'Germany'], ['france', 'France'], ['singapore', 'Singapore'],
+                ['netherlands', 'Netherlands'], ['sweden', 'Sweden'], ['norway', 'Norway'],
+                ['finland', 'Finland'], ['denmark', 'Denmark'], ['switzerland', 'Switzerland'],
+                ['poland', 'Poland'], ['spain', 'Spain'], ['italy', 'Italy'], ['portugal', 'Portugal'],
+                ['ireland', 'Ireland'], ['austria', 'Austria'], ['belgium', 'Belgium'],
+                ['new zealand', 'NZ'], ['brazil', 'Brazil'], ['mexico', 'Mexico'],
+                ['japan', 'Japan'], ['south korea', 'S. Korea'], ['china', 'China'],
+                ['hong kong', 'Hong Kong'], ['taiwan', 'Taiwan'], ['philippines', 'PH'],
+                ['indonesia', 'Indonesia'], ['malaysia', 'Malaysia'], ['thailand', 'Thailand'],
+                ['vietnam', 'Vietnam'], ['pakistan', 'Pakistan'], ['bangladesh', 'Bangladesh'],
+                ['uae', 'UAE'], ['united arab', 'UAE'], ['israel', 'Israel'],
+                ['south africa', 'S. Africa'], ['nigeria', 'Nigeria'], ['kenya', 'Kenya'],
+                ['worldwide', 'Worldwide'], ['global', 'Worldwide'], ['anywhere', 'Worldwide'],
+            ];
+            const _jobCountry = (j) => {
+                const loc = (' ' + (j.location || '') + ' ').toLowerCase();
+                for (const [key, display] of _COUNTRY_MAP) {
+                    if (loc.includes(key)) return display;
+                }
+                return '—';
+            };
+
+            // Mode pill styles
+            const _modePill = (mode) => {
+                const cfg = {
+                    Remote:  { bg: 'rgba(16,185,129,0.12)', color: '#34d399', border: 'rgba(16,185,129,0.3)' },
+                    Hybrid:  { bg: 'rgba(251,191,36,0.12)', color: '#fbbf24', border: 'rgba(251,191,36,0.3)' },
+                    Onsite:  { bg: 'rgba(99,102,241,0.12)', color: '#818cf8', border: 'rgba(99,102,241,0.3)' },
+                }[mode] || { bg: 'rgba(100,116,139,0.1)', color: 'var(--muted)', border: 'transparent' };
+                return { fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.45rem', borderRadius: 20,
+                         background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`,
+                         whiteSpace: 'nowrap', letterSpacing: '0.03em' };
+            };
+
             // Sortable column definitions
             const SORT_COLS = [
                 { key: 'score',       label: 'Score',    sortable: true,  width: '64px' },
                 { key: 'title',       label: 'Title',    sortable: true },
                 { key: 'company',     label: 'Company',  sortable: true,  cls: 'hide-sm' },
-                { key: 'location',    label: 'Location', sortable: false, cls: 'hide-md' },
+                { key: 'mode',        label: 'Mode',     sortable: false, cls: 'hide-md', width: '80px' },
+                { key: 'country',     label: 'Country',  sortable: false, cls: 'hide-md', width: '90px' },
                 { key: 'salary',      label: 'Salary',   sortable: true,  cls: 'hide-sm' },
                 { key: 'updated_at',  label: 'Updated',  sortable: true,  cls: 'hide-sm' },
                 { key: 'actions',     label: '',         sortable: false, width: '1%' },
@@ -1798,7 +1847,12 @@
                                                 <span onClick={e => { e.stopPropagation(); setJobPanel(j); }} style={{ fontWeight: 600, cursor: 'pointer', color: '#93c5fd', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={j.title}>{j.title}</span>
                                             </td>
                                             <td className="hide-sm" style={{ padding: '0.5rem 0.6rem', fontSize: '0.83rem', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.company.substring(0, 20)}</td>
-                                            <td className="hide-md" style={{ padding: '0.5rem 0.6rem', color: 'var(--muted)', fontSize: '0.8rem', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={j.location || ''}>{j.location || <span style={{ color: '#334155' }}>—</span>}</td>
+                                            <td className="hide-md" style={{ padding: '0.5rem 0.6rem' }}>
+                                                <span style={_modePill(_jobMode(j))}>{_jobMode(j)}</span>
+                                            </td>
+                                            <td className="hide-md" style={{ padding: '0.5rem 0.6rem', fontSize: '0.8rem', color: 'var(--muted)', whiteSpace: 'nowrap' }} title={j.location || ''}>
+                                                {_jobCountry(j)}
+                                            </td>
                                             <td className="hide-sm" style={{ padding: '0.5rem 0.6rem', fontSize: '0.82rem' }}>
                                                 {(() => {
                                                     const fs = formatSalary(j.salary, j.location);
