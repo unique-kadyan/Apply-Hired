@@ -63,24 +63,24 @@ _EXCLUDE_FROM_NOT_APPLIED = APPLIED_STATUSES + [NOT_INTERESTED_STATUS]
 @login_required
 def list_jobs():
     status = request.args.get("status", "")
-    tab = request.args.get(
-        "tab", ""
-    )  # "not_applied" | "applied" | "not_interested" | ""
+    tab = request.args.get("tab", "")  # "not_applied" | "applied" | "not_interested" | "saved"
     min_score = float(request.args.get("min_score", 0))
     source = request.args.get("source", "")
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 50))
 
     search = request.args.get("search", "").strip()
-    sort_by = request.args.get("sort_by", "")  # client override
+    sort_by = request.args.get("sort_by", "")
     sort_dir = request.args.get("sort_dir", "desc")
 
     status_in = None
     status_nin = None
+    is_saved = None
     default_sort = "score"
 
     if tab == "not_applied":
         status_nin = _EXCLUDE_FROM_NOT_APPLIED
+        is_saved = False           # exclude saved jobs from Not Applied
         default_sort = "date_posted"
     elif tab == "applied":
         status_in = APPLIED_STATUSES
@@ -88,8 +88,11 @@ def list_jobs():
     elif tab == "not_interested":
         status_in = [NOT_INTERESTED_STATUS]
         default_sort = "updated_at"
+    elif tab == "saved":
+        is_saved = True
+        status_nin = _EXCLUDE_FROM_NOT_APPLIED  # saved but not yet actioned
+        default_sort = "updated_at"
 
-    # Client sort_by overrides tab default only if it's a valid field
     from tracker import VALID_SORT_FIELDS
 
     final_sort = sort_by if sort_by in VALID_SORT_FIELDS else default_sort
@@ -98,6 +101,7 @@ def list_jobs():
         status=status or None,
         status_in=status_in,
         status_nin=status_nin,
+        is_saved=is_saved,
         min_score=min_score,
         source=source or None,
         sort_by=final_sort,
@@ -123,28 +127,23 @@ def tab_counts():
     db = _get_db()
     uid = str(request.user["id"])
     not_applied = db.jobs.count_documents(
-        {
-            "user_id": uid,
-            "status": {"$nin": _EXCLUDE_FROM_NOT_APPLIED},
-        }
+        {"user_id": uid, "status": {"$nin": _EXCLUDE_FROM_NOT_APPLIED}, "is_saved": {"$ne": True}}
     )
     applied = db.jobs.count_documents(
-        {
-            "user_id": uid,
-            "status": {"$in": APPLIED_STATUSES},
-        }
+        {"user_id": uid, "status": {"$in": APPLIED_STATUSES}}
     )
     not_interested = db.jobs.count_documents(
-        {
-            "user_id": uid,
-            "status": NOT_INTERESTED_STATUS,
-        }
+        {"user_id": uid, "status": NOT_INTERESTED_STATUS}
+    )
+    saved = db.jobs.count_documents(
+        {"user_id": uid, "is_saved": True, "status": {"$nin": _EXCLUDE_FROM_NOT_APPLIED}}
     )
     return jsonify(
         {
             "not_applied": not_applied,
             "applied": applied,
             "not_interested": not_interested,
+            "saved": saved,
         }
     )
 
@@ -217,8 +216,41 @@ def change_status(job_id):
     if not job:
         return jsonify({"error": "Job not found"}), 404
     data = request.get_json()
-    update_job_status(job_id, data.get("status", "new"), data.get("notes", ""))
-    return jsonify({"message": f"Job #{job_id} updated to '{data.get('status')}'"})
+    new_status = data.get("status", "new")
+    update_job_status(job_id, new_status, data.get("notes", ""))
+    # When a saved job is acted on (applied/skipped), clear the saved flag
+    if new_status in APPLIED_STATUSES + [NOT_INTERESTED_STATUS]:
+        db = _get_db()
+        oid = _to_object_id(job_id)
+        if oid:
+            db.jobs.update_one({"_id": oid}, {"$set": {"is_saved": False}})
+    return jsonify({"message": f"Job #{job_id} updated to '{new_status}'"})
+
+
+@jobs_bp.route("/jobs/<job_id>/save", methods=["POST"])
+@login_required
+def save_job(job_id):
+    """Bookmark a job — moves it to the Saved tab, hides from Not Applied."""
+    job = get_job_by_id(job_id, user_id=request.user["id"])
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    db = _get_db()
+    oid = _to_object_id(job_id)
+    db.jobs.update_one({"_id": oid}, {"$set": {"is_saved": True}})
+    return jsonify({"saved": True})
+
+
+@jobs_bp.route("/jobs/<job_id>/unsave", methods=["POST"])
+@login_required
+def unsave_job(job_id):
+    """Remove bookmark — job returns to Not Applied."""
+    job = get_job_by_id(job_id, user_id=request.user["id"])
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    db = _get_db()
+    oid = _to_object_id(job_id)
+    db.jobs.update_one({"_id": oid}, {"$set": {"is_saved": False}})
+    return jsonify({"saved": False})
 
 
 @jobs_bp.route("/jobs/<job_id>/cover-letter", methods=["GET"])

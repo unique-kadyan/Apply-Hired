@@ -1,21 +1,33 @@
 name: Keep Render Instance Alive
 
+# Starts a new long-running job every 4 hours.
+# Each job loops internally, pinging /health every 30 s for ~3h 55m.
+# GitHub only needs to be reliable every 4 hours (not every 5 min).
+# Public repo → unlimited free minutes.
+
 on:
   schedule:
-    - cron: "*/5 * * * *"   # fires every 5 min; loop inside pings every 45s
-  workflow_dispatch:
+    - cron: "0 */4 * * *"   # 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC
+  workflow_dispatch:         # manual trigger to start immediately
 
 jobs:
-  ping:
+  keep_alive:
     runs-on: ubuntu-latest
+    timeout-minutes: 235     # 3h 55m — stays under GitHub's 6h job limit
+
     steps:
-      - name: Ping /health every 45 seconds
+      - name: Ping /health every 30 seconds for ~4 hours
         run: |
           URL="https://apply-hired.onrender.com/health"
-          for i in $(seq 1 7); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "$URL")
-            echo "Ping $i → $STATUS"
-            if [ $i -lt 7 ]; then
-              sleep 45
-            fi
+          DURATION=14100      # 3h 55m in seconds
+          END=$(( $(date +%s) + DURATION ))
+
+          echo "Keep-alive started. Will ping $URL every 30s until $(date -u -d @$END 2>/dev/null || date -u -r $END)"
+
+          while [ $(date +%s) -lt $END ]; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$URL" 2>/dev/null || echo "ERR")
+            echo "$(date -u '+%H:%M:%S') → $STATUS"
+            sleep 30
           done
+
+          echo "Session complete. Next job scheduled in 5 minutes."

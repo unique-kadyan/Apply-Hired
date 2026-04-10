@@ -601,6 +601,7 @@ def get_jobs(
     status: Optional[str] = None,
     status_in: Optional[list] = None,
     status_nin: Optional[list] = None,
+    is_saved: Optional[bool] = None,
     min_score: float = 0.0,
     page: int = 1,
     per_page: int = 50,
@@ -624,6 +625,10 @@ def get_jobs(
         query["status"] = {"$in": status_in}
     elif status_nin:
         query["status"] = {"$nin": status_nin}
+    if is_saved is True:
+        query["is_saved"] = True
+    elif is_saved is False:
+        query["is_saved"] = {"$ne": True}
     if source:
         query["source"] = source
 

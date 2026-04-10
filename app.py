@@ -33,6 +33,12 @@ def create_app() -> Flask:
     # Start background scheduler (auto-search + stale pruner)
     start_scheduler()
 
+    # Log the public URL on startup so it's visible in Render deploy logs
+    render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
+    if render_url:
+        print(f"  Public URL: {render_url}")
+        print(f"  Health:     {render_url}/health")
+
     app.teardown_appcontext(lambda _: stop_scheduler())
 
     # Health / keep-alive endpoint (also used by Render uptime checks)

@@ -1358,10 +1358,10 @@
             const [loading, setLoading] = useState(true);
             const [page, setPage] = useState(1);
             const [total, setTotal] = useState(0);
-            const [tab, setTab] = useState('not_applied'); // 'not_applied' | 'applied' | 'not_interested'
+            const [tab, setTab] = useState('not_applied'); // 'not_applied' | 'applied' | 'not_interested' | 'saved'
             const [jobPanel, setJobPanel] = useState(null);
             const [jobPanelLoading, setJobPanelLoading] = useState(false);
-            const [tabCounts, setTabCounts] = useState({ not_applied: null, applied: null, not_interested: null });
+            const [tabCounts, setTabCounts] = useState({ not_applied: null, applied: null, not_interested: null, saved: null });
             const [searchQ, setSearchQ] = useState('');
             const [sortBy, setSortBy] = useState('');     // '' = tab default
             const [sortDir, setSortDir] = useState('desc');
@@ -1682,6 +1682,7 @@
                     <div style={{ display: 'flex', gap: '0', marginBottom: '1rem', borderBottom: '2px solid var(--border)' }}>
                         {[
                             { key: 'not_applied',    label: 'Not Applied',    color: 'var(--accent2)' },
+                            { key: 'saved',          label: 'Saved',          color: '#fbbf24'        },
                             { key: 'applied',        label: 'Applied',        color: 'var(--green2)'  },
                             { key: 'not_interested', label: 'Not Interested', color: 'var(--red2)'    },
                         ].map(t => {
@@ -1906,7 +1907,7 @@
                                                             📄<span className="btn-label">Cover Letter</span>
                                                         </button>
                                                     </div>
-                                                ) : (
+                                                ) : tab === 'saved' ? (
                                                     <div className="action-btns">
                                                         <a href={j.url} target="_blank" rel="noopener"
                                                             onClick={e => e.stopPropagation()}
@@ -1917,13 +1918,71 @@
                                                         </a>
                                                         <button
                                                             title="Mark as Applied"
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' });
+                                                                setJobs(prev => prev.filter(x => x.id !== j.id));
+                                                                setTotal(prev => Math.max(0, prev - 1));
+                                                                refreshCounts();
+                                                                showToast('Moved to Applied ✓', 'success');
+                                                            }}
+                                                            className="action-btn"
+                                                            style={{ background: 'var(--green)', color: '#fff' }}>
+                                                            ✓<span className="btn-label">Applied</span>
+                                                        </button>
+                                                        <button
+                                                            title="Unsave — move back to Not Applied"
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                await api.post(`/api/jobs/${j.id}/unsave`);
+                                                                setJobs(prev => prev.filter(x => x.id !== j.id));
+                                                                setTotal(prev => Math.max(0, prev - 1));
+                                                                refreshCounts();
+                                                                showToast('Removed from Saved', 'info');
+                                                            }}
+                                                            className="action-btn"
+                                                            style={{ background: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.35)' }}>
+                                                            🔖<span className="btn-label">Unsave</span>
+                                                        </button>
+                                                        <button
+                                                            title="Not Interested"
+                                                            onClick={e => { e.stopPropagation(); openNiModal(j); }}
+                                                            className="action-btn"
+                                                            style={{ background: 'rgba(220,38,38,0.15)', color: 'var(--red2)', border: '1px solid rgba(220,38,38,0.35)' }}>
+                                                            ✕<span className="btn-label">Skip</span>
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="action-btns">
+                                                        <a href={j.url} target="_blank" rel="noopener"
+                                                            onClick={e => e.stopPropagation()}
+                                                            title="Open Job Posting"
+                                                            className="action-btn"
+                                                            style={{ background: 'var(--accent)', color: '#fff', textDecoration: 'none' }}>
+                                                            ↗<span className="btn-label">Open</span>
+                                                        </a>
+                                                        <button
+                                                            title="Save for later"
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                await api.post(`/api/jobs/${j.id}/save`);
+                                                                setJobs(prev => prev.filter(x => x.id !== j.id));
+                                                                setTotal(prev => Math.max(0, prev - 1));
+                                                                refreshCounts();
+                                                                showToast('Job saved 🔖', 'success');
+                                                            }}
+                                                            className="action-btn"
+                                                            style={{ background: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.35)' }}>
+                                                            🔖<span className="btn-label">Save</span>
+                                                        </button>
+                                                        <button
+                                                            title="Mark as Applied"
                                                             disabled={j._marking}
                                                             onClick={async (e) => {
                                                                 e.stopPropagation();
                                                                 j._marking = true;
                                                                 e.currentTarget.disabled = true;
                                                                 await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' });
-                                                                // Immediately remove from current list and switch to applied tab
                                                                 setJobs(prev => prev.filter(x => x.id !== j.id));
                                                                 setTotal(prev => Math.max(0, prev - 1));
                                                                 refreshCounts();
@@ -2172,6 +2231,14 @@
                                                 style={{ ...styles.btn, flex: 1, background: j.status === 'offer' ? 'rgba(245,158,11,0.15)' : 'rgba(124,58,237,0.15)', color: j.status === 'offer' ? '#fde68a' : '#d8b4fe', border: `1px solid ${j.status === 'offer' ? 'rgba(245,158,11,0.3)' : 'rgba(124,58,237,0.3)'}`, fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>
                                                 {j.status === 'offer' ? '💰 Offer' : '📅 Interview'}
                                             </button>
+                                        )}
+                                        {tab === 'not_applied' && (
+                                            <button onClick={async () => { await api.post(`/api/jobs/${j.id}/save`); setJobPanel(null); setJobs(prev => prev.filter(x => x.id !== j.id)); setTotal(prev => Math.max(0, prev - 1)); refreshCounts(); showToast('Job saved 🔖', 'success'); }}
+                                                style={{ ...styles.btn, flex: 1, background: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.35)', fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>🔖 Save</button>
+                                        )}
+                                        {tab === 'saved' && (
+                                            <button onClick={async () => { await api.post(`/api/jobs/${j.id}/unsave`); setJobPanel(null); setJobs(prev => prev.filter(x => x.id !== j.id)); setTotal(prev => Math.max(0, prev - 1)); refreshCounts(); showToast('Removed from Saved', 'info'); }}
+                                                style={{ ...styles.btn, flex: 1, background: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.35)', fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>🔖 Unsave</button>
                                         )}
                                         {tab !== 'applied' && tab !== 'not_interested' && (<>
                                             <button onClick={async () => { await api.post(`/api/jobs/${j.id}/status`, { status: 'applied' }); setJobPanel(null); setJobs(prev => prev.filter(x => x.id !== j.id)); setTotal(prev => Math.max(0, prev - 1)); refreshCounts(); showToast('Moved to Applied ✓', 'success'); }}
