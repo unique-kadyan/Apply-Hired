@@ -439,9 +439,6 @@ export default function Search({ profile, showToast, navigate }) {
                   },
                 }}
               />
-              <div style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
-                {searchStatus.progress}%
-              </div>
             </div>
           )}
           <p style={{ color: searchStatus.message?.startsWith('Error') ? '#fca5a5' : 'var(--muted)', fontSize: '0.88rem', marginBottom: !searchStatus.running ? '0.75rem' : 0 }}>{searchStatus.message}</p>
