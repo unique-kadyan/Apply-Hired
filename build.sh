@@ -1,16 +1,15 @@
 #!/bin/bash
-# Build script for Render deployment
-# Set this as Render's "Build Command":
-#   pip install -r requirements.txt && bash build.sh
-
 set -e
 
 echo "==> Installing Python dependencies..."
 pip install -r requirements.txt
 
+echo "==> Node version: $(node --version)"
+echo "==> npm version:  $(npm --version)"
+
 echo "==> Installing Node.js dependencies..."
 cd frontend
-npm ci --prefer-offline
+npm ci
 
 echo "==> Building Next.js frontend..."
 npm run build

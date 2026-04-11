@@ -1,11 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',      // static export → served by Flask
-  distDir: 'build',      // Flask serves from frontend/build/
+  output: 'export',
+  distDir: 'build',
   trailingSlash: true,
   images: { unoptimized: true },
-
-  // Suppress build errors on JSX/ESLint during migration
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
 };
