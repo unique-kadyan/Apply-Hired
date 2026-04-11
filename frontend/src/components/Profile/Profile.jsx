@@ -3,8 +3,6 @@ import { useState, useRef } from "react";
 import api from "@/lib/api";
 import styles from "@/lib/styles";
 import ConnectAccounts from "./ConnectAccounts";
-import ResumeScoreCard from "./ResumeScoreCard";
-import ResumeOptimizer from "./ResumeOptimizer";
 import ExperienceSection from "./ExperienceSection";
 
 export default function Profile({ profile, setProfile, showToast }) {
@@ -458,16 +456,6 @@ export default function Profile({ profile, setProfile, showToast }) {
         setProfile={setProfile}
         showToast={showToast}
       />
-
-      {profile.resume_score && <ResumeScoreCard score={profile.resume_score} />}
-
-      {(!profile.resume_score || profile.resume_score.total_score < 100) && (
-        <ResumeOptimizer
-          profile={profile}
-          setProfile={setProfile}
-          showToast={showToast}
-        />
-      )}
 
       <div style={styles.card}>
         <div

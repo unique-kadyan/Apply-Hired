@@ -486,7 +486,6 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
             onClick={() => {
               setShowForm(true);
               setOptimized(null);
-              setHasPaid(false);
             }}
             style={{
               ...styles.btn,
