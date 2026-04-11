@@ -3,6 +3,7 @@
 import os
 
 from flask import Flask, jsonify, request, send_from_directory
+
 from routes.auth import auth_bp
 from routes.gmail import gmail_bp
 from routes.jobs import jobs_bp
@@ -65,4 +66,4 @@ if __name__ == "__main__":
     print(f"  Running on port {port}")
     print("  API:      /api/")
     print("  Frontend: / (production build)\n")
-    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=False)
+    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=False)  # nosec B104
