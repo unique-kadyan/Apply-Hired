@@ -1,5 +1,6 @@
 import os
 import subprocess
+
 from setuptools import setup
 from setuptools.command.develop import develop
 from setuptools.command.install import install
@@ -26,5 +27,6 @@ class _Install(install):
 setup(
     name='apply-hired',
     version='0.1.0',
+    packages=[],
     cmdclass={'develop': _Develop, 'install': _Install},
 )
