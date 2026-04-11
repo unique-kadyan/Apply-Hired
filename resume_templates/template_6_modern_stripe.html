@@ -5,34 +5,33 @@
 <style>
   @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Arial', 'Helvetica Neue', Helvetica, sans-serif; font-size: 9.5pt; color: #222; line-height: 1.55; }
-  .header-stripe { background: {{ accent_color }}; padding: 8mm 18mm 6mm; }
+  body { font-family: 'Arial', 'Helvetica Neue', Helvetica, sans-serif; font-size: 9.5pt; color: #222; line-height: 1.6; }
+  .header-stripe { background: {{ accent_color }}; padding: 8mm 20mm 7mm; }
   .header-name { font-size: 27pt; font-weight: 900; color: #fff; letter-spacing: 1px; }
-  .header-title { font-size: 10.5pt; color: rgba(255,255,255,0.85); margin-top: 4px; font-weight: 300; letter-spacing: 1.5px; }
-  .header-bottom { background: #f8f9fa; border-bottom: 2px solid {{ accent_color }}; padding: 5mm 18mm; display: table; width: 100%; }
+  .header-title { font-size: 10.5pt; color: rgba(255,255,255,0.88); margin-top: 5px; font-weight: 300; letter-spacing: 1.5px; }
+  .header-bottom { background: #f8f9fa; border-bottom: 2px solid {{ accent_color }}; padding: 5mm 20mm; display: table; width: 100%; }
   .contact-items { display: table-row; }
   .contact-item { display: table-cell; font-size: 8pt; color: #444; padding-right: 20px; vertical-align: middle; }
-  .contact-label { font-size: 7pt; font-weight: 700; color: {{ accent_color }}; text-transform: uppercase; letter-spacing: 1px; display: block; }
-  .body { padding: 10mm 18mm 18mm; }
+  .contact-label { font-size: 7pt; font-weight: 700; color: {{ accent_color }}; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 1px; }
+  .body { padding: 12mm 20mm 20mm; }
   .two-col { display: table; width: 100%; }
-  .col-left { display: table-cell; width: 62%; vertical-align: top; padding-right: 8mm; }
-  .col-right { display: table-cell; width: 38%; vertical-align: top; border-left: 1px solid #e5e7eb; padding-left: 8mm; }
-  .section-title { font-size: 8pt; font-weight: 900; text-transform: uppercase; letter-spacing: 3px; color: {{ accent_color }}; margin: 14px 0 7px; }
+  .col-left { display: table-cell; width: 62%; vertical-align: top; padding-right: 9mm; }
+  .col-right { display: table-cell; width: 38%; vertical-align: top; border-left: 1px solid #e5e7eb; padding-left: 9mm; }
+  .section-title { font-size: 8pt; font-weight: 900; text-transform: uppercase; letter-spacing: 3px; color: {{ accent_color }}; margin: 16px 0 9px; }
   .section-title-first { margin-top: 0; }
-  .summary { font-size: 9pt; color: #333; line-height: 1.75; }
-  .exp-entry { margin-bottom: 12px; page-break-inside: avoid; }
+  .summary { font-size: 9pt; color: #333; line-height: 1.8; margin-bottom: 12mm; }
+  .exp-entry { margin-bottom: 14px; page-break-inside: avoid; }
   .exp-title { font-weight: 700; font-size: 10pt; color: #111; }
-  .exp-sub { font-size: 8.5pt; color: #555; margin-bottom: 3px; }
+  .exp-sub { font-size: 8.5pt; color: #555; margin-top: 2px; margin-bottom: 4px; }
   .exp-company { color: {{ accent_color }}; font-weight: 600; }
   .exp-period { color: #999; }
-  .bullet-list { margin: 4px 0 0 14px; }
-  .bullet-list li { font-size: 8.5pt; color: #333; margin-bottom: 2px; line-height: 1.5; }
-  .skill-group { margin-bottom: 8px; }
-  .skill-group-label { font-size: 7.5pt; font-weight: 700; color: #444; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
-  .skill-chips { }
-  .skill-chip { display: inline-block; background: #f1f5f9; border: 1px solid #e2e8f0; color: #334155; padding: 1px 7px; border-radius: 3px; font-size: 7.5pt; margin: 1px 2px 1px 0; }
-  .edu-block { font-size: 9pt; color: #333; line-height: 1.6; }
-  .cert-item { font-size: 8.5pt; color: #333; padding: 2px 0; border-bottom: 1px dotted #e5e7eb; }
+  .bullet-list { margin: 5px 0 0 16px; }
+  .bullet-list li { font-size: 8.5pt; color: #333; margin-bottom: 4px; line-height: 1.55; }
+  .skill-group { margin-bottom: 10px; }
+  .skill-group-label { font-size: 7.5pt; font-weight: 700; color: #444; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .skill-chip { display: inline-block; background: #f1f5f9; border: 1px solid #e2e8f0; color: #334155; padding: 2px 8px; border-radius: 3px; font-size: 7.5pt; margin: 2px 2px 2px 0; }
+  .edu-block { font-size: 9pt; color: #333; line-height: 1.65; }
+  .cert-item { font-size: 8.5pt; color: #333; padding: 3px 0; border-bottom: 1px dotted #e5e7eb; }
 </style>
 </head>
 <body>
@@ -56,7 +55,7 @@
 
 {% if optimized.summary %}
 <div class="section-title section-title-first">Professional Summary</div>
-<div class="summary" style="margin-bottom:10mm">{{ optimized.summary }}</div>
+<div class="summary">{{ optimized.summary }}</div>
 {% endif %}
 
 <div class="two-col">
@@ -87,7 +86,7 @@
     {% for cat, vals in all_skills %}
     <div class="skill-group">
       <div class="skill-group-label">{{ {'languages':'Languages','backend':'Backend','frontend':'Frontend','databases':'Databases','cloud_devops':'Cloud & DevOps','architecture':'Architecture','testing':'Testing'}.get(cat, cat.title()) }}</div>
-      <div class="skill-chips">
+      <div>
         {% for v in vals %}<span class="skill-chip">{{ v }}</span>{% endfor %}
       </div>
     </div>

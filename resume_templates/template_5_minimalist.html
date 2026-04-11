@@ -5,30 +5,30 @@
 <style>
   @page { size: A4; margin: 22mm 28mm 22mm 28mm; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Arial', 'Helvetica Neue', Helvetica, sans-serif; font-size: 9.5pt; color: #2d2d2d; line-height: 1.6; }
+  body { font-family: 'Arial', 'Helvetica Neue', Helvetica, sans-serif; font-size: 9.5pt; color: #2d2d2d; line-height: 1.65; }
   .name { font-size: 24pt; font-weight: 300; color: #111; letter-spacing: 4px; text-transform: uppercase; }
-  .title { font-size: 9pt; font-weight: 400; color: {{ accent_color }}; letter-spacing: 3px; text-transform: uppercase; margin-top: 5px; }
+  .title { font-size: 9pt; font-weight: 400; color: {{ accent_color }}; letter-spacing: 3px; text-transform: uppercase; margin-top: 6px; }
   .contact { font-size: 8pt; color: #888; margin-top: 10px; letter-spacing: 0.5px; }
-  .contact span { margin: 0 8px; }
-  .divider-name { border: none; height: 1px; background: {{ accent_color }}; margin: 14px 0 16px; }
-  .section-title { font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 4px; color: {{ accent_color }}; margin: 18px 0 8px; }
-  .summary { font-size: 9pt; color: #444; line-height: 1.8; }
-  .skills-row { margin-bottom: 4px; font-size: 8.5pt; }
-  .skill-cat { color: #888; font-weight: 700; text-transform: uppercase; font-size: 7.5pt; letter-spacing: 1px; display: inline-block; width: 110px; }
+  .contact span { margin: 0 10px; }
+  .divider-name { border: none; height: 1px; background: {{ accent_color }}; margin: 14px 0 18px; }
+  .section-title { font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 4px; color: {{ accent_color }}; margin: 20px 0 10px; }
+  .summary { font-size: 9pt; color: #444; line-height: 1.85; }
+  .skills-row { margin-bottom: 5px; font-size: 8.5pt; }
+  .skill-cat { color: #888; font-weight: 700; text-transform: uppercase; font-size: 7.5pt; letter-spacing: 1px; display: inline-block; width: 115px; }
   .skill-val { color: #333; }
-  .exp-entry { margin-bottom: 14px; page-break-inside: avoid; }
-  .exp-top { display: table; width: 100%; margin-bottom: 2px; }
+  .exp-entry { margin-bottom: 16px; page-break-inside: avoid; }
+  .exp-top { display: table; width: 100%; margin-bottom: 3px; }
   .exp-left { display: table-cell; }
   .exp-right { display: table-cell; text-align: right; }
   .exp-title { font-weight: 700; font-size: 10pt; color: #111; }
-  .exp-company { font-size: 8.5pt; color: {{ accent_color }}; text-transform: uppercase; letter-spacing: 1px; }
+  .exp-company { font-size: 8.5pt; color: {{ accent_color }}; text-transform: uppercase; letter-spacing: 1px; margin-top: 1px; }
   .exp-period { font-size: 8pt; color: #aaa; font-weight: 300; letter-spacing: 0.5px; }
-  .bullet-list { margin: 6px 0 0 0; list-style: none; }
-  .bullet-list li { font-size: 8.5pt; color: #444; margin-bottom: 3px; padding-left: 14px; position: relative; }
+  .bullet-list { margin: 7px 0 0 0; list-style: none; }
+  .bullet-list li { font-size: 8.5pt; color: #444; margin-bottom: 4px; padding-left: 16px; position: relative; line-height: 1.55; }
   .bullet-list li::before { content: '—'; position: absolute; left: 0; color: {{ accent_color }}; }
   .edu-text { font-size: 9pt; color: #333; }
   .cert-list { list-style: none; }
-  .cert-list li { font-size: 8.5pt; color: #444; padding-left: 14px; position: relative; margin-bottom: 2px; }
+  .cert-list li { font-size: 8.5pt; color: #444; padding-left: 16px; position: relative; margin-bottom: 3px; }
   .cert-list li::before { content: '—'; position: absolute; left: 0; color: {{ accent_color }}; }
 </style>
 </head>

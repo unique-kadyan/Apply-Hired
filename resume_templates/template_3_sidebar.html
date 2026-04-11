@@ -5,27 +5,28 @@
 <style>
   @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #222; line-height: 1.5; }
+  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #222; line-height: 1.55; }
   .layout { display: table; width: 100%; height: 100%; }
-  .sidebar { display: table-cell; width: 68mm; background: #1e2a3a; color: #e2e8f0; vertical-align: top; padding: 20mm 7mm 20mm 8mm; }
-  .main { display: table-cell; vertical-align: top; padding: 18mm 12mm 18mm 10mm; }
-  .sidebar-name { font-size: 18pt; font-weight: 900; color: #fff; line-height: 1.2; margin-bottom: 4px; word-break: break-word; }
-  .sidebar-title { font-size: 9pt; color: {{ accent_color }}; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 14px; }
-  .sidebar-section { font-size: 8pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: {{ accent_color }}; margin: 14px 0 6px; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 3px; }
-  .contact-item { font-size: 8pt; color: #cbd5e1; margin-bottom: 4px; word-break: break-all; }
-  .skill-chip { display: inline-block; background: rgba(255,255,255,0.1); color: #e2e8f0; padding: 2px 7px; border-radius: 10px; font-size: 7.5pt; margin: 2px 2px 2px 0; }
-  .skill-cat { font-size: 7.5pt; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin: 8px 0 3px; }
-  .main-section { font-size: 10pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: {{ accent_color }}; margin: 14px 0 6px; border-bottom: 2px solid {{ accent_color }}; padding-bottom: 2px; }
-  .summary { font-size: 9pt; color: #333; line-height: 1.7; }
-  .exp-entry { margin-bottom: 12px; page-break-inside: avoid; }
+  .sidebar { display: table-cell; width: 68mm; background: #1e2a3a; color: #e2e8f0; vertical-align: top; padding: 20mm 8mm 20mm 10mm; }
+  .main { display: table-cell; vertical-align: top; padding: 20mm 14mm 20mm 12mm; }
+  .sidebar-name { font-size: 17pt; font-weight: 900; color: #fff; line-height: 1.25; margin-bottom: 5px; word-break: break-word; }
+  .sidebar-title { font-size: 8.5pt; color: {{ accent_color }}; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 16px; }
+  .sidebar-section { font-size: 7.5pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: {{ accent_color }}; margin: 16px 0 7px; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 4px; }
+  .contact-item { font-size: 8pt; color: #cbd5e1; margin-bottom: 5px; word-break: break-all; line-height: 1.4; }
+  .skill-chip { display: inline-block; background: rgba(255,255,255,0.1); color: #e2e8f0; padding: 2px 8px; border-radius: 10px; font-size: 7.5pt; margin: 2px 2px 2px 0; }
+  .skill-cat { font-size: 7.5pt; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin: 10px 0 4px; }
+  .main-section { font-size: 9.5pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: {{ accent_color }}; margin: 18px 0 8px; border-bottom: 2px solid {{ accent_color }}; padding-bottom: 3px; }
+  .main-section-first { margin-top: 0; }
+  .summary { font-size: 9pt; color: #333; line-height: 1.75; }
+  .exp-entry { margin-bottom: 14px; page-break-inside: avoid; }
   .exp-title { font-weight: 700; font-size: 10pt; color: #111; }
-  .exp-meta { font-size: 8.5pt; color: #555; margin-bottom: 3px; }
+  .exp-meta { font-size: 8.5pt; color: #555; margin-top: 2px; margin-bottom: 4px; }
   .exp-company { color: {{ accent_color }}; font-weight: 600; }
-  .bullet-list { margin: 3px 0 0 14px; }
-  .bullet-list li { font-size: 8.5pt; color: #333; margin-bottom: 2px; line-height: 1.5; }
+  .bullet-list { margin: 5px 0 0 16px; }
+  .bullet-list li { font-size: 8.5pt; color: #333; margin-bottom: 4px; line-height: 1.5; }
   .edu-text { font-size: 9pt; color: #333; }
-  .cert-list { margin: 4px 0 0 14px; }
-  .cert-list li { font-size: 8.5pt; color: #333; margin-bottom: 2px; }
+  .cert-list { margin: 5px 0 0 16px; }
+  .cert-list li { font-size: 8.5pt; color: #333; margin-bottom: 3px; }
 </style>
 </head>
 <body>
@@ -65,7 +66,7 @@
 
   <div class="main">
     {% if optimized.summary %}
-    <div class="main-section">Profile</div>
+    <div class="main-section main-section-first">Profile</div>
     <div class="summary">{{ optimized.summary }}</div>
     {% endif %}
 

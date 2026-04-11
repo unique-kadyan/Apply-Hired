@@ -5,35 +5,44 @@
 <style>
   @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Georgia', 'Times New Roman', serif; font-size: 10pt; color: #1a1a1a; line-height: 1.55; }
+  body { font-family: 'Georgia', 'Times New Roman', serif; font-size: 10pt; color: #1a1a1a; line-height: 1.6; }
   .top-bar { height: 6mm; background: {{ accent_color }}; }
-  .header { padding: 10mm 22mm 8mm; border-bottom: 1px solid #ddd; }
+  .header { padding: 10mm 24mm 9mm; border-bottom: 1px solid #ddd; }
   .header-name { font-size: 26pt; font-weight: 700; color: #1a1a1a; letter-spacing: 0.5px; }
-  .header-title { font-size: 11pt; color: {{ accent_color }}; font-style: italic; margin-top: 4px; }
-  .header-contact { font-size: 8.5pt; color: #555; margin-top: 8px; }
-  .header-contact span { margin-right: 20px; }
-  .body { padding: 8mm 22mm 18mm; }
-  .section-wrap { margin-bottom: 14px; }
-  .section-title { font-size: 10pt; font-weight: 700; color: #1a1a1a; text-transform: uppercase; letter-spacing: 3px; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ accent_color }}; }
-  .section-title::before { content: ''; display: inline-block; width: 4px; height: 11px; background: {{ accent_color }}; margin-right: 8px; vertical-align: middle; }
-  .summary { font-size: 9.5pt; color: #333; line-height: 1.75; font-style: italic; }
+  .header-title { font-size: 11pt; color: {{ accent_color }}; font-style: italic; margin-top: 5px; }
+  .header-contact { font-size: 8.5pt; color: #555; margin-top: 9px; }
+  .header-contact span { margin-right: 22px; }
+  .body { padding: 12mm 24mm 20mm; }
+  .section-wrap { margin-bottom: 18px; }
+  .section-title {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #1a1a1a;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 9px;
+    padding-bottom: 4px;
+    padding-left: 12px;
+    border-bottom: 1px solid #ddd;
+    border-left: 4px solid {{ accent_color }};
+  }
+  .summary { font-size: 9.5pt; color: #333; line-height: 1.8; font-style: italic; }
   .skills-grid { display: table; width: 100%; }
   .skills-row { display: table-row; }
-  .sk-label { display: table-cell; font-weight: 700; font-size: 8.5pt; color: #333; width: 110px; padding: 2px 8px 2px 0; text-transform: uppercase; letter-spacing: 0.5px; }
-  .sk-val { display: table-cell; font-size: 8.5pt; color: #555; padding: 2px 0; }
-  .exp-entry { margin-bottom: 12px; page-break-inside: avoid; }
-  .exp-header-row { display: table; width: 100%; }
+  .sk-label { display: table-cell; font-weight: 700; font-size: 8.5pt; color: #333; width: 120px; padding: 3px 10px 3px 0; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: top; }
+  .sk-val { display: table-cell; font-size: 8.5pt; color: #555; padding: 3px 0; vertical-align: top; }
+  .exp-entry { margin-bottom: 14px; page-break-inside: avoid; }
+  .exp-header-row { display: table; width: 100%; margin-bottom: 2px; }
   .exp-header-left { display: table-cell; }
   .exp-header-right { display: table-cell; text-align: right; }
   .exp-title { font-weight: 700; font-size: 10.5pt; color: #111; }
-  .exp-company { font-size: 9.5pt; color: {{ accent_color }}; }
+  .exp-company { font-size: 9.5pt; color: {{ accent_color }}; margin-top: 2px; }
   .exp-period { font-size: 8.5pt; color: #777; font-style: italic; }
-  .exp-location { font-size: 8.5pt; color: #999; }
-  .bullet-list { margin: 5px 0 0 18px; }
-  .bullet-list li { font-size: 9pt; color: #333; margin-bottom: 3px; line-height: 1.55; }
+  .bullet-list { margin: 7px 0 0 20px; }
+  .bullet-list li { font-size: 9pt; color: #333; margin-bottom: 4px; line-height: 1.6; }
   .edu-block { font-size: 9.5pt; color: #333; }
-  .cert-list { margin: 4px 0 0 18px; }
-  .cert-list li { font-size: 9pt; color: #333; margin-bottom: 2px; }
+  .cert-list { margin: 6px 0 0 20px; }
+  .cert-list li { font-size: 9pt; color: #333; margin-bottom: 3px; }
 </style>
 </head>
 <body>
