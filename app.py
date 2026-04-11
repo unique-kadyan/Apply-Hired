@@ -55,6 +55,9 @@ def create_app() -> Flask:
     def spa_fallback(e):
         if request.path.startswith("/api/"):
             return jsonify({"error": "Not found"}), 404
+        # Next.js static assets — let Flask serve them directly (don't fallback to index.html)
+        if request.path.startswith("/_next/"):
+            return jsonify({"error": "Not found"}), 404
         return send_from_directory(app.static_folder, "index.html")
 
     return app
