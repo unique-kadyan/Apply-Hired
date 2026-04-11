@@ -178,6 +178,60 @@ def has_paid():
     })
     return jsonify({"paid": bool(paid)})
 
+def _reconstruct_and_score(profile: dict, optimized: dict) -> dict:
+    """Build plain-text resume from optimized JSON and score it."""
+    from resume_parser import _score_resume_local
+
+    lines = []
+    if profile.get("name"):
+        lines.append(profile["name"])
+    if profile.get("title"):
+        lines.append(profile["title"])
+
+    contact = [x for x in [profile.get("email"), profile.get("phone"), profile.get("location")] if x]
+    if contact:
+        lines.append(" | ".join(contact))
+
+    for field, label in [("linkedin_url", "linkedin"), ("github_url", "github")]:
+        val = profile.get(field, "")
+        if val:
+            lines.append(f"{label}: {val}")
+
+    lines.append("")
+
+    summary = optimized.get("summary", "")
+    if summary:
+        lines += ["SUMMARY", summary, ""]
+
+    skills = optimized.get("skills", {})
+    skill_lines = [f"{cat}: {', '.join(v)}" for cat, v in skills.items() if v]
+    if skill_lines:
+        lines += ["SKILLS"] + skill_lines + [""]
+
+    experience = optimized.get("experience", [])
+    if experience:
+        lines.append("EXPERIENCE")
+        for exp in experience:
+            lines.append(
+                f"{exp.get('title', '')} | {exp.get('company', '')} {exp.get('period', '')}"
+            )
+            for h in exp.get("highlights", []):
+                lines.append(f"\u2022 {h}")
+            lines.append("")
+
+    if profile.get("education"):
+        lines += ["EDUCATION", profile["education"], ""]
+
+    certs = profile.get("certifications", [])
+    if certs:
+        lines += ["CERTIFICATIONS"] + [f"\u2022 {c}" for c in certs] + [""]
+
+    text = "\n".join(lines)
+    result = _score_resume_local(text)
+    result["method"] = "optimized"
+    return result
+
+
 @payment_bp.route("/optimize-resume", methods=["POST"])
 @login_required
 def optimize_resume():
@@ -207,10 +261,15 @@ def optimize_resume():
             experience_text += f"  - {h}\n"
 
     prompt = f"""You are a professional resume writer and ATS optimization expert.
+Rewrite this candidate's resume to score 100/100 on ATS scanners for the target role.
 
-Rewrite this candidate's resume to be FULLY ATS-optimized and tailored for the target role.
-
-IMPORTANT: Preserve the candidate's actual tech stack accurately. "Java" and "JavaScript" are different — do not swap, merge, or confuse them. Only include skills the candidate actually has. Do not add skills not present in their profile.
+RULES — follow every one:
+1. Preserve the candidate's actual tech stack. "Java" and "JavaScript" are DIFFERENT — never swap, merge, or confuse them. Only list skills the candidate actually has.
+2. Summary must be 3-4 sentences, 60+ words, packed with measurable impact and keywords for the target role.
+3. Each experience entry must have EXACTLY 5 bullet points. Every bullet must start with a strong action verb and include at least one quantified metric (%, x faster, K+ users, $, ms latency, etc.).
+4. Mandatory action verbs — use at least 10 of these across all bullets: led, built, optimized, deployed, scaled, designed, implemented, developed, collaborated, delivered, automated, architected, mentored, managed.
+5. Skills section must contain 15+ skills across all categories. Be specific (e.g. "Spring Boot" not just "Java frameworks").
+6. Keep all company names and periods exactly as provided — do not invent or alter them.
 
 TARGET ROLE: {target_role}
 {"TARGET COMPANY: " + target_company if target_company else ""}
@@ -231,9 +290,9 @@ Certifications: {', '.join(profile.get('certifications', []))}
 EXPERIENCE:
 {experience_text}
 
-Return ONLY valid JSON:
+Return ONLY valid JSON (no markdown, no code fences):
 {{
-    "summary": "Rewritten professional summary",
+    "summary": "Rewritten professional summary (60+ words, metrics-packed)",
     "skills": {{
         "languages": [...], "backend": [...], "frontend": [...],
         "databases": [...], "cloud_devops": [...], "architecture": [...], "testing": [...]
@@ -241,9 +300,9 @@ Return ONLY valid JSON:
     "experience": [
         {{
             "title": "Optimized job title",
-            "company": "Company Name",
+            "company": "Exact company name",
             "period": "Mon YYYY - Mon YYYY",
-            "highlights": ["ATS-optimized bullet 1", "bullet 2"]
+            "highlights": ["5 ATS-optimized bullets each with action verb + metric"]
         }}
     ],
     "ats_keywords": ["list of ATS keywords used"],
@@ -285,6 +344,14 @@ Return ONLY valid JSON:
             "company": target_company,
             "optimized_at": datetime.now(timezone.utc).isoformat(),
         }
+
+        try:
+            new_score = _reconstruct_and_score(profile, optimized)
+            profile["resume_score"] = new_score
+        except Exception as score_err:
+            logger.warning(f"Post-optimization scoring failed: {score_err}")
+            new_score = None
+
         update_user_profile(request.user["id"], profile)
 
         if not admin:
@@ -296,6 +363,7 @@ Return ONLY valid JSON:
         return jsonify({
             "message": "Resume optimized successfully!",
             "optimized": optimized,
+            "resume_score": new_score,
             "profile": profile,
         })
     except Exception as e:

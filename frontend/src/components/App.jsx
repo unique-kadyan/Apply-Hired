@@ -11,6 +11,7 @@ import JobDetail from '@/components/Jobs/JobDetail';
 import Search from '@/components/Search/Search';
 import Profile from '@/components/Profile/Profile';
 import ProfileSetup from '@/components/Profile/ProfileSetup';
+import ResumePage from '@/components/Resume/ResumePage';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -162,7 +163,7 @@ export default function App() {
       <div style={styles.navbar}>
         <div style={{ ...styles.logo, cursor: 'pointer' }} onClick={() => navigate('dashboard')}>JobBot</div>
         <nav style={{ display: 'flex', gap: '0.25rem', flex: 1 }}>
-          {[['dashboard', 'Dashboard'], ['jobs', 'Jobs'], ['search', 'Search'], ['profile', 'Profile']].map(([key, label]) => (
+          {[['dashboard', 'Dashboard'], ['jobs', 'Jobs'], ['search', 'Search'], ['resume', 'Resume'], ['profile', 'Profile']].map(([key, label]) => (
             <button key={key} onClick={() => navigate(key)}
               style={{ ...styles.navLink, ...(page === key || (page === 'job' && key === 'jobs') ? styles.navActive : {}) }}>
               {label}
@@ -200,6 +201,12 @@ export default function App() {
       {visited.search && (
         <div style={{ display: page === 'search' ? '' : 'none' }}>
           <Search profile={profile} showToast={showToast} navigate={navigate} />
+        </div>
+      )}
+
+      {visited.resume && (
+        <div style={{ display: page === 'resume' ? '' : 'none' }}>
+          <ResumePage profile={profile} setProfile={setProfile} showToast={showToast} />
         </div>
       )}
 

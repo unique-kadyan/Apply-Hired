@@ -18,14 +18,28 @@ _ADMIN_EMAILS = {
 def is_admin(user: dict) -> bool:
     return (user.get("email") or "").lower().strip() in _ADMIN_EMAILS
 
+
 DEFAULT_PROFILE = {
-    "name": "", "title": "", "email": "", "phone": "", "location": "",
-    "years_of_experience": 0, "open_to": "Remote Roles", "summary": "",
-    "skills": {}, "experience": [], "education": "", "certifications": [],
+    "name": "",
+    "title": "",
+    "email": "",
+    "phone": "",
+    "location": "",
+    "years_of_experience": 0,
+    "open_to": "Remote Roles",
+    "summary": "",
+    "skills": {},
+    "experience": [],
+    "education": "",
+    "certifications": [],
+    "linkedin_url": "",
+    "github_url": "",
 }
+
 
 def login_required(f):
     """Decorator — rejects unauthenticated requests with 401."""
+
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         user_id = session.get("user_id")
@@ -37,7 +51,9 @@ def login_required(f):
             return jsonify({"error": "Authentication required"}), 401
         request.user = user
         return f(*args, **kwargs)
+
     return wrapper
+
 
 def get_user_profile(user: dict) -> dict:
     """Parse the profile JSON stored on a user record."""
