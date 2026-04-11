@@ -8,11 +8,15 @@ from flask import jsonify, request, session
 
 from tracker import get_user_by_id
 
-_ADMIN_EMAIL = (os.environ.get("ADMIN_EMAIL", "rajeshsinghkadyan@gmail.com")).lower().strip()
+_ADMIN_EMAILS = {
+    e.strip().lower()
+    for e in os.environ.get("ADMIN_EMAIL", "rajeshsinghkadyan@gmail.com").split(",")
+    if e.strip()
+}
 
 
 def is_admin(user: dict) -> bool:
-    return (user.get("email") or "").lower().strip() == _ADMIN_EMAIL
+    return (user.get("email") or "").lower().strip() in _ADMIN_EMAILS
 
 DEFAULT_PROFILE = {
     "name": "", "title": "", "email": "", "phone": "", "location": "",
