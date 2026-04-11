@@ -476,17 +476,13 @@ def auto_apply():
             job = get_job_by_id(jid, user_id=request.user["id"])
             if not job:
                 continue
-            # Force-regenerate with real profile (ignore cached generic letter)
+            # Generate personalised cover letter and persist it — do NOT mark applied yet.
+            # Status is updated only when the user confirms they submitted the application.
             letter, tone = generate_cover_letter(_job_to_obj(job), profile)
             db = _get_db()
             oid = _to_object_id(jid)
             if oid:
                 db.jobs.update_one({"_id": oid}, {"$set": {"cover_letter": letter, "cover_letter_tone": tone}})
-            update_job_status(
-                jid,
-                "applied",
-                f"Applied on {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-            )
             details.append(
                 {
                     "id": job["id"],

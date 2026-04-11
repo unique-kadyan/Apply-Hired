@@ -1539,6 +1539,29 @@
             // Missing-fields modal state (auto-apply)
             const [missingModal, setMissingModal] = useState(null); // { missing: [], jobIds: [] }
             const [missingValues, setMissingValues] = useState({});
+            // Auto-apply results panel — shown after cover letters are generated
+            const [applyResults, setApplyResults] = useState(null); // array of { id, title, company, url, cover_letter }
+            const [copiedIdx, setCopiedIdx] = useState(null);
+
+            const _showApplyResults = (details) => {
+                setApplyResults(details);
+                setSelected(new Set());
+            };
+
+            const _markApplied = async (item) => {
+                await api.post(`/api/jobs/${item.id}/status`, { status: 'applied' });
+                setApplyResults(prev => prev.filter(x => x.id !== item.id));
+                setJobs(prev => prev.filter(x => x.id !== item.id));
+                setTotal(prev => Math.max(0, prev - 1));
+                refreshCounts();
+                showToast(`✓ ${item.title} marked as Applied`, 'success');
+            };
+
+            const _copyLetter = async (letter, idx) => {
+                try { await navigator.clipboard.writeText(letter); } catch(e) {}
+                setCopiedIdx(idx);
+                setTimeout(() => setCopiedIdx(null), 2000);
+            };
 
             const submitMissingAndApply = async () => {
                 const res = await api.post('/api/auto-apply', {
@@ -1546,22 +1569,12 @@
                     profile_patch: missingValues,
                 });
                 if (res.needs_info) {
-                    // Still missing more fields (shouldn't happen but handle gracefully)
                     showToast('Please fill in all required fields.', 'error');
                     return;
                 }
                 setMissingModal(null);
                 setMissingValues({});
-                const details = res.details || [];
-                const urls = details.filter(d => d.url).map(d => d.url);
-                urls.forEach(url => window.open(url, '_blank'));
-                const firstLetter = details.find(d => d.cover_letter);
-                if (firstLetter) {
-                    try { await navigator.clipboard.writeText(firstLetter.cover_letter); } catch(e) {}
-                }
-                showToast(`${urls.length} job page(s) opened! Cover letter copied.`, 'success');
-                setSelected(new Set());
-                loadJobs();
+                _showApplyResults(res.details || []);
             };
 
             const loadJobs = useCallback(() => {
@@ -1632,9 +1645,9 @@
 
             const autoApplySelected = async () => {
                 if (selected.size === 0) return;
-                if (!confirm(`Auto-apply to ${selected.size} job(s)?\n\nThis will:\n1. Generate personalised AI cover letters\n2. Open each job page in a new tab\n3. Copy the cover letter to clipboard\n\nContinue?`)) return;
+                if (!confirm(`Auto-apply to ${selected.size} job(s)?\n\nThis will:\n1. Generate personalised AI cover letters\n2. Show each job with its cover letter\n3. You open each job link & paste the letter\n4. Mark as Applied once submitted\n\nContinue?`)) return;
                 setApplying(true);
-                showToast('Checking profile & generating cover letters...', 'warning');
+                showToast('Generating personalised cover letters...', 'warning');
                 try {
                     const res = await api.post('/api/auto-apply', { job_ids: [...selected] });
 
@@ -1648,25 +1661,12 @@
                         return;
                     }
 
-                    const details = res.details || [];
-                    const urls = details.filter(d => d.url).map(d => d.url);
-                    let opened = 0;
-                    urls.forEach(url => { const w = window.open(url, '_blank'); if (w) opened++; });
-                    const firstLetter = details.find(d => d.cover_letter);
-                    if (firstLetter) {
-                        try { await navigator.clipboard.writeText(firstLetter.cover_letter); } catch(e) {}
-                    }
-                    if (opened < urls.length) {
-                        showToast(`${opened}/${urls.length} tabs opened. Allow popups for this site.`, 'warning');
-                    } else {
-                        showToast(`${urls.length} job(s) opened! Cover letter copied to clipboard.`, 'success');
-                    }
+                    _showApplyResults(res.details || []);
+                    showToast(`${res.details?.length || 0} cover letter(s) ready — open each job and apply!`, 'success');
                 } catch (err) {
-                    showToast('Auto-apply failed. Check console.', 'error');
+                    showToast('Auto-apply failed. Please try again.', 'error');
                 }
                 setApplying(false);
-                setSelected(new Set());
-                loadJobs();
             };
 
             return (
@@ -2251,6 +2251,65 @@
                             </div>
                         );
                     })()}
+
+                    {/* ── Auto-Apply Results Panel ──────────────────────── */}
+                    {applyResults && applyResults.length > 0 && (
+                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                            onClick={e => { if (e.target === e.currentTarget) setApplyResults(null); }}>
+                            <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                {/* Header */}
+                                <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <h3 style={{ fontSize: '1rem', margin: 0 }}>🚀 Auto-Apply — {applyResults.length} Job{applyResults.length > 1 ? 's' : ''}</h3>
+                                        <p style={{ color: 'var(--muted)', fontSize: '0.78rem', margin: '0.2rem 0 0' }}>
+                                            For each job: copy the cover letter → open the job link → paste & submit → Mark Applied
+                                        </p>
+                                    </div>
+                                    <button onClick={() => setApplyResults(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1.3rem', lineHeight: 1, padding: '0.2rem 0.4rem' }}>×</button>
+                                </div>
+
+                                {/* Job list */}
+                                <div style={{ overflowY: 'auto', flex: 1, padding: '0.75rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    {applyResults.map((item, idx) => (
+                                        <div key={item.id} style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '0.9rem 1rem' }}>
+                                            {/* Job title row */}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', marginBottom: '0.65rem' }}>
+                                                <div style={{ minWidth: 0 }}>
+                                                    <p style={{ fontWeight: 700, fontSize: '0.92rem', margin: 0, color: '#93c5fd' }}>{item.title}</p>
+                                                    <p style={{ color: 'var(--muted)', fontSize: '0.78rem', margin: '0.15rem 0 0' }}>{item.company}</p>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                                                    <a href={item.url} target="_blank" rel="noopener"
+                                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, padding: '0.35rem 0.75rem', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none', cursor: 'pointer' }}>
+                                                        ↗ Open Job
+                                                    </a>
+                                                    <button onClick={() => _markApplied(item)}
+                                                        style={{ background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 6, padding: '0.35rem 0.75rem', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
+                                                        ✓ Mark Applied
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            {/* Cover letter */}
+                                            <div style={{ position: 'relative' }}>
+                                                <textarea readOnly value={item.cover_letter || ''}
+                                                    style={{ width: '100%', minHeight: 120, maxHeight: 180, resize: 'vertical', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.6rem 0.75rem', color: 'var(--text2)', fontSize: '0.78rem', lineHeight: 1.5, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                                                <button onClick={() => _copyLetter(item.cover_letter, idx)}
+                                                    style={{ position: 'absolute', top: '0.4rem', right: '0.5rem', background: copiedIdx === idx ? 'rgba(52,211,153,0.2)' : 'rgba(99,102,241,0.2)', color: copiedIdx === idx ? '#34d399' : '#818cf8', border: `1px solid ${copiedIdx === idx ? 'rgba(52,211,153,0.4)' : 'rgba(99,102,241,0.4)'}`, borderRadius: 5, padding: '0.2rem 0.55rem', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}>
+                                                    {copiedIdx === idx ? '✓ Copied!' : '📋 Copy'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Footer */}
+                                <div style={{ padding: '0.75rem 1.25rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>{applyResults.length} remaining — mark each as applied after submitting</span>
+                                    <button onClick={() => setApplyResults(null)} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '0.35rem 0.9rem', fontSize: '0.78rem', cursor: 'pointer' }}>Done</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Cover Letter Modal */}
                     {clModal && (
