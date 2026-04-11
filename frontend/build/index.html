@@ -1592,8 +1592,8 @@
                 params.set('page', page);
                 params.set('per_page', perPage);
                 api.get(`/api/jobs?${params}`).then(res => {
-                    let filtered = res.jobs || [];
-                    setTotal(res.total || 0);
+                    let filtered = (res && res.jobs) ? res.jobs : [];
+                    setTotal((res && res.total) || 0);
                     // Client-side salary filter only (tab/sort handled server-side)
                     if (filters.salary === 'has_salary') {
                         filtered = filtered.filter(job => job.salary && job.salary.trim() && job.salary !== '-');
@@ -1610,7 +1610,7 @@
                     setJobs(filtered);
                     setLoading(false);
                     refreshCounts();
-                });
+                }).catch(() => { setJobs([]); setLoading(false); });
             }, [filters, page, perPage, tab, debouncedQ, sortBy, sortDir, refreshCounts]);
 
             useEffect(() => { loadJobs(); }, [loadJobs]);
@@ -2017,7 +2017,15 @@
                     </div>
 
                     {loading && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>Loading...</p>}
-                    {!loading && jobs.length === 0 && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}><p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>No jobs found.</p><button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => navigate('search')}>Run a Search</button></div>}
+                    {!loading && jobs.length === 0 && (
+                        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
+                            <p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>No jobs found.</p>
+                            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+                                <button style={{ ...styles.btn, ...styles.btnSecondary }} onClick={loadJobs}>↻ Refresh</button>
+                                <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => navigate('search')}>Run a Search</button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Pagination — only when total exceeds per-page */}
                     {total > perPage && (() => {
@@ -2784,20 +2792,33 @@
                 let country = remoteCountry || 'India';
                 if (locationType === 'remote_country') location = `remote ${remoteCountry}`;
                 else if (locationType === 'custom') { location = customLocation; country = ''; }
-                await api.post('/api/search', { job_title: jobTitle, skills: allSkills, location, country, levels: [...levels], min_score: minScore / 100, min_salary: minSalary });
-                showToast('Search started!', 'success');
+
+                // Show immediate feedback — button becomes "Searching..." right away
+                setSearchStatus({ running: true, progress: 5, message: 'Preparing search...' });
+
+                const res = await api.post('/api/search', { job_title: jobTitle, skills: allSkills, location, country, levels: [...levels], min_score: minScore / 100, min_salary: minSalary });
+                if (res && res.error) {
+                    setSearchStatus({ running: false, progress: 0, message: res.error });
+                    showToast(res.error, 'error');
+                    return;
+                }
                 pollStatus();
             };
 
             const pollStatus = () => {
                 if (pollRef.current) clearInterval(pollRef.current);
                 pollRef.current = setInterval(async () => {
-                    const status = await api.get('/api/search/status');
-                    setSearchStatus(status);
-                    if (!status.running) {
-                        clearInterval(pollRef.current); pollRef.current = null;
-                        if (status.progress >= 100 && navigate) { showToast(status.message, 'success'); setTimeout(() => navigate('jobs'), 1500); }
-                    }
+                    try {
+                        const status = await api.get('/api/search/status');
+                        setSearchStatus(status);
+                        if (!status.running) {
+                            clearInterval(pollRef.current); pollRef.current = null;
+                            if (status.progress >= 100) {
+                                showToast(status.message || 'Search complete!', 'success');
+                                navigate('jobs');
+                            }
+                        }
+                    } catch (_) { /* network blip — keep polling */ }
                 }, 2000);
             };
 
@@ -3104,24 +3125,42 @@
                     {searchStatus && (searchStatus.running || searchStatus.progress > 0) && (
                         <div style={styles.card}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                                <h2 style={{ fontSize: '1rem', margin: 0 }}>Search Progress</h2>
-                                <span style={{ fontSize: '1rem', fontWeight: 700, color: searchStatus.progress >= 100 ? 'var(--green2)' : 'var(--accent2)' }}>
-                                    {searchStatus.progress}%
-                                </span>
+                                <h2 style={{ fontSize: '1rem', margin: 0 }}>
+                                    {searchStatus.running ? '🔍 Searching...' : searchStatus.progress >= 100 ? '✅ Search Complete' : '⚠️ Search Ended'}
+                                </h2>
+                                {searchStatus.progress > 0 && (
+                                    <span style={{ fontSize: '1rem', fontWeight: 700, color: searchStatus.progress >= 100 ? 'var(--green2)' : 'var(--accent2)' }}>
+                                        {searchStatus.progress}%
+                                    </span>
+                                )}
                             </div>
-                            <div style={{ background: 'var(--bg3)', borderRadius: 10, height: 22, overflow: 'hidden', marginBottom: '0.75rem', position: 'relative' }}>
-                                <div style={{
-                                    background: searchStatus.progress >= 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--accent), var(--accent2))',
-                                    height: '100%', borderRadius: 10, transition: 'width 0.4s ease',
-                                    width: `${searchStatus.progress}%`,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                }}>
-                                    {searchStatus.progress >= 15 && (
-                                        <span style={{ color: '#fff', fontSize: '0.72rem', fontWeight: 700 }}>{searchStatus.progress}%</span>
+                            {searchStatus.progress > 0 && (
+                                <div style={{ background: 'var(--bg3)', borderRadius: 10, height: 22, overflow: 'hidden', marginBottom: '0.75rem', position: 'relative' }}>
+                                    <div style={{
+                                        background: searchStatus.progress >= 100 ? 'var(--green)' : (searchStatus.running ? 'linear-gradient(90deg, var(--accent), var(--accent2))' : '#dc2626'),
+                                        height: '100%', borderRadius: 10, transition: 'width 0.4s ease',
+                                        width: `${searchStatus.progress}%`,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    }}>
+                                        {searchStatus.progress >= 15 && (
+                                            <span style={{ color: '#fff', fontSize: '0.72rem', fontWeight: 700 }}>{searchStatus.progress}%</span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                            <p style={{ color: searchStatus.message?.startsWith('Error') ? '#fca5a5' : 'var(--muted)', fontSize: '0.88rem', marginBottom: !searchStatus.running ? '0.75rem' : 0 }}>{searchStatus.message}</p>
+                            {!searchStatus.running && (
+                                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+                                    <button onClick={() => navigate('jobs')} style={{ ...styles.btn, ...styles.btnPrimary, ...styles.btnSm }}>
+                                        📋 View Jobs
+                                    </button>
+                                    {searchStatus.progress < 100 && (
+                                        <button onClick={startSearch} style={{ ...styles.btn, ...styles.btnSecondary, ...styles.btnSm }}>
+                                            ↺ Retry Search
+                                        </button>
                                     )}
                                 </div>
-                            </div>
-                            <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>{searchStatus.message}</p>
+                            )}
                         </div>
                     )}
 
