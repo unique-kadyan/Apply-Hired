@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
-from middleware import get_user_profile, login_required
+from middleware import get_user_profile, is_admin, login_required
 from services.payment_service import (
     _key_id,
     create_order,
@@ -169,6 +169,8 @@ def verify_payment_route():
 @payment_bp.route("/has-paid", methods=["GET"])
 @login_required
 def has_paid():
+    if is_admin(request.user):
+        return jsonify({"paid": True, "admin": True})
     db = _get_db()
     paid = db.payments.find_one({
         "user_id": str(request.user["id"]),
@@ -179,13 +181,15 @@ def has_paid():
 @payment_bp.route("/optimize-resume", methods=["POST"])
 @login_required
 def optimize_resume():
-    db = _get_db()
-    paid = db.payments.find_one({
-        "user_id": str(request.user["id"]),
-        "status": "paid",
-    })
-    if not paid:
-        return jsonify({"error": "Payment required to use this feature"}), 402
+    admin = is_admin(request.user)
+    if not admin:
+        db = _get_db()
+        paid = db.payments.find_one({
+            "user_id": str(request.user["id"]),
+            "status": "paid",
+        })
+        if not paid:
+            return jsonify({"error": "Payment required to use this feature"}), 402
 
     profile = get_user_profile(request.user)
     data = request.get_json() or {}
@@ -283,10 +287,11 @@ Return ONLY valid JSON:
         }
         update_user_profile(request.user["id"], profile)
 
-        db.payments.update_one(
-            {"_id": paid["_id"]},
-            {"$set": {"status": "used", "used_at": datetime.now(timezone.utc).isoformat()}},
-        )
+        if not admin:
+            db.payments.update_one(
+                {"_id": paid["_id"]},
+                {"$set": {"status": "used", "used_at": datetime.now(timezone.utc).isoformat()}},
+            )
 
         return jsonify({
             "message": "Resume optimized successfully!",

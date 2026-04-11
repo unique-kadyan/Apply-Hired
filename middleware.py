@@ -2,10 +2,17 @@
 
 import functools
 import json
+import os
 
 from flask import jsonify, request, session
 
 from tracker import get_user_by_id
+
+_ADMIN_EMAIL = (os.environ.get("ADMIN_EMAIL", "rajeshsinghkadyan@gmail.com")).lower().strip()
+
+
+def is_admin(user: dict) -> bool:
+    return (user.get("email") or "").lower().strip() == _ADMIN_EMAIL
 
 DEFAULT_PROFILE = {
     "name": "", "title": "", "email": "", "phone": "", "location": "",
