@@ -9,4 +9,3 @@ venv/
 .env.*
 frontend/node_modules/
 frontend/.next/
-frontend/build/
