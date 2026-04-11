@@ -983,27 +983,20 @@
         // ============================================================
         // Dashboard Page
         // ============================================================
-        function Dashboard({ navigate }) {
+        function Dashboard({ navigate, dashData, onRefresh }) {
             const _emptyStats = { new: 0, applied: 0, interview: 0, offer: 0, not_interested: 0, total: 0, response_rate: 0, sources: {}, cover_letter_ab: {} };
-            const [stats, setStats] = useState(_emptyStats);
-            const [statsLoading, setStatsLoading] = useState(true);
-            const [recentJobs, setRecentJobs] = useState({ new: [], applied: [], interview: [] });
 
-            useEffect(() => {
-                api.get('/api/stats').then(s => { setStats(s); setStatsLoading(false); }).catch(() => setStatsLoading(false));
-                const fetches = [
-                    api.get('/api/jobs?tab=not_applied&per_page=5&sort_by=score&sort_dir=desc'),
-                    api.get('/api/jobs?tab=applied&per_page=5&sort_by=updated_at&sort_dir=desc'),
-                ];
-                Promise.all(fetches).then(([notApplied, applied]) => {
-                    const apJobs = (applied.jobs || []);
-                    setRecentJobs({
-                        new: notApplied.jobs || [],
-                        applied: apJobs.filter(j => j.status === 'applied'),
-                        interview: apJobs.filter(j => j.status === 'interview' || j.status === 'offer'),
-                    });
-                }).catch(() => {});
-            }, []);
+            // Use prop data directly — App pre-fetches and keeps this fresh
+            const stats = (dashData && dashData.stats) || _emptyStats;
+            const statsLoading = !dashData;
+            const recentJobs = {
+                new:       (dashData && dashData.recentNew)       || [],
+                applied:   (dashData && dashData.recentApplied)   || [],
+                interview: (dashData && dashData.recentInterview) || [],
+            };
+
+            // On every visit, trigger a background refresh of App-level data (silent — no spinner)
+            useEffect(() => { if (onRefresh) onRefresh(); }, []);
 
             const _Spinner = () => React.createElement('span', {
                 style: { display: 'inline-block', width: 14, height: 14, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.7s linear infinite', flexShrink: 0 }
@@ -1351,11 +1344,11 @@
             doc.save(`cover_letter_${slug(company)}_${slug(jobTitle)}.pdf`);
         }
 
-        function Jobs({ navigate, showToast }) {
+        function Jobs({ navigate, showToast, isVisible }) {
             const [jobs, setJobs] = useState([]);
             const [selected, setSelected] = useState(new Set());
             const [filters, setFilters] = useState({ status: '', min_score: 0, salary: '' });
-            const [loading, setLoading] = useState(true);
+            const [loading, setLoading] = useState(false); // starts false; triggered by visibility
             const [page, setPage] = useState(1);
             const [total, setTotal] = useState(0);
             const [tab, setTab] = useState('not_applied'); // 'not_applied' | 'applied' | 'not_interested' | 'saved'
@@ -1613,7 +1606,18 @@
                 }).catch(() => { setJobs([]); setLoading(false); });
             }, [filters, page, perPage, tab, debouncedQ, sortBy, sortDir, refreshCounts]);
 
-            useEffect(() => { loadJobs(); }, [loadJobs]);
+            // Only load when the Jobs tab is visible; when hidden (keep-alive), preserve state
+            const hasInitialLoad = useRef(false);
+            useEffect(() => {
+                if (isVisible) {
+                    if (!hasInitialLoad.current) {
+                        hasInitialLoad.current = true;
+                        setLoading(true);
+                    }
+                    loadJobs();
+                }
+            }, [loadJobs, isVisible]);
+
             const totalPages = Math.ceil(total / perPage);
 
             const toggleSelect = (id) => {
@@ -4178,12 +4182,34 @@
             const [profile, setProfile] = useState({});
             const [toast, setToast] = useState(null);
 
+            // Pre-fetched dashboard data — lives at App level so it persists across tab switches
+            const [dashData, setDashData] = useState(null);
+            const fetchDashData = useCallback(() => {
+                Promise.all([
+                    api.get('/api/stats'),
+                    api.get('/api/jobs?tab=not_applied&per_page=5&sort_by=score&sort_dir=desc'),
+                    api.get('/api/jobs?tab=applied&per_page=5&sort_by=updated_at&sort_dir=desc'),
+                ]).then(([stats, notApplied, applied]) => {
+                    const apJobs = applied.jobs || [];
+                    setDashData({
+                        stats,
+                        recentNew:       notApplied.jobs || [],
+                        recentApplied:   apJobs.filter(j => j.status === 'applied'),
+                        recentInterview: apJobs.filter(j => j.status === 'interview' || j.status === 'offer'),
+                    });
+                }).catch(() => {});
+            }, []);
+
+            // Which pages have been mounted at least once (lazy keep-alive)
+            const [visited, setVisited] = useState({ dashboard: true });
+
             // Check session on mount
             useEffect(() => {
                 api.get('/api/auth/me').then(res => {
                     if (res.user) {
                         setUser(res.user);
                         api.get('/api/profile').then(setProfile);
+                        fetchDashData(); // Pre-fetch dashboard data immediately on session restore
                     }
                     setAuthChecked(true);
                 }).catch(() => setAuthChecked(true));
@@ -4193,7 +4219,11 @@
                 if (params.get('auth_success')) {
                     window.history.replaceState({}, '', '/');
                     api.get('/api/auth/me').then(res => {
-                        if (res.user) { setUser(res.user); api.get('/api/profile').then(setProfile); }
+                        if (res.user) {
+                            setUser(res.user);
+                            api.get('/api/profile').then(setProfile);
+                            fetchDashData();
+                        }
                         setAuthChecked(true);
                     });
                 }
@@ -4204,7 +4234,10 @@
 
             }, []);
 
-            const navigate = (p, arg = null) => { setPage(p); setPageArg(arg); window.scrollTo(0, 0); };
+            const navigate = (p, arg = null) => {
+                setVisited(prev => ({ ...prev, [p]: true }));
+                setPage(p); setPageArg(arg); window.scrollTo(0, 0);
+            };
             const showToast = (message, type = 'success') => setToast({ message, type });
 
             const [welcome, setWelcome] = useState(null); // { name, isSignup }
@@ -4212,6 +4245,7 @@
             const handleAuth = (userData, isSignup = false) => {
                 setUser(userData);
                 api.get('/api/profile').then(setProfile);
+                fetchDashData(); // Start fetching dashboard data while welcome animation plays
                 setWelcome({ name: userData.name?.split(' ')[0] || userData.name, isSignup });
             };
 
@@ -4219,6 +4253,8 @@
                 await api.post('/api/auth/logout', {});
                 setUser(null);
                 setProfile({});
+                setDashData(null);
+                setVisited({ dashboard: true });
                 setPage('dashboard');
                 showToast('Logged out', 'success');
             };
@@ -4317,12 +4353,31 @@
                         </div>
                     </div>
 
-                    {/* Page content */}
-                    {page === 'dashboard' && <Dashboard navigate={navigate} />}
-                    {page === 'jobs' && <Jobs navigate={navigate} showToast={showToast} />}
+                    {/* Page content — lazy keep-alive: pages mount on first visit and stay mounted (CSS hidden) */}
+                    {/* Dashboard: always mounted (default page), uses pre-fetched App-level data */}
+                    <div style={{ display: page === 'dashboard' ? '' : 'none' }}>
+                        <Dashboard navigate={navigate} dashData={dashData} onRefresh={fetchDashData} />
+                    </div>
+                    {/* Jobs: mount on first visit, keep state between tab switches */}
+                    {visited.jobs && (
+                        <div style={{ display: page === 'jobs' ? '' : 'none' }}>
+                            <Jobs navigate={navigate} showToast={showToast} isVisible={page === 'jobs'} />
+                        </div>
+                    )}
+                    {/* JobDetail: always unmount/remount (depends on jobId arg) */}
                     {page === 'job' && <JobDetail jobId={pageArg} navigate={navigate} showToast={showToast} />}
-                    {page === 'search' && <Search profile={profile} showToast={showToast} navigate={navigate} />}
-                    {page === 'profile' && <Profile profile={profile} setProfile={setProfile} showToast={showToast} />}
+                    {/* Search: mount on first visit, keep polling state */}
+                    {visited.search && (
+                        <div style={{ display: page === 'search' ? '' : 'none' }}>
+                            <Search profile={profile} showToast={showToast} navigate={navigate} />
+                        </div>
+                    )}
+                    {/* Profile: mount on first visit */}
+                    {visited.profile && (
+                        <div style={{ display: page === 'profile' ? '' : 'none' }}>
+                            <Profile profile={profile} setProfile={setProfile} showToast={showToast} />
+                        </div>
+                    )}
 
                     {/* Toast */}
                     {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
