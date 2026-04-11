@@ -12,7 +12,6 @@ _CURRENCY_TO_USD = {
     "SGD": 1.35, "USD": 1.0,
 }
 
-
 def _expected_salary_usd(profile: dict) -> float:
     """Convert profile expected salary (min) to annual USD for search filtering."""
     sal_min = profile.get("expected_salary_min")
@@ -26,7 +25,6 @@ def _expected_salary_usd(profile: dict) -> float:
 
 search_bp = Blueprint("search", __name__, url_prefix="/api")
 
-
 @search_bp.route("/search", methods=["POST"])
 @login_required
 def run_search():
@@ -36,7 +34,6 @@ def run_search():
 
     data = request.get_json() or {}
 
-    # Default min_salary from user's expected compensation if not explicitly passed
     profile = get_user_profile(request.user)
     default_min_salary = _expected_salary_usd(profile)
 
@@ -52,27 +49,19 @@ def run_search():
     start_search(params, user_id)
     return jsonify({"message": "Search started"})
 
-
 @search_bp.route("/search/status", methods=["GET"])
 @login_required
 def search_status():
     return jsonify(get_search_status(request.user["id"]))
 
-
 @search_bp.route("/location-preferences", methods=["GET"])
 def location_prefs():
     return jsonify(LOCATION_PREFERENCES)
-
 
 @search_bp.route("/stats", methods=["GET"])
 @login_required
 def stats():
     return jsonify(get_stats(user_id=request.user["id"]))
-
-
-# ---------------------------------------------------------------------------
-# Auto-search schedule endpoints
-# ---------------------------------------------------------------------------
 
 @search_bp.route("/search/schedule", methods=["GET"])
 @login_required
@@ -93,7 +82,6 @@ def get_schedule():
         "last_run": last_run,
         "params": (user or {}).get("auto_search_params", {}),
     })
-
 
 @search_bp.route("/search/schedule", methods=["PUT"])
 @login_required

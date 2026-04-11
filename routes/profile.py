@@ -29,12 +29,10 @@ logger = logging.getLogger(__name__)
 
 profile_bp = Blueprint("profile", __name__, url_prefix="/api/profile")
 
-
 @profile_bp.route("", methods=["GET"])
 @login_required
 def get_profile():
     return jsonify(get_user_profile(request.user))
-
 
 @profile_bp.route("", methods=["PUT", "POST"])
 @login_required
@@ -45,7 +43,6 @@ def update_profile():
         profile.update(data)
     update_user_profile(request.user["id"], profile)
     return jsonify(profile)
-
 
 @profile_bp.route("/upload-resume", methods=["POST"])
 @login_required
@@ -77,7 +74,6 @@ def upload_resume():
                 else:
                     profile[key] = value
 
-        # Score the resume
         try:
             resume_score = score_resume(filepath)
             print(f"[Resume Score] {resume_score.get('total_score', '?')}/100 via {resume_score.get('method', '?')}")
@@ -90,7 +86,6 @@ def upload_resume():
         return jsonify({"message": "Resume parsed successfully!", "profile": profile, "resume_score": resume_score})
     except Exception as e:
         return jsonify({"error": f"Failed to parse resume: {str(e)}"}), 500
-
 
 @profile_bp.route("/upload-avatar", methods=["POST"])
 @login_required
@@ -111,7 +106,6 @@ def upload_avatar():
     try:
         img = Image.open(file.stream).convert("RGB")
 
-        # Crop to square from centre, then resize to 200×200
         w, h = img.size
         side = min(w, h)
         left = (w - side) // 2
@@ -132,7 +126,6 @@ def upload_avatar():
     except Exception as e:
         return jsonify({"error": f"Image processing failed: {str(e)}"}), 500
 
-
 @profile_bp.route("/connect/github", methods=["POST"])
 @login_required
 def connect_github():
@@ -141,11 +134,9 @@ def connect_github():
     if not username:
         return jsonify({"error": "GitHub username or URL is required"}), 400
 
-    # Use token from request body first, then fall back to stored profile token
     profile = get_user_profile(request.user)
     token = (data.get("token") or "").strip() or profile.get("github_token", "")
 
-    # Save token to profile if provided (so it persists for future calls)
     if data.get("token", "").strip():
         profile["github_token"] = data["token"].strip()
 
@@ -169,7 +160,6 @@ def connect_github():
         "stats": stats,
     })
 
-
 @profile_bp.route("/connect/linkedin", methods=["POST"])
 @login_required
 def connect_linkedin():
@@ -185,7 +175,6 @@ def connect_linkedin():
 
     return jsonify({"message": "LinkedIn connected!", "profile": profile})
 
-
 @profile_bp.route("/connect/portfolio", methods=["POST"])
 @login_required
 def connect_portfolio():
@@ -199,7 +188,6 @@ def connect_portfolio():
     update_user_profile(request.user["id"], profile)
 
     return jsonify({"message": "Portfolio connected!", "profile": profile})
-
 
 @profile_bp.route("/autofill-data", methods=["GET"])
 @login_required
@@ -230,10 +218,9 @@ def get_autofill_data():
         "website": profile.get("website", ""),
         "skills": skills_flat,
         "education": profile.get("education", ""),
-        "cover_letter": "",  # filled per-job by the extension
+        "cover_letter": "",
         "notice_period": "Immediate / 15 days",
     })
-
 
 _RESUME_JSON_SCHEMA = """{
   "personal": { "name": "", "email": "", "phone": "", "location": "", "linkedin": "", "github": "", "website": "" },
@@ -259,7 +246,6 @@ _RESUME_JSON_SCHEMA = """{
   ],
   "achievements": []
 }"""
-
 
 @profile_bp.route("/parse-resume-json", methods=["POST"])
 @login_required
@@ -311,7 +297,6 @@ RESUME TEXT:
             result = _call_ai_text(provider, prompt)
             if not result:
                 continue
-            # Strip accidental markdown fences
             cleaned = result.strip()
             if cleaned.startswith("```"):
                 cleaned = cleaned.split("```", 2)[-1] if cleaned.count("```") >= 2 else cleaned
@@ -326,7 +311,6 @@ RESUME TEXT:
             continue
 
     return jsonify({"error": "AI parsing failed — all providers exhausted"}), 500
-
 
 @profile_bp.route("/score-resume", methods=["POST"])
 @login_required

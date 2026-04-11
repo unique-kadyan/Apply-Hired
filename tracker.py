@@ -14,19 +14,13 @@ from config import MONGO_URI
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# MongoDB connection
-# ---------------------------------------------------------------------------
-
 _client: Optional[MongoClient] = None
 _db = None
-
 
 def _fix_mongo_uri(uri: str) -> str:
     """URL-encode username and password if they contain special characters."""
     if "://" not in uri:
         return uri
-    # Split: mongodb+srv://user:pass@host/...
     scheme, rest = uri.split("://", 1)
     if "@" not in rest:
         return uri
@@ -37,7 +31,6 @@ def _fix_mongo_uri(uri: str) -> str:
         passwd = quote_plus(passwd)
         userinfo = f"{user}:{passwd}"
     return f"{scheme}://{userinfo}@{hostpart}"
-
 
 def _get_db():
     """Get (or lazily create) the MongoDB database connection."""
@@ -56,14 +49,12 @@ def _get_db():
     logger.info(f"Connected to MongoDB: {_db.name}")
     return _db
 
-
 def _id_str(doc: dict) -> dict:
     """Convert MongoDB _id (ObjectId) to string 'id' for JSON compatibility."""
     if doc and "_id" in doc:
         doc["id"] = str(doc["_id"])
         del doc["_id"]
     return doc
-
 
 def _to_object_id(id_val):
     """Convert a string or int ID to ObjectId if possible."""
@@ -74,41 +65,25 @@ def _to_object_id(id_val):
     except Exception:
         return None
 
-
 def init_db():
     """Ensure indexes exist on all collections."""
     db = _get_db()
 
-    # Users indexes
     db.users.create_index("email", unique=True)
 
-    # Jobs indexes
     db.jobs.create_index([("user_id", 1), ("url", 1)], unique=True)
     db.jobs.create_index([("score", DESCENDING)])
     db.jobs.create_index("status")
     db.jobs.create_index("source")
     db.jobs.create_index("user_id")
 
-    # Search runs index
     db.search_runs.create_index("user_id")
 
     logger.info("MongoDB indexes ensured")
 
-
-# ---------------------------------------------------------------------------
-# Internal helper used by routes/auth.py  (replaces sqlite _get_conn)
-# ---------------------------------------------------------------------------
-
-
 def _get_conn():
     """Return the db handle — kept for compatibility with routes/auth.py."""
     return _get_db()
-
-
-# ---------------------------------------------------------------------------
-# User auth helpers
-# ---------------------------------------------------------------------------
-
 
 def create_user(name: str, email: str, password: str) -> Optional[dict]:
     """Create a new user. Returns user dict or None if email exists."""
@@ -129,7 +104,6 @@ def create_user(name: str, email: str, password: str) -> Optional[dict]:
     except Exception:
         return None
 
-
 def authenticate_user(email: str, password: str) -> Optional[dict]:
     """Verify credentials. Returns user dict or None."""
     db = _get_db()
@@ -143,7 +117,6 @@ def authenticate_user(email: str, password: str) -> Optional[dict]:
             "created_at": row.get("created_at", ""),
         }
     return None
-
 
 def get_user_by_id(user_id) -> Optional[dict]:
     """Get user by ID (no password hash)."""
@@ -162,7 +135,6 @@ def get_user_by_id(user_id) -> Optional[dict]:
         "created_at": row.get("created_at", ""),
     }
 
-
 def update_user_profile(user_id, profile_data: dict):
     """Save profile JSON for a user. Auto-sets updated timestamp."""
     profile_data["profile_updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -174,7 +146,6 @@ def update_user_profile(user_id, profile_data: dict):
             {"$set": {"profile": json.dumps(profile_data)}},
         )
 
-
 def get_not_interested_reasons(user_id) -> list[str]:
     """Return user's saved custom not-interested reasons."""
     db = _get_db()
@@ -185,7 +156,6 @@ def get_not_interested_reasons(user_id) -> list[str]:
     if not row:
         return []
     return row.get("not_interested_reasons", [])
-
 
 def save_not_interested_reason(user_id, reason: str) -> list[str]:
     """Add a custom not-interested reason for a user (deduped, max 20). Returns updated list."""
@@ -202,7 +172,6 @@ def save_not_interested_reason(user_id, reason: str) -> list[str]:
         db.users.update_one({"_id": oid}, {"$set": {"not_interested_reasons": current}})
     return current
 
-
 def delete_not_interested_reason(user_id, reason: str) -> list[str]:
     """Remove a specific not-interested reason. Returns updated list."""
     db = _get_db()
@@ -214,12 +183,6 @@ def delete_not_interested_reason(user_id, reason: str) -> list[str]:
     db.users.update_one({"_id": oid}, {"$set": {"not_interested_reasons": updated}})
     return updated
 
-
-# ---------------------------------------------------------------------------
-# Skip-keyword filtering
-# ---------------------------------------------------------------------------
-
-# Predefined reasons — too generic to extract actionable keywords from
 _PREDEFINED_REASONS = frozenset(
     {
         "Salary too low",
@@ -233,7 +196,6 @@ _PREDEFINED_REASONS = frozenset(
     }
 )
 
-# Common English stopwords + resume/job-domain words that add no signal
 _SKIP_STOPWORDS = frozenset(
     {
         "a",
@@ -352,7 +314,6 @@ _SKIP_STOPWORDS = frozenset(
     }
 )
 
-
 def get_skip_filter_keywords(user_id) -> list[str]:
     """
     Derive keyword filters from the user's custom not-interested reasons.
@@ -371,7 +332,6 @@ def get_skip_filter_keywords(user_id) -> list[str]:
     if not oid:
         return []
 
-    # Collect all custom reason texts: from profile + per-job notes
     custom_texts: list[str] = []
 
     user = db.users.find_one({"_id": oid}, {"not_interested_reasons": 1})
@@ -380,7 +340,6 @@ def get_skip_filter_keywords(user_id) -> list[str]:
             if r not in _PREDEFINED_REASONS:
                 custom_texts.append(r)
 
-    # Per-job notes that are also non-predefined custom text
     for doc in db.jobs.find(
         {
             "user_id": str(user_id),
@@ -402,12 +361,6 @@ def get_skip_filter_keywords(user_id) -> list[str]:
 
     return sorted(keywords)
 
-
-# ---------------------------------------------------------------------------
-# Jobs
-# ---------------------------------------------------------------------------
-
-
 def save_job(job, score_data: dict, cover_letter: str = "", user_id=None) -> bool:
     """Save a job to the database. Returns True if new, False if exists."""
     db = _get_db()
@@ -418,10 +371,8 @@ def save_job(job, score_data: dict, cover_letter: str = "", user_id=None) -> boo
     except Exception:
         return False
 
-
 def _build_job_doc(job, score_data: dict, cover_letter: str = "", user_id=None) -> dict:
     now = datetime.now(timezone.utc).isoformat()
-    # Keep only essential score fields to save DB space
     slim_score = {
         "local_score": score_data.get("local_score", 0),
         "final_score": score_data.get("final_score", 0),
@@ -451,7 +402,6 @@ def _build_job_doc(job, score_data: dict, cover_letter: str = "", user_id=None) 
         "updated_at": now,
     }
 
-
 def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
     """Save multiple jobs with fuzzy dedup (same company+title within 7 days → keep highest score).
     Returns count of new jobs inserted."""
@@ -465,7 +415,6 @@ def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
     if not docs:
         return 0
 
-    # --- Step 1: In-memory dedup within this batch (same company+title → keep highest score) ---
     seen_key_to_idx: dict[str, int] = {}
     best_docs: list[dict] = []
     for doc in docs:
@@ -481,7 +430,6 @@ def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
             seen_key_to_idx[key] = len(best_docs)
             best_docs.append(doc)
 
-    # --- Step 2: Batch-query existing jobs by company within last 7 days ---
     uid_str = str(user_id) if user_id else None
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     companies = list({(d.get("company") or "")[:60] for d in best_docs})
@@ -498,7 +446,6 @@ def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
             )
             existing_map[ex_key] = ex
 
-    # --- Step 3: Build ops — insert new, update only if score improved ---
     ops = []
     for doc in best_docs:
         key = (
@@ -513,7 +460,6 @@ def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
                     {"$set": {"score": doc["score"], "source": doc["source"],
                               "url": doc["url"], "updated_at": doc["updated_at"]}},
                 ))
-            # else: same or lower score — skip
         else:
             ops.append(InsertOne(doc))
 
@@ -524,9 +470,7 @@ def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
         result = db.jobs.bulk_write(ops, ordered=False)
         return result.inserted_count
     except BulkWriteError as e:
-        # Remaining duplicate-URL violations — expected for truly identical jobs
         return e.details.get("nInserted", 0)
-
 
 def update_job_status(job_id, status: str, notes: str = ""):
     """Update job application status. Tracks applied_at timestamp for follow-up reminders."""
@@ -536,9 +480,8 @@ def update_job_status(job_id, status: str, notes: str = ""):
         now = datetime.now(timezone.utc).isoformat()
         fields = {"status": status, "notes": notes, "updated_at": now}
         if status == "applied":
-            fields["applied_at"] = now  # used for follow-up reminder logic
+            fields["applied_at"] = now
         db.jobs.update_one({"_id": oid}, {"$set": fields})
-
 
 def update_interview_details(job_id, details: dict, user_id=None):
     """Save or update interview scheduling details for a job."""
@@ -562,7 +505,6 @@ def update_interview_details(job_id, details: dict, user_id=None):
     )
     return result.modified_count > 0
 
-
 def update_offer_details(job_id, details: dict, user_id=None):
     """Save or update offer letter details for a job."""
     db = _get_db()
@@ -585,7 +527,6 @@ def update_offer_details(job_id, details: dict, user_id=None):
     )
     return result.modified_count > 0
 
-
 VALID_SORT_FIELDS = {
     "score",
     "date_posted",
@@ -595,7 +536,6 @@ VALID_SORT_FIELDS = {
     "company",
     "salary",
 }
-
 
 def get_jobs(
     status: Optional[str] = None,
@@ -632,7 +572,6 @@ def get_jobs(
     if source:
         query["source"] = source
 
-    # Full-text search across title, company, location
     if search and search.strip():
         pattern = {"$regex": search.strip(), "$options": "i"}
         query["$or"] = [
@@ -650,7 +589,6 @@ def get_jobs(
 
     docs = [_id_str(doc) for doc in cursor]
 
-    # Compute follow-up reminder flag: applied > 7 days ago with no interview signal
     now_utc = datetime.now(timezone.utc)
     for doc in docs:
         if doc.get("status") == "applied" and doc.get("applied_at"):
@@ -670,7 +608,6 @@ def get_jobs(
 
     return docs, total
 
-
 def get_job_by_id(job_id, user_id=None) -> Optional[dict]:
     """Get a single job by ID, optionally scoped to a user."""
     db = _get_db()
@@ -685,7 +622,6 @@ def get_job_by_id(job_id, user_id=None) -> Optional[dict]:
     doc = db.jobs.find_one(query)
     return _id_str(doc) if doc else None
 
-
 def get_stats(user_id=None) -> dict:
     """Get dashboard statistics, optionally scoped to a user."""
     db = _get_db()
@@ -693,7 +629,6 @@ def get_stats(user_id=None) -> dict:
     if user_id is not None:
         base_filter["user_id"] = str(user_id)
 
-    # Status counts
     all_statuses = [
         "new",
         "saved",
@@ -707,7 +642,6 @@ def get_stats(user_id=None) -> dict:
     for s in all_statuses:
         stats[s] = db.jobs.count_documents({**base_filter, "status": s})
 
-    # Average score
     pipeline = [
         {"$match": base_filter},
         {"$group": {"_id": None, "avg": {"$avg": "$score"}}},
@@ -715,7 +649,6 @@ def get_stats(user_id=None) -> dict:
     result = list(db.jobs.aggregate(pipeline))
     stats["avg_score"] = result[0]["avg"] if result and result[0]["avg"] else 0
 
-    # Score distribution (buckets: 0-20, 20-40, 40-60, 60-80, 80-100)
     buckets = [0, 0.2, 0.4, 0.6, 0.8, 1.01]
     score_dist = []
     for i in range(len(buckets) - 1):
@@ -727,7 +660,6 @@ def get_stats(user_id=None) -> dict:
         )
     stats["score_distribution"] = score_dist
 
-    # Top companies by job count
     pipeline = [
         {"$match": base_filter},
         {
@@ -750,7 +682,6 @@ def get_stats(user_id=None) -> dict:
         if r["_id"]
     ]
 
-    # Daily activity — jobs added per day for last 14 days
     from datetime import timedelta
 
     today = datetime.now(timezone.utc).date()
@@ -772,7 +703,6 @@ def get_stats(user_id=None) -> dict:
             daily[r["_id"]] = r["count"]
     stats["daily_activity"] = [{"date": d, "count": c} for d, c in daily.items()]
 
-    # Application funnel stages
     stats["funnel"] = [
         {"stage": "Discovered", "count": stats["total"]},
         {"stage": "New", "count": stats["new"] + stats.get("saved", 0)},
@@ -784,7 +714,6 @@ def get_stats(user_id=None) -> dict:
         {"stage": "Offer", "count": stats.get("offer", 0)},
     ]
 
-    # Response rate by source: applied/interview/offer jobs grouped by source board
     pipeline = [
         {"$match": {**base_filter, "status": {"$in": ["applied", "interview", "offer"]}}},
         {
@@ -809,7 +738,6 @@ def get_stats(user_id=None) -> dict:
         for r in db.jobs.aggregate(pipeline)
     ]
 
-    # Cover letter A/B tone tracking (formal vs casual interview conversion rate)
     pipeline = [
         {"$match": {**base_filter, "cover_letter_tone": {"$exists": True, "$ne": None}}},
         {
@@ -834,7 +762,6 @@ def get_stats(user_id=None) -> dict:
 
     return stats
 
-
 def log_search_run(
     queries: list[str],
     total_found: int,
@@ -855,6 +782,4 @@ def log_search_run(
         }
     )
 
-
-# Initialize on import
 init_db()

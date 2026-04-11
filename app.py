@@ -13,7 +13,6 @@ from routes.search import search_bp
 from services.scheduler import start_scheduler, stop_scheduler
 from tracker import init_db
 
-
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="frontend/build", static_url_path="")
     app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
@@ -22,18 +21,15 @@ def create_app() -> Flask:
     app.config["PERMANENT_SESSION_LIFETIME"] = int(float(os.environ.get("SESSION_LIFETIME_HOURS", 720)) * 3600)
     app.config["SESSION_COOKIE_SECURE"] = not os.environ.get("FLASK_DEBUG")
 
-    # Register blueprints
-    app.register_blueprint(auth_bp)       # /api/auth/*
-    app.register_blueprint(profile_bp)    # /api/profile/*
-    app.register_blueprint(jobs_bp)       # /api/jobs/*, /api/apply, /api/auto-apply
-    app.register_blueprint(search_bp)     # /api/search/*, /api/stats
-    app.register_blueprint(payment_bp)    # /api/payment/*
-    app.register_blueprint(gmail_bp)      # /api/gmail/*
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(profile_bp)
+    app.register_blueprint(jobs_bp)
+    app.register_blueprint(search_bp)
+    app.register_blueprint(payment_bp)
+    app.register_blueprint(gmail_bp)
 
-    # Start background scheduler (auto-search + stale pruner)
     start_scheduler()
 
-    # Log the public URL on startup so it's visible in Render deploy logs
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
     if render_url:
         print(f"  Public URL: {render_url}")
@@ -41,12 +37,10 @@ def create_app() -> Flask:
 
     app.teardown_appcontext(lambda _: stop_scheduler())
 
-    # Health / keep-alive endpoint (also used by Render uptime checks)
     @app.route("/health")
     def health():
         return jsonify({"status": "ok"}), 200
 
-    # Serve React SPA
     @app.route("/")
     def index():
         return send_from_directory(app.static_folder, "index.html")
@@ -55,13 +49,11 @@ def create_app() -> Flask:
     def spa_fallback(e):
         if request.path.startswith("/api/"):
             return jsonify({"error": "Not found"}), 404
-        # Next.js static assets — let Flask serve them directly (don't fallback to index.html)
         if request.path.startswith("/_next/"):
             return jsonify({"error": "Not found"}), 404
         return send_from_directory(app.static_folder, "index.html")
 
     return app
-
 
 app = create_app()
 
@@ -73,4 +65,4 @@ if __name__ == "__main__":
     print(f"  Running on port {port}")
     print("  API:      /api/")
     print("  Frontend: / (production build)\n")
-    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=False)  # nosec B104
+    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=False)

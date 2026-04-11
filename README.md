@@ -17,30 +17,29 @@ Full-stack job search automation platform. Searches 13+ job boards in parallel, 
 
 ```
 job_apply/
-├── app.py                      # Flask app factory, registers blueprints, serves Next.js static build from frontend/build/
+├── app.py                      Flask app factory, registers blueprints, serves Next.js static build from frontend/build/
+├── setup.py                    Triggers npm build automatically during pip install
 ├── routes/
-│   ├── auth.py                 # Email/password auth, Google OAuth, OTP reset
-│   ├── jobs.py                 # Job CRUD, status, cover letter, interview, offer
-│   ├── search.py               # Background search orchestration + schedule
-│   ├── profile.py              # Profile, resume upload, GitHub/LinkedIn/portfolio
-│   ├── gmail.py                # Gmail OAuth, sync, interview/offer auto-detection
-│   └── payment.py              # Razorpay payment routes
-├── scrapers.py                 # Multi-board job scrapers (LinkedIn, Indeed, HackerNews, Glassdoor, etc.)
-├── matcher.py                  # Job scoring/ranking against user profile
-├── tracker.py                  # MongoDB operations for jobs, users, profiles
-├── cover_letter.py             # Claude AI cover letter generation
+│   ├── auth.py                 Email/password auth, Google OAuth, OTP reset
+│   ├── jobs.py                 Job CRUD, status, cover letter, interview, offer
+│   ├── search.py               Background search orchestration + schedule
+│   ├── profile.py              Profile, resume upload, GitHub/LinkedIn/portfolio
+│   ├── gmail.py                Gmail OAuth, sync, interview/offer auto-detection
+│   └── payment.py              Razorpay payment routes
+├── scrapers.py                 Multi-board job scrapers (LinkedIn, Indeed, HackerNews, Glassdoor, etc.)
+├── matcher.py                  Job scoring/ranking against user profile
+├── tracker.py                  MongoDB operations for jobs, users, profiles
+├── cover_letter.py             Claude AI cover letter generation
 ├── services/
-│   ├── scheduler.py            # Auto-search + stale job pruner
-│   ├── search_service.py       # Background search thread, salary/date filtering
-│   ├── profile_import.py       # GitHub API import (parallel language fetching)
-│   └── currency.py             # Multi-currency detection and USD conversion
+│   ├── scheduler.py            Auto-search + stale job pruner
+│   ├── search_service.py       Background search thread, salary/date filtering
+│   ├── profile_import.py       GitHub API import (parallel language fetching)
+│   └── currency.py             Multi-currency detection and USD conversion
 ├── frontend/
-│   ├── src/app/                # App Router entry (layout.jsx, page.jsx, globals.css)
-│   ├── src/components/         # Feature components (Auth, Dashboard, Jobs, Profile, Search, WelcomeOverlay, shared)
-│   ├── src/lib/                # api.js (fetch wrapper), styles.js (shared style objects)
-│   └── build/                  # Static export committed to repo, served by Flask
+│   ├── src/app/                App Router entry (layout.jsx, page.jsx, globals.css)
+│   ├── src/components/         Feature components (Auth, Dashboard, Jobs, Profile, Search, WelcomeOverlay, shared)
+│   └── src/lib/                api.js (fetch wrapper), styles.js (shared style objects)
 ├── requirements.txt
-├── build.sh                    # Production build script for Render
 └── .env.example
 ```
 
@@ -58,19 +57,23 @@ python app.py   # Flask on :5000
 # Frontend (separate terminal)
 cd frontend
 npm install
-# .env.local already has NEXT_PUBLIC_API_BASE=http://localhost:5000
-npm run dev     # Next.js on :3000
+npm run dev     # Next.js on :3000 — proxies API calls to Flask on :5000
 ```
 
 ---
 
-## Production Build (for Render)
+## Production Build (Render)
 
-Build command: `bash build.sh`
+`pip install -r requirements.txt` builds everything — Python dependencies and the Next.js frontend — via the `setup.py` post-install hook. No separate build script needed.
 
-Start command: `gunicorn app:app` or `python app.py`
+**Render settings:**
 
-Environment variables required:
+| Setting | Value |
+| --- | --- |
+| Build Command | `pip install -r requirements.txt` |
+| Start Command | `gunicorn app:app --workers 2 --bind 0.0.0.0:$PORT --timeout 120` |
+
+**Environment variables required:**
 
 | Variable | Description |
 | --- | --- |
@@ -80,7 +83,7 @@ Environment variables required:
 | `RENDER_EXTERNAL_URL` | Set by Render automatically |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `SESSION_LIFETIME_HOURS` | Session duration (default 24) |
+| `SESSION_LIFETIME_HOURS` | Session duration (default 720 hrs) |
 | `RAZORPAY_KEY_ID` | Razorpay key for resume optimizer |
 | `RAZORPAY_KEY_SECRET` | Razorpay secret |
 | `SMTP_HOST` / `SMTP_EMAIL` / `SMTP_PASSWORD` | SMTP for password reset emails |

@@ -2,7 +2,6 @@
 
 import re
 
-# Approximate exchange rates from 1 USD.  Update periodically.
 USD_RATES: dict[str, float] = {
     "USD": 1.0,
     "INR": 83.5,
@@ -43,7 +42,6 @@ USD_RATES: dict[str, float] = {
     "LKR": 305.0,
 }
 
-# Currency symbol / keyword → currency code
 _SYMBOL_MAP = [
     (r'₹|INR|Rs\.?\s', "INR"),
     (r'£|GBP', "GBP"),
@@ -58,10 +56,9 @@ _SYMBOL_MAP = [
     (r'NZD|NZ\$', "NZD"),
     (r'HKD|HK\$', "HKD"),
     (r'BRL|R\$', "BRL"),
-    (r'\$', "USD"),  # plain $ → USD (check last after A$, C$, S$ etc.)
+    (r'\$', "USD"),
 ]
 
-# Location keyword → most likely currency
 _LOCATION_CURRENCY = {
     "india": "INR",
     "united kingdom": "GBP",
@@ -98,7 +95,6 @@ _LOCATION_CURRENCY = {
     "qatar": "QAR",
 }
 
-
 def detect_currency(salary_str: str, location: str = "") -> str:
     """Detect the currency code from a salary string or job location."""
     text = (salary_str or "").strip()
@@ -111,14 +107,12 @@ def detect_currency(salary_str: str, location: str = "") -> str:
         if keyword in loc:
             return code
 
-    return "USD"  # default
-
+    return "USD"
 
 def usd_to(amount_usd: float, target_currency: str) -> float:
     """Convert a USD amount to the target currency."""
     rate = USD_RATES.get(target_currency.upper(), 1.0)
     return amount_usd * rate
-
 
 def salary_in_usd(salary_str: str, location: str = "") -> float | None:
     """
@@ -135,8 +129,6 @@ def salary_in_usd(salary_str: str, location: str = "") -> float | None:
 
     max_num = max(int(n.replace(",", "")) for n in nums)
 
-    # Heuristic: values under 1000 are likely monthly (e.g. "₹80k" already parsed as 80)
-    # Values like "80k" — the 'k' suffix handling
     if "k" in salary_str.lower():
         multiplier = 1000
     else:
@@ -146,18 +138,12 @@ def salary_in_usd(salary_str: str, location: str = "") -> float | None:
     rate = USD_RATES.get(currency.upper(), 1.0)
     return max_num / rate if rate else max_num
 
-
-# ---------------------------------------------------------------------------
-# Normalised annual USD salary — handles LPA, monthly, k-suffix, multi-currency
-# ---------------------------------------------------------------------------
-
 _LPA_RE = re.compile(
     r'(\d+(?:\.\d+)?)\s*(?:lpa|l\.p\.a\.?|lakh(?:s)?\s+per\s+ann|lac\s+per\s+ann)',
     re.IGNORECASE,
 )
 _MONTHLY_RE = re.compile(r'per\s+month|/\s*month|p\.?m\.?\b|monthly', re.IGNORECASE)
 _HOURLY_RE  = re.compile(r'per\s+hour|/\s*hr|/\s*hour|hourly', re.IGNORECASE)
-
 
 def normalize_salary_annual_usd(salary_str: str, location: str = "") -> float | None:
     """
@@ -178,29 +164,24 @@ def normalize_salary_annual_usd(salary_str: str, location: str = "") -> float | 
     currency = detect_currency(text, location)
     rate = USD_RATES.get(currency.upper(), 1.0)
 
-    # --- LPA (Indian Lakhs Per Annum) ---
     m = _LPA_RE.search(text)
     if m:
         lpa = float(m.group(1))
         annual_inr = lpa * 100_000
-        # Always convert from INR regardless of detected currency symbol
         return annual_inr / USD_RATES.get("INR", 83.5)
 
-    # Extract all numeric values
     nums = re.findall(r'[\d,]+(?:\.\d+)?', text)
     if not nums:
         return None
     values = [float(n.replace(',', '')) for n in nums]
     max_val = max(values)
 
-    # k-suffix (e.g. "120k", "₹80k")
     if re.search(r'\d\s*k\b', text, re.IGNORECASE):
         max_val *= 1_000
 
-    # Annualise if monthly or hourly
     if _MONTHLY_RE.search(text):
         max_val *= 12
     elif _HOURLY_RE.search(text):
-        max_val *= 2_080  # 40 hrs/week × 52 weeks
+        max_val *= 2_080
 
     return max_val / rate if rate else max_val

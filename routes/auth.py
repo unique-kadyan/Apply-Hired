@@ -21,23 +21,19 @@ from tracker import (
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
-# Google OAuth config
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
-# In-memory pending OTP store
 _pending_otps: dict = {}
-
 
 def _build_callback_url() -> str:
     url = request.url_root.rstrip("/") + "/api/auth/google/callback"
     if url.startswith("http://") and "localhost" not in url and "127.0.0.1" not in url:
         url = url.replace("http://", "https://", 1)
     return url
-
 
 def _init_profile(user_id: int, name: str, email: str, extra: dict | None = None):
     """Set the default profile for a newly created user."""
@@ -47,9 +43,6 @@ def _init_profile(user_id: int, name: str, email: str, extra: dict | None = None
     if extra:
         profile.update(extra)
     update_user_profile(user_id, profile)
-
-
-# ---- Email / password auth ------------------------------------------------
 
 @auth_bp.route("/signup", methods=["POST"])
 def signup():
@@ -68,7 +61,6 @@ def signup():
     if existing:
         return jsonify({"error": "An account with this email already exists"}), 409
 
-    # No SMTP → create account directly
     if not is_smtp_configured():
         user = create_user(name, email, password)
         if not user:
@@ -81,7 +73,6 @@ def signup():
             "user": {"id": user["id"], "name": name, "email": email},
         }), 201
 
-    # Send OTP
     otp = str(random.randint(100000, 999999))
     if not send_otp_email(email, otp):
         return jsonify({"error": "Failed to send verification email. Please try again or use Google Sign-In.", "use_google": True}), 500
@@ -91,7 +82,6 @@ def signup():
         "expires": datetime.now().timestamp() + 600,
     }
     return jsonify({"message": "Verification code sent to your email", "needs_otp": True})
-
 
 @auth_bp.route("/verify-otp", methods=["POST"])
 def verify_otp():
@@ -126,7 +116,6 @@ def verify_otp():
         "user": {"id": user["id"], "name": name, "email": email},
     }), 201
 
-
 @auth_bp.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
@@ -147,16 +136,12 @@ def login():
         "user": {"id": user["id"], "name": user["name"], "email": user["email"]},
     })
 
-
 @auth_bp.route("/logout", methods=["POST"])
 def logout():
     session.clear()
     return jsonify({"message": "Logged out"})
 
-
-# In-memory reset tokens: { token: { "email": ..., "expires": timestamp } }
 _reset_tokens: dict = {}
-
 
 @auth_bp.route("/forgot-password", methods=["POST"])
 def forgot_password():
@@ -165,31 +150,25 @@ def forgot_password():
     if not email:
         return jsonify({"error": "Email is required"}), 400
 
-    # Check if user exists
     db = _get_db()
     user = db.users.find_one({"email": email})
-    # Always return success to prevent email enumeration
     if not user:
         return jsonify({"message": "If that email exists, a reset link has been sent."})
 
-    # Generate reset token
     token = secrets.token_urlsafe(32)
     _reset_tokens[token] = {
         "email": email,
-        "expires": datetime.now().timestamp() + 600,  # 10 minutes
+        "expires": datetime.now().timestamp() + 600,
     }
 
-    # Build reset URL
     base_url = request.url_root.rstrip("/")
     if base_url.startswith("http://") and "localhost" not in base_url and "127.0.0.1" not in base_url:
         base_url = base_url.replace("http://", "https://", 1)
     reset_url = f"{base_url}/?reset_token={token}"
 
-    # Send email
     _send_reset_email(email, reset_url)
 
     return jsonify({"message": "If that email exists, a reset link has been sent."})
-
 
 def _send_reset_email(to_email: str, reset_url: str):
     """Send password reset email via available email provider."""
@@ -211,7 +190,6 @@ def _send_reset_email(to_email: str, reset_url: str):
     </div>
     """
     import os
-    # Try Brevo
     brevo_key = os.environ.get("BREVO_API_KEY", "")
     if brevo_key:
         try:
@@ -233,7 +211,6 @@ def _send_reset_email(to_email: str, reset_url: str):
         except Exception:
             pass
 
-    # Try SMTP
     smtp_email = os.environ.get("SMTP_EMAIL", "")
     smtp_pass = os.environ.get("SMTP_PASSWORD", "")
     if smtp_email and smtp_pass:
@@ -253,7 +230,6 @@ def _send_reset_email(to_email: str, reset_url: str):
                 server.sendmail(smtp_email, to_email, msg.as_string())
         except Exception:
             pass
-
 
 @auth_bp.route("/reset-password", methods=["POST"])
 def reset_password():
@@ -276,7 +252,6 @@ def reset_password():
     email = pending["email"]
     del _reset_tokens[token]
 
-    # Update password
     from werkzeug.security import generate_password_hash
     db = _get_db()
     result = db.users.update_one(
@@ -287,7 +262,6 @@ def reset_password():
         return jsonify({"error": "User not found"}), 404
 
     return jsonify({"message": "Password reset successfully. You can now sign in."})
-
 
 @auth_bp.route("/me", methods=["GET"])
 def me():
@@ -301,9 +275,6 @@ def me():
     return jsonify({
         "user": {"id": user["id"], "name": user["name"], "email": user["email"]},
     })
-
-
-# ---- Google OAuth ----------------------------------------------------------
 
 @auth_bp.route("/google")
 def google_login():
@@ -324,7 +295,6 @@ def google_login():
     })
     return redirect(f"{_GOOGLE_AUTH_URL}?{params}")
 
-
 @auth_bp.route("/google/callback")
 def google_callback():
     error = request.args.get("error")
@@ -339,7 +309,6 @@ def google_callback():
 
     callback_url = _build_callback_url()
 
-    # Exchange code for tokens
     try:
         token_resp = http_requests.post(_GOOGLE_TOKEN_URL, data={
             "code": code,
@@ -356,7 +325,6 @@ def google_callback():
     if not access_token:
         return redirect("/?auth_error=no_access_token")
 
-    # Fetch Google user info
     try:
         user_resp = http_requests.get(
             _GOOGLE_USERINFO_URL,
@@ -372,7 +340,6 @@ def google_callback():
     if not email:
         return redirect("/?auth_error=no_email")
 
-    # Find or create user
     db = _get_db()
     row = db.users.find_one({"email": email.lower()})
 

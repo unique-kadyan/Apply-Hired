@@ -24,11 +24,6 @@ _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 
-# ---------------------------------------------------------------------------
-# Email classification keywords
-# ---------------------------------------------------------------------------
-
-# Phrases that strongly indicate an interview invitation
 _INTERVIEW_PHRASES = [
     "invitation to interview",
     "invite you for an interview",
@@ -46,7 +41,6 @@ _INTERVIEW_PHRASES = [
     "interview details",
     "please join us for",
     "meeting scheduled",
-    # Indian / ATS common phrases
     "shortlisted for",
     "you have been shortlisted",
     "you've been shortlisted",
@@ -86,7 +80,6 @@ _INTERVIEW_PHRASES = [
     "your profile has been shortlisted",
 ]
 
-# Phrases that strongly indicate an offer letter
 _OFFER_PHRASES = [
     "offer letter",
     "offer of employment",
@@ -107,7 +100,6 @@ _OFFER_PHRASES = [
     "welcome to the team",
 ]
 
-# Weaker signals used for scoring when strong phrases not found
 _INTERVIEW_WEAK = ["interview", "round", "schedule", "zoom", "google meet", "teams"]
 _OFFER_WEAK = [
     "offer",
@@ -119,7 +111,6 @@ _OFFER_WEAK = [
     "congratulations",
 ]
 
-# Email domains to ignore when extracting company name
 _GENERIC_DOMAINS = {
     "gmail",
     "yahoo",
@@ -140,20 +131,12 @@ _GENERIC_DOMAINS = {
     "no-reply",
 }
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _build_gmail_callback_url() -> str:
     """Build Gmail callback URL dynamically, matching the actual request domain."""
     url = request.url_root.rstrip("/") + "/api/gmail/callback"
-    # Force HTTPS for non-localhost production environments
     if url.startswith("http://") and "localhost" not in url and "127.0.0.1" not in url:
         url = url.replace("http://", "https://", 1)
     return url
-
 
 def _refresh_access_token(refresh_token: str) -> str | None:
     try:
@@ -172,10 +155,8 @@ def _refresh_access_token(refresh_token: str) -> str | None:
         logger.warning(f"Gmail token refresh failed: {e}")
         return None
 
-
 def _headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
-
 
 def _get_header(headers: list, name: str) -> str:
     for h in headers:
@@ -183,13 +164,11 @@ def _get_header(headers: list, name: str) -> str:
             return h.get("value", "")
     return ""
 
-
 def _decode_body(data: str) -> str:
     try:
         return base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="ignore")
     except Exception:
         return ""
-
 
 def _extract_body(payload: dict, depth: int = 0) -> str:
     """Recursively extract plain-text body from a Gmail message payload."""
@@ -202,7 +181,6 @@ def _extract_body(payload: dict, depth: int = 0) -> str:
         return " ".join(_extract_body(p, depth + 1) for p in payload.get("parts", []))
     return ""
 
-
 def _classify_email(subject: str, body: str) -> str | None:
     """
     Classify an email as 'interview', 'offer', or None.
@@ -210,7 +188,6 @@ def _classify_email(subject: str, body: str) -> str | None:
     """
     text = f"{subject} {body}".lower()
 
-    # Strong phrase match wins immediately
     for phrase in _OFFER_PHRASES:
         if phrase in text:
             return "offer"
@@ -218,7 +195,6 @@ def _classify_email(subject: str, body: str) -> str | None:
         if phrase in text:
             return "interview"
 
-    # Weak scoring fallback
     offer_score = sum(1 for kw in _OFFER_WEAK if kw in text)
     int_score = sum(1 for kw in _INTERVIEW_WEAK if kw in text)
 
@@ -227,7 +203,6 @@ def _classify_email(subject: str, body: str) -> str | None:
     if int_score >= 3:
         return "interview"
     return None
-
 
 def _extract_interview_details(subject: str, body: str, email_date: str) -> dict:
     """
@@ -241,9 +216,6 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
         "saved_at": datetime.now().isoformat(),
     }
 
-    # ── Date ──────────────────────────────────────────────────────────────────
-    # Matches: "on 15th April 2026", "on April 15, 2026", "on 15/04/2026",
-    #          "on Monday, 15 April", "scheduled for April 15"
     date_patterns = [
         r"(?:on|for|date[:\s]+)\s*(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)?\,?\s*"
         r"(\d{1,2}(?:st|nd|rd|th)?[\s\-/]+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
@@ -259,8 +231,6 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
             details["date"] = m.group(1).strip()
             break
 
-    # ── Time ──────────────────────────────────────────────────────────────────
-    # Matches: "at 2:30 PM", "at 14:30", "at 10 AM IST"
     time_m = re.search(
         r"\bat\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b(?:\s*(ist|gmt|utc[+\-]?\d*|pst|est|cst|mst))?",
         text,
@@ -271,7 +241,6 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
         if time_m.group(2):
             details["timezone"] = time_m.group(2).upper()
 
-    # ── Timezone standalone ────────────────────────────────────────────────────
     if "timezone" not in details:
         tz_m = re.search(
             r"\b(IST|GMT[+\-]?\d*|UTC[+\-]?\d*|PST|EST|CST|MST|AEST|CET|BST)\b", text
@@ -279,7 +248,6 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
         if tz_m:
             details["timezone"] = tz_m.group(1)
 
-    # ── Round / Stage ──────────────────────────────────────────────────────────
     round_m = re.search(
         r"((?:hr|technical|coding|system design|behavioral|managerial|final|panel|"
         r"screening|phone|video|round\s*\d+|round\s+[a-z]+)\s+(?:round|interview|screen|call)?)",
@@ -289,7 +257,6 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
     if round_m:
         details["round"] = round_m.group(1).strip().title()
 
-    # ── Meeting / Video call link ──────────────────────────────────────────────
     link_m = re.search(
         r"(https?://(?:meet\.google\.com|zoom\.us/j|teams\.microsoft\.com|"
         r"webex\.com|whereby\.com|meet\.jit\.si)[^\s\"<>]+)",
@@ -299,7 +266,6 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
     if link_m:
         details["meeting_link"] = link_m.group(1)
 
-    # ── Platform from link or mention ─────────────────────────────────────────
     if "meeting_link" in details:
         link_lower = details["meeting_link"].lower()
         if "zoom" in link_lower:
@@ -316,7 +282,6 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
                 details["platform"] = platform
                 break
 
-    # ── Interviewer name ──────────────────────────────────────────────────────
     interviewer_m = re.search(
         r"(?:with|interviewer[:\s]+|conducted by[:\s]+|meet\s+(?:with\s+)?|"
         r"your\s+interviewer\s+(?:is|will be)\s+)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})",
@@ -324,12 +289,10 @@ def _extract_interview_details(subject: str, body: str, email_date: str) -> dict
     )
     if interviewer_m:
         name = interviewer_m.group(1).strip()
-        # Filter out generic words that look like names
         if name.lower() not in {"the team", "our team", "hr team", "recruiter"}:
             details["interviewer"] = name
 
     return details
-
 
 def _extract_offer_details(subject: str, body: str) -> dict:
     """
@@ -343,8 +306,6 @@ def _extract_offer_details(subject: str, body: str) -> dict:
         "saved_at": datetime.now().isoformat(),
     }
 
-    # ── Salary / CTC ──────────────────────────────────────────────────────────
-    # Matches: "₹25 LPA", "25 LPA", "$120,000", "INR 25,00,000", "CTC of ₹18 LPA"
     salary_patterns = [
         r"(?:ctc|salary|compensation|package|offer)[^\n]{0,30}?((?:₹|inr|rs\.?|usd|\$|£|eur|€)\s*[\d,]+(?:\.\d+)?(?:\s*(?:lpa|lakh|lac|k|thousand|million|per annum|per year|pa|annually))?)",
         r"((?:₹|inr|rs\.?|usd|\$|£|eur|€)\s*[\d,]+(?:\.\d+)?\s*(?:lpa|lakh|lac|k|thousand|million|per annum|per year|pa)?)",
@@ -356,7 +317,6 @@ def _extract_offer_details(subject: str, body: str) -> dict:
             details["salary"] = m.group(1).strip()
             break
 
-    # ── Currency detection ─────────────────────────────────────────────────────
     if "salary" in details:
         s = details["salary"].lower()
         if any(c in s for c in ["₹", "inr", "rs", "lpa", "lakh"]):
@@ -368,7 +328,6 @@ def _extract_offer_details(subject: str, body: str) -> dict:
         elif "€" in s or "eur" in s:
             details["currency"] = "EUR"
 
-    # ── Joining date ──────────────────────────────────────────────────────────
     join_m = re.search(
         r"(?:joining date|date of joining|start date|joining on|commence)[:\s]*"
         r"((?:monday|tuesday|wednesday|thursday|friday)?\,?\s*"
@@ -381,7 +340,6 @@ def _extract_offer_details(subject: str, body: str) -> dict:
     if join_m:
         details["joining_date"] = join_m.group(1).strip()
 
-    # ── Acceptance deadline ────────────────────────────────────────────────────
     deadline_m = re.search(
         r"(?:accept(?:ance)?|respond|revert|reply)\s+(?:by|before|within)[:\s]+"
         r"((?:\d{1,2}[\s\-/]+(?:jan(?:uary)?|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*"
@@ -392,7 +350,6 @@ def _extract_offer_details(subject: str, body: str) -> dict:
     if deadline_m:
         details["deadline"] = deadline_m.group(1).strip()
 
-    # ── Work location ──────────────────────────────────────────────────────────
     location_m = re.search(
         r"(?:work\s+(?:location|from)|location|office|based\s+(?:out\s+of|in))[:\s]+"
         r"((?:remote|hybrid|work from home|wfh|on.?site|bengaluru|bangalore|mumbai|delhi|"
@@ -403,7 +360,6 @@ def _extract_offer_details(subject: str, body: str) -> dict:
     if location_m:
         details["location"] = location_m.group(1).strip().title()
 
-    # ── Benefits snippet (grab the sentence mentioning benefits/perks) ─────────
     benefits_m = re.search(
         r"(?:benefits?|perks?|includes?)[:\s]+([^\n.]{10,120})", text, re.IGNORECASE
     )
@@ -411,7 +367,6 @@ def _extract_offer_details(subject: str, body: str) -> dict:
         details["benefits"] = benefits_m.group(1).strip()
 
     return details
-
 
 def _extract_company_hint(sender: str, subject: str, body: str) -> str:
     """
@@ -424,12 +379,6 @@ def _extract_company_hint(sender: str, subject: str, body: str) -> str:
         if domain not in _GENERIC_DOMAINS:
             return domain
     return ""
-
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
 
 @gmail_bp.route("/auth")
 @login_required
@@ -450,11 +399,10 @@ def gmail_auth():
             "scope": "https://www.googleapis.com/auth/gmail.readonly",
             "access_type": "offline",
             "state": state,
-            "prompt": "consent",  # always returns refresh_token
+            "prompt": "consent",
         }
     )
     return redirect(f"{_GOOGLE_AUTH_URL}?{params}")
-
 
 def _popup_response(success: bool, message: str = "") -> str:
     """Return an HTML page that notifies the opener via postMessage and auto-closes."""
@@ -492,7 +440,6 @@ def _popup_response(success: bool, message: str = "") -> str:
     }})();
   </script>
 </body></html>"""
-
 
 @gmail_bp.route("/callback")
 def gmail_callback():
@@ -544,7 +491,6 @@ def gmail_callback():
     )
     return _popup_response(True)
 
-
 @gmail_bp.route("/status", methods=["GET"])
 @login_required
 def gmail_status():
@@ -563,7 +509,6 @@ def gmail_status():
         }
     )
 
-
 @gmail_bp.route("/disconnect", methods=["POST"])
 @login_required
 def gmail_disconnect():
@@ -581,7 +526,6 @@ def gmail_disconnect():
         },
     )
     return jsonify({"message": "Gmail disconnected"})
-
 
 @gmail_bp.route("/sync", methods=["POST"])
 @login_required
@@ -603,7 +547,6 @@ def gmail_sync():
 
     access_token = user["gmail_access_token"]
 
-    # Validate / refresh token
     probe = http_requests.get(
         f"{_GMAIL_API_BASE}/profile", headers=_headers(access_token), timeout=8
     )
@@ -621,8 +564,6 @@ def gmail_sync():
             {"_id": oid}, {"$set": {"gmail_access_token": access_token}}
         )
 
-    # Build search query — broad enough to catch invitations and offers.
-    # Uses two passes: primary (high-confidence subjects) + secondary (broader net).
     _primary_q = (
         "subject:(interview OR offer OR shortlisted OR selected OR invitation OR "
         "congratulations OR joining OR assessment OR \"next round\" OR \"next step\" OR "
@@ -666,7 +607,7 @@ def gmail_sync():
     interview_count = 0
     offer_count = 0
 
-    for msg_ref in messages[:60]:  # cap to avoid rate limits
+    for msg_ref in messages[:60]:
         try:
             msg_resp = http_requests.get(
                 f"{_GMAIL_API_BASE}/messages/{msg_ref['id']}",
@@ -692,7 +633,6 @@ def gmail_sync():
         if not company_hint:
             continue
 
-        # Find best matching job for this user
         pattern = {"$regex": company_hint, "$options": "i"}
         job = db.jobs.find_one(
             {
@@ -711,7 +651,6 @@ def gmail_sync():
             current_rank = STATUS_RANK.get(job.get("status", ""), 0)
             new_rank = STATUS_RANK.get(category, 0)
 
-            # Only upgrade — never downgrade
             if new_rank > current_rank:
                 update_fields: dict = {
                     "status": category,
@@ -731,7 +670,6 @@ def gmail_sync():
                     }
                 db.jobs.update_one({"_id": job["_id"]}, {"$set": update_fields})
 
-        # Count and surface regardless of job match
         if category == "interview":
             interview_count += 1
         else:
@@ -745,7 +683,6 @@ def gmail_sync():
             "email_subject": subject[:80],
             "email_from": sender[:60],
         }
-        # Surface extracted fields so the UI can show what was parsed
         if category == "interview":
             d = update_fields.get("interview_details", {})
             entry["extracted"] = {

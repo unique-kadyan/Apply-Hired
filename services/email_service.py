@@ -8,20 +8,16 @@ from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
 
-# Resend (HTTP-based, works on Render)
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_FROM = os.environ.get("RESEND_FROM", "JobBot <onboarding@resend.dev>")
 
-# SMTP fallback (works locally, blocked on Render free tier)
 SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
 
-
 def is_smtp_configured() -> bool:
     return bool(RESEND_API_KEY or (SMTP_EMAIL and SMTP_PASSWORD))
-
 
 def _build_html(otp: str) -> str:
     return f"""
@@ -40,7 +36,6 @@ def _build_html(otp: str) -> str:
     </div>
     """
 
-
 def _send_via_resend(to_email: str, otp: str) -> bool:
     """Send email via Resend HTTP API (works on Render)."""
     try:
@@ -57,7 +52,6 @@ def _send_via_resend(to_email: str, otp: str) -> bool:
     except Exception as e:
         print(f"[Resend] FAILED: {e}")
         return False
-
 
 def _send_via_smtp(to_email: str, otp: str) -> bool:
     """Send email via SMTP (works locally)."""
@@ -78,7 +72,6 @@ def _send_via_smtp(to_email: str, otp: str) -> bool:
     except Exception as e:
         print(f"[SMTP] FAILED: {e}")
         return False
-
 
 def _send_via_brevo(to_email: str, otp: str) -> bool:
     """Send email via Brevo (Sendinblue) HTTP API — free 300/day, no domain needed."""
@@ -106,7 +99,6 @@ def _send_via_brevo(to_email: str, otp: str) -> bool:
     except Exception as e:
         print(f"[Brevo] FAILED: {e}")
         return False
-
 
 def send_otp_email(to_email: str, otp: str) -> bool:
     """Send OTP email. Tries Brevo → Resend → SMTP in order."""

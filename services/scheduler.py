@@ -11,12 +11,7 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-_scheduler = None  # BackgroundScheduler instance (initialised lazily)
-
-
-# ---------------------------------------------------------------------------
-# Auto-search runner
-# ---------------------------------------------------------------------------
+_scheduler = None
 
 def _run_scheduled_searches():
     """Called every hour. Triggers searches for users whose interval has elapsed."""
@@ -36,7 +31,7 @@ def _run_scheduled_searches():
         for user in users:
             uid = user["_id"]
             interval_h = float(user.get("auto_search_interval_hours") or 24)
-            last_run = user.get("auto_search_last_run")  # datetime or None
+            last_run = user.get("auto_search_last_run")
 
             if last_run:
                 if isinstance(last_run, str):
@@ -49,10 +44,10 @@ def _run_scheduled_searches():
                         last_run = last_run.replace(tzinfo=timezone.utc)
                     elapsed_h = (now - last_run).total_seconds() / 3600
                     if elapsed_h < interval_h:
-                        continue  # not yet time
+                        continue
 
             if is_search_running(uid):
-                continue  # already running for this user
+                continue
 
             params = user.get("auto_search_params") or {}
             start_search(params, uid)
@@ -62,22 +57,12 @@ def _run_scheduled_searches():
     except Exception as e:
         logger.error(f"Auto-search scheduler error: {e}")
 
-
-# ---------------------------------------------------------------------------
-# Stale pruner runner
-# ---------------------------------------------------------------------------
-
 def _run_stale_pruner():
     try:
         from services.stale_pruner import prune_stale_jobs
         prune_stale_jobs()
     except Exception as e:
         logger.error(f"Stale pruner error: {e}")
-
-
-# ---------------------------------------------------------------------------
-# Scheduler lifecycle
-# ---------------------------------------------------------------------------
 
 def start_scheduler():
     """Start the APScheduler BackgroundScheduler. Safe to call multiple times."""
@@ -91,7 +76,6 @@ def start_scheduler():
 
         _scheduler = BackgroundScheduler(daemon=True)
 
-        # Check auto-search eligibility every hour
         _scheduler.add_job(
             _run_scheduled_searches,
             IntervalTrigger(hours=1),
@@ -99,7 +83,6 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Probe stale job URLs once per week (168 hours)
         _scheduler.add_job(
             _run_stale_pruner,
             IntervalTrigger(hours=168),
@@ -114,7 +97,6 @@ def start_scheduler():
         logger.warning("APScheduler not installed — scheduled tasks disabled. Run: pip install APScheduler")
     except Exception as e:
         logger.error(f"Scheduler failed to start: {e}")
-
 
 def stop_scheduler():
     """Gracefully stop the scheduler (called on app teardown)."""

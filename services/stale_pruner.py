@@ -13,10 +13,9 @@ import requests
 logger = logging.getLogger(__name__)
 
 _CHECK_STATUSES = {"new", "saved", "fresh new"}
-_MIN_AGE_DAYS   = 30   # only check jobs at least this old
-_MAX_PER_RUN    = 60   # cap HTTP requests per scheduled run
-_REQUEST_TIMEOUT = 8   # seconds per HEAD request
-
+_MIN_AGE_DAYS   = 30
+_MAX_PER_RUN    = 60
+_REQUEST_TIMEOUT = 8
 
 def prune_stale_jobs(user_id=None, max_check: int = _MAX_PER_RUN) -> int:
     """HEAD-check job URLs and mark expired (404/410) ones.
@@ -36,7 +35,7 @@ def prune_stale_jobs(user_id=None, max_check: int = _MAX_PER_RUN) -> int:
     query: dict = {
         "status": {"$in": list(_CHECK_STATUSES)},
         "created_at": {"$lte": cutoff},
-        "url_checked_at": {"$exists": False},  # not yet probed
+        "url_checked_at": {"$exists": False},
     }
     if user_id is not None:
         query["user_id"] = str(user_id)
@@ -58,7 +57,6 @@ def prune_stale_jobs(user_id=None, max_check: int = _MAX_PER_RUN) -> int:
                 marked += 1
             db.jobs.update_one({"_id": job["_id"]}, {"$set": update_fields})
         except Exception:
-            # Network error — record the check attempt so we don't retry indefinitely
             db.jobs.update_one({"_id": job["_id"]}, {"$set": {"url_checked_at": now}})
 
     logger.info(f"Stale pruner: checked {len(jobs)}, marked {marked} expired")

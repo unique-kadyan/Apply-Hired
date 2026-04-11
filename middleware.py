@@ -13,7 +13,6 @@ DEFAULT_PROFILE = {
     "skills": {}, "experience": [], "education": "", "certifications": [],
 }
 
-
 def login_required(f):
     """Decorator — rejects unauthenticated requests with 401."""
     @functools.wraps(f)
@@ -28,7 +27,6 @@ def login_required(f):
         request.user = user
         return f(*args, **kwargs)
     return wrapper
-
 
 def get_user_profile(user: dict) -> dict:
     """Parse the profile JSON stored on a user record."""

@@ -6,25 +6,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- API Keys (optional) ---
 OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY", "")
 JSEARCH_API_KEY  = os.getenv("JSEARCH_API_KEY", "")
 ADZUNA_APP_ID    = os.getenv("ADZUNA_APP_ID", "")
 ADZUNA_APP_KEY   = os.getenv("ADZUNA_APP_KEY", "")
-SERPAPI_KEY      = os.getenv("SERPAPI_KEY", "")       # serpapi.com — Google Jobs aggregation
-CAREERJET_AFFID  = os.getenv("CAREERJET_AFFID", "")   # careerjet.com — free affiliate API
+SERPAPI_KEY      = os.getenv("SERPAPI_KEY", "")
+CAREERJET_AFFID  = os.getenv("CAREERJET_AFFID", "")
 
-# --- Database ---
 MONGO_URI = os.getenv("MONGO_URI", "")
 
-# SQLite fallback (only used if MONGO_URI is not set)
 _default_db_dir = os.path.join(os.path.dirname(__file__), "data")
 if os.environ.get("RENDER") or not os.access(os.path.dirname(__file__), os.W_OK):
-    _default_db_dir = os.path.join("/tmp", "jobbot_data")  # nosec B108
+    _default_db_dir = os.path.join("/tmp", "jobbot_data")
 os.makedirs(_default_db_dir, exist_ok=True)
 DB_PATH = os.path.join(_default_db_dir, "jobs.db")
 
-# --- Resume Profile ---
 PROFILE = {
     "name": "Rajesh Singh Kadyan",
     "title": "Senior Backend Engineer · SDE-3",
@@ -101,14 +97,12 @@ PROFILE = {
     "certifications": ["IBM Cloud Application Developer Mastery Award"],
 }
 
-# --- Location Preferences ---
 LOCATION_PREFERENCES = {
     "default_country": os.getenv("DEFAULT_COUNTRY", "India"),
-    "job_types": ["remote", "remote_in_country"],  # remote = worldwide, remote_in_country = remote within user's country
-    "allowed_locations": [],  # empty = all locations allowed; populate to restrict
+    "job_types": ["remote", "remote_in_country"],
+    "allowed_locations": [],
 }
 
-# --- Search Preferences ---
 SEARCH_PREFERENCES = {
     "target_roles": [
         "Senior Backend Engineer",
@@ -133,5 +127,5 @@ SEARCH_PREFERENCES = {
         "unpaid", "volunteer",
     ],
     "job_type": "remote",
-    "min_experience_match": 0.3,  # minimum 30% skill match to consider
+    "min_experience_match": 0.3,
 }

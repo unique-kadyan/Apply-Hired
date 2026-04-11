@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 payment_bp = Blueprint("payment", __name__, url_prefix="/api/payment")
 
-# Pricing config from env
 _BASE_PRICE = int(os.environ.get("RESUME_PRICE_INR", 50))
 _INTL_MARKUP = float(os.environ.get("INTL_MARKUP_PERCENT", 30)) / 100 + 1
 _BASE_CURRENCY = os.environ.get("BASE_CURRENCY", "INR")
@@ -31,7 +30,6 @@ _SYMBOLS = {
 }
 
 _rate_cache = {"rates": {}, "fetched_at": 0}
-
 
 def _fetch_exchange_rates() -> dict:
     import time
@@ -46,7 +44,6 @@ def _fetch_exchange_rates() -> dict:
         return _rate_cache["rates"]
     except Exception:
         return _rate_cache.get("rates", {})
-
 
 def _get_user_currency(profile: dict) -> str:
     location = (profile.get("location") or "").lower()
@@ -72,7 +69,6 @@ def _get_user_currency(profile: dict) -> str:
             return currency
     return _BASE_CURRENCY
 
-
 def _calculate_price(currency: str) -> dict:
     symbol = _SYMBOLS.get(currency, currency + " ")
     if currency == _BASE_CURRENCY:
@@ -96,9 +92,6 @@ def _calculate_price(currency: str) -> dict:
         "razorpay_amount": round(_BASE_PRICE * _INTL_MARKUP * 100) if currency != _BASE_CURRENCY else _BASE_PRICE * 100,
     }
 
-
-# --- Routes ---
-
 @payment_bp.route("/config", methods=["GET"])
 @login_required
 def get_config():
@@ -113,7 +106,6 @@ def get_config():
         "display_amount": price["display_amount"],
         "configured": is_configured(),
     })
-
 
 @payment_bp.route("/create-order", methods=["POST"])
 @login_required
@@ -148,7 +140,6 @@ def create_payment_order():
         logger.error(f"Order creation failed: {e}")
         return jsonify({"error": "Failed to create payment order"}), 500
 
-
 @payment_bp.route("/verify", methods=["POST"])
 @login_required
 def verify_payment_route():
@@ -175,7 +166,6 @@ def verify_payment_route():
     )
     return jsonify({"message": "Payment verified", "paid": True})
 
-
 @payment_bp.route("/has-paid", methods=["GET"])
 @login_required
 def has_paid():
@@ -185,7 +175,6 @@ def has_paid():
         "status": "paid",
     })
     return jsonify({"paid": bool(paid)})
-
 
 @payment_bp.route("/optimize-resume", methods=["POST"])
 @login_required

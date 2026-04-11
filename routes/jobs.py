@@ -25,7 +25,6 @@ from tracker import (
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/api")
 
-
 def _job_to_obj(job: dict) -> Job:
     """Convert a DB row dict to a Job namedtuple for cover letter generation."""
     return Job(
@@ -38,7 +37,6 @@ def _job_to_obj(job: dict) -> Job:
         tags=json.loads(job.get("tags", "[]")),
     )
 
-
 def _ensure_cover_letter(job: dict, job_id, profile_data: dict | None = None) -> str:
     """Return existing cover letter or generate + persist a new one."""
     if job.get("cover_letter"):
@@ -50,20 +48,15 @@ def _ensure_cover_letter(job: dict, job_id, profile_data: dict | None = None) ->
         db.jobs.update_one({"_id": oid}, {"$set": {"cover_letter": letter, "cover_letter_tone": tone}})
     return letter
 
-
-# ---- List & Detail ---------------------------------------------------------
-
 APPLIED_STATUSES = ["applied", "interview", "offer"]
 NOT_INTERESTED_STATUS = "not_interested"
-# Statuses excluded from the "Not Applied" tab
 _EXCLUDE_FROM_NOT_APPLIED = APPLIED_STATUSES + [NOT_INTERESTED_STATUS]
-
 
 @jobs_bp.route("/jobs", methods=["GET"])
 @login_required
 def list_jobs():
     status = request.args.get("status", "")
-    tab = request.args.get("tab", "")  # "not_applied" | "applied" | "not_interested" | "saved"
+    tab = request.args.get("tab", "")
     min_score = float(request.args.get("min_score", 0))
     source = request.args.get("source", "")
     page = int(request.args.get("page", 1))
@@ -80,7 +73,7 @@ def list_jobs():
 
     if tab == "not_applied":
         status_nin = _EXCLUDE_FROM_NOT_APPLIED
-        is_saved = False           # exclude saved jobs from Not Applied
+        is_saved = False
         default_sort = "date_posted"
     elif tab == "applied":
         status_in = APPLIED_STATUSES
@@ -90,7 +83,7 @@ def list_jobs():
         default_sort = "updated_at"
     elif tab == "saved":
         is_saved = True
-        status_nin = _EXCLUDE_FROM_NOT_APPLIED  # saved but not yet actioned
+        status_nin = _EXCLUDE_FROM_NOT_APPLIED
         default_sort = "updated_at"
 
     from tracker import VALID_SORT_FIELDS
@@ -115,10 +108,6 @@ def list_jobs():
         job["tags"] = json.loads(job.get("tags", "[]"))
         job["score_details"] = json.loads(job.get("score_details", "{}"))
     return jsonify({"jobs": jobs, "total": total, "page": page, "per_page": per_page})
-
-
-# ---- Tab counts -----------------------------------------------------------
-
 
 @jobs_bp.route("/jobs/tab-counts", methods=["GET"])
 @login_required
@@ -147,17 +136,12 @@ def tab_counts():
         }
     )
 
-
-# ---- Not-Interested Reasons -----------------------------------------------
-
-
 @jobs_bp.route("/jobs/not-interested-reasons", methods=["GET"])
 @login_required
 def get_ni_reasons():
     """Return this user's saved custom not-interested reasons."""
     reasons = get_not_interested_reasons(request.user["id"])
     return jsonify({"reasons": reasons})
-
 
 @jobs_bp.route("/jobs/not-interested-reasons", methods=["POST"])
 @login_required
@@ -170,7 +154,6 @@ def add_ni_reason():
     updated = save_not_interested_reason(request.user["id"], reason)
     return jsonify({"reasons": updated})
 
-
 @jobs_bp.route("/jobs/not-interested-reasons/delete", methods=["POST"])
 @login_required
 def remove_ni_reason():
@@ -181,7 +164,6 @@ def remove_ni_reason():
         return jsonify({"error": "reason is required"}), 400
     updated = delete_not_interested_reason(request.user["id"], reason)
     return jsonify({"reasons": updated})
-
 
 @jobs_bp.route("/jobs/skip-keywords", methods=["GET"])
 @login_required
@@ -194,7 +176,6 @@ def get_skip_keywords_route():
     keywords = get_skip_filter_keywords(request.user["id"])
     return jsonify({"keywords": keywords, "custom_reasons": custom_reasons})
 
-
 @jobs_bp.route("/jobs/<job_id>", methods=["GET"])
 @login_required
 def get_job(job_id):
@@ -205,10 +186,6 @@ def get_job(job_id):
     job["score_details"] = json.loads(job.get("score_details", "{}"))
     return jsonify(job)
 
-
-# ---- Status & Cover Letter -------------------------------------------------
-
-
 @jobs_bp.route("/jobs/<job_id>/status", methods=["PUT", "POST"])
 @login_required
 def change_status(job_id):
@@ -218,14 +195,12 @@ def change_status(job_id):
     data = request.get_json()
     new_status = data.get("status", "new")
     update_job_status(job_id, new_status, data.get("notes", ""))
-    # When a saved job is acted on (applied/skipped), clear the saved flag
     if new_status in APPLIED_STATUSES + [NOT_INTERESTED_STATUS]:
         db = _get_db()
         oid = _to_object_id(job_id)
         if oid:
             db.jobs.update_one({"_id": oid}, {"$set": {"is_saved": False}})
     return jsonify({"message": f"Job #{job_id} updated to '{new_status}'"})
-
 
 @jobs_bp.route("/jobs/<job_id>/save", methods=["POST"])
 @login_required
@@ -239,7 +214,6 @@ def save_job(job_id):
     db.jobs.update_one({"_id": oid}, {"$set": {"is_saved": True}})
     return jsonify({"saved": True})
 
-
 @jobs_bp.route("/jobs/<job_id>/unsave", methods=["POST"])
 @login_required
 def unsave_job(job_id):
@@ -252,7 +226,6 @@ def unsave_job(job_id):
     db.jobs.update_one({"_id": oid}, {"$set": {"is_saved": False}})
     return jsonify({"saved": False})
 
-
 @jobs_bp.route("/jobs/<job_id>/cover-letter", methods=["GET"])
 @login_required
 def get_cover_letter(job_id):
@@ -261,7 +234,6 @@ def get_cover_letter(job_id):
     if not job:
         return jsonify({"error": "Job not found"}), 404
     return jsonify({"cover_letter": job.get("cover_letter") or ""})
-
 
 @jobs_bp.route("/jobs/<job_id>/cover-letter", methods=["POST"])
 @login_required
@@ -278,10 +250,6 @@ def gen_cover_letter(job_id):
         db.jobs.update_one({"_id": oid}, {"$set": {"cover_letter": letter, "cover_letter_tone": tone}})
     return jsonify({"cover_letter": letter})
 
-
-# ---- Profile completeness check -------------------------------------------
-
-
 @jobs_bp.route("/jobs/profile-check", methods=["GET"])
 @login_required
 def profile_check():
@@ -289,10 +257,6 @@ def profile_check():
     profile = get_user_profile(request.user)
     result = check_profile_completeness(profile)
     return jsonify(result)
-
-
-# ---- Interview & Offer Details --------------------------------------------
-
 
 @jobs_bp.route("/jobs/<job_id>/interview", methods=["PUT", "POST"])
 @login_required
@@ -303,13 +267,13 @@ def save_interview(job_id):
         return jsonify({"error": "Job not found"}), 404
     data = request.get_json() or {}
     details = {
-        "round": data.get("round", ""),  # e.g. "HR Screen", "Technical Round 1"
-        "date": data.get("date", ""),  # ISO date string
-        "time": data.get("time", ""),  # e.g. "14:30"
-        "timezone": data.get("timezone", ""),  # e.g. "IST", "UTC+5:30"
-        "interviewer": data.get("interviewer", ""),  # name / team
-        "meeting_link": data.get("meeting_link", ""),  # Zoom/Meet/Teams URL
-        "platform": data.get("platform", ""),  # e.g. "Google Meet"
+        "round": data.get("round", ""),
+        "date": data.get("date", ""),
+        "time": data.get("time", ""),
+        "timezone": data.get("timezone", ""),
+        "interviewer": data.get("interviewer", ""),
+        "meeting_link": data.get("meeting_link", ""),
+        "platform": data.get("platform", ""),
         "notes": data.get("notes", ""),
         "saved_at": datetime.now().isoformat(),
     }
@@ -317,7 +281,6 @@ def save_interview(job_id):
     if not ok:
         return jsonify({"error": "Update failed"}), 500
     return jsonify({"message": "Interview details saved", "interview_details": details})
-
 
 @jobs_bp.route("/jobs/<job_id>/offer", methods=["PUT", "POST"])
 @login_required
@@ -328,13 +291,13 @@ def save_offer(job_id):
         return jsonify({"error": "Job not found"}), 404
     data = request.get_json() or {}
     details = {
-        "salary": data.get("salary", ""),  # e.g. "₹25 LPA" or "$120,000"
+        "salary": data.get("salary", ""),
         "currency": data.get("currency", ""),
-        "joining_date": data.get("joining_date", ""),  # ISO date string
-        "deadline": data.get("deadline", ""),  # Offer acceptance deadline
-        "benefits": data.get("benefits", ""),  # Health, ESOPs, bonus etc.
-        "location": data.get("location", ""),  # Office / remote
-        "offer_text": data.get("offer_text", ""),  # Pasted offer letter text
+        "joining_date": data.get("joining_date", ""),
+        "deadline": data.get("deadline", ""),
+        "benefits": data.get("benefits", ""),
+        "location": data.get("location", ""),
+        "offer_text": data.get("offer_text", ""),
         "notes": data.get("notes", ""),
         "saved_at": datetime.now().isoformat(),
     }
@@ -342,10 +305,6 @@ def save_offer(job_id):
     if not ok:
         return jsonify({"error": "Update failed"}), 500
     return jsonify({"message": "Offer details saved", "offer_details": details})
-
-
-# ---- Clear jobs -----------------------------------------------------------
-
 
 @jobs_bp.route("/jobs/clear", methods=["POST"])
 @login_required
@@ -361,10 +320,6 @@ def clear_jobs():
     )
     return jsonify({"deleted": result.deleted_count, "kept": list(keep_statuses)})
 
-
-# ---- Mark applied by URL (used by Chrome Extension) ----------------------
-
-
 @jobs_bp.route("/mark-applied-by-url", methods=["POST"])
 @login_required
 def mark_applied_by_url():
@@ -375,7 +330,6 @@ def mark_applied_by_url():
         return jsonify({"error": "URL is required"}), 400
 
     db = _get_db()
-    # Find job by URL for this user
     result = db.jobs.update_many(
         {
             "user_id": str(request.user["id"]),
@@ -390,10 +344,6 @@ def mark_applied_by_url():
         },
     )
     return jsonify({"matched": result.modified_count})
-
-
-# ---- Apply & Auto-Apply ---------------------------------------------------
-
 
 @jobs_bp.route("/apply", methods=["POST"])
 @login_required
@@ -423,7 +373,6 @@ def apply_jobs():
             continue
     return jsonify({"applied": len(results), "results": results})
 
-
 @jobs_bp.route("/auto-apply", methods=["POST"])
 @login_required
 def auto_apply():
@@ -440,23 +389,18 @@ def auto_apply():
     if len(job_ids) > 10:
         return jsonify({"error": "Maximum 10 jobs at a time"}), 400
 
-    # Load and optionally patch profile
     profile = get_user_profile(request.user)
     patch = data.get("profile_patch", {})
     if patch:
-        # Merge patch fields into profile
         for key, val in patch.items():
             if key == "skills_text":
-                # Convert comma-separated skills text into profile skills dict
                 skill_list = [s.strip() for s in val.split(",") if s.strip()]
                 if skill_list:
                     profile.setdefault("skills", {})["other"] = skill_list
             else:
                 profile[key] = val
-        # Persist patched profile so user doesn't have to fill it again
         update_user_profile(request.user["id"], profile)
 
-    # Check completeness after patch
     check = check_profile_completeness(profile)
     if not check["is_complete"]:
         return (
@@ -476,8 +420,6 @@ def auto_apply():
             job = get_job_by_id(jid, user_id=request.user["id"])
             if not job:
                 continue
-            # Generate personalised cover letter and persist it — do NOT mark applied yet.
-            # Status is updated only when the user confirms they submitted the application.
             letter, tone = generate_cover_letter(_job_to_obj(job), profile)
             db = _get_db()
             oid = _to_object_id(jid)

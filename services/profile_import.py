@@ -7,7 +7,6 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-
 def _github_headers(user_token: str = "") -> dict:
     """Return GitHub API headers. User-supplied token takes priority over env token."""
     headers = {"Accept": "application/vnd.github.v3+json"}
@@ -16,18 +15,14 @@ def _github_headers(user_token: str = "") -> dict:
         headers["Authorization"] = f"Bearer {token}"
     return headers
 
-
 def _extract_github_username(raw: str) -> str:
     """Extract bare username from a URL or plain username string."""
     raw = raw.strip().rstrip("/")
-    # Handle URLs like https://github.com/username or github.com/username
     if "github.com" in raw:
         parts = raw.split("github.com/")
         if len(parts) > 1:
-            # Take the first path segment only (ignore /repos, /starred, etc.)
             return parts[1].split("/")[0].strip()
     return raw.split("/")[-1].strip()
-
 
 def import_github(username: str, token: str = "") -> dict:
     """Fetch public profile + repos from GitHub. Returns enrichment dict."""
@@ -41,7 +36,6 @@ def import_github(username: str, token: str = "") -> dict:
     headers = _github_headers(user_token=token)
 
     try:
-        # User profile
         resp = requests.get(
             f"https://api.github.com/users/{username}",
             headers=headers,
@@ -49,7 +43,6 @@ def import_github(username: str, token: str = "") -> dict:
         )
         user = resp.json()
 
-        # Detect API errors
         msg = user.get("message", "")
         if "Not Found" in msg or resp.status_code == 404:
             return {"error": f"GitHub user '{username}' not found. Check the username/URL."}
@@ -59,7 +52,6 @@ def import_github(username: str, token: str = "") -> dict:
         if resp.status_code != 200:
             return {"error": f"GitHub API error {resp.status_code}: {msg}"}
 
-        # Repos sorted by most recently pushed (recency-first)
         repos_resp = requests.get(
             f"https://api.github.com/users/{username}/repos?sort=pushed&direction=desc&per_page=50",
             headers=headers,
@@ -67,7 +59,6 @@ def import_github(username: str, token: str = "") -> dict:
         )
         repos = repos_resp.json() if repos_resp.status_code == 200 else []
 
-        # Extract languages from repos
         languages = {}
         for repo in (repos if isinstance(repos, list) else []):
             lang = repo.get("language")
@@ -76,8 +67,6 @@ def import_github(username: str, token: str = "") -> dict:
 
         top_languages = sorted(languages, key=languages.get, reverse=True)[:10]
 
-        # All non-fork repos with topics (for full list in frontend)
-        # Fetch per-repo language breakdown (top-5 by bytes) in parallel
         from concurrent.futures import ThreadPoolExecutor
 
         def _fetch_repo_languages(repo):
@@ -89,7 +78,6 @@ def import_github(username: str, token: str = "") -> dict:
                 timeout=10,
             )
             lang_bytes = lang_resp.json() if lang_resp.status_code == 200 else {}
-            # Sort by bytes descending, take top 5
             all_langs = sorted(lang_bytes, key=lang_bytes.get, reverse=True)[:5]
             return {
                 "name": repo.get("name", ""),
@@ -109,7 +97,6 @@ def import_github(username: str, token: str = "") -> dict:
                 if result:
                     top_repos.append(result)
 
-        # Extract topics/skills from repos
         all_topics = []
         for repo in (repos if isinstance(repos, list) else []):
             all_topics.extend(repo.get("topics", []))
@@ -138,7 +125,6 @@ def import_github(username: str, token: str = "") -> dict:
         logger.error(f"GitHub import failed: {e}")
         return {"error": f"Import failed: {str(e)}"}
 
-
 def import_linkedin_url(url: str) -> dict:
     """Extract what we can from a LinkedIn profile URL.
 
@@ -148,7 +134,6 @@ def import_linkedin_url(url: str) -> dict:
     if not url:
         return {}
 
-    # Normalize URL
     url = url.strip()
     if "linkedin.com" not in url:
         url = f"https://www.linkedin.com/in/{url}"
@@ -157,21 +142,17 @@ def import_linkedin_url(url: str) -> dict:
         "linkedin_url": url,
     }
 
-
 def merge_github_into_profile(profile: dict, github_data: dict) -> dict:
     """Merge GitHub data into existing profile without overwriting user edits."""
     if github_data.get("error"):
         return profile
 
-    # Add GitHub URL
     profile["github"] = github_data.get("github_url", "")
     profile["github_username"] = github_data.get("github_username", "")
 
-    # Add blog/portfolio if not set
     if not profile.get("website") and github_data.get("blog"):
         profile["website"] = github_data["blog"]
 
-    # Merge languages into skills
     lang_map = {
         "JavaScript": "languages", "TypeScript": "languages", "Python": "languages",
         "Java": "languages", "Go": "languages", "Rust": "languages", "C++": "languages",
@@ -210,11 +191,9 @@ def merge_github_into_profile(profile: dict, github_data: dict) -> dict:
 
     profile["skills"] = skills
 
-    # Add top repos as projects
     if github_data.get("top_repos"):
         profile["projects"] = github_data["top_repos"]
 
-    # Fill name/location if empty
     if not profile.get("name") and github_data.get("name"):
         profile["name"] = github_data["name"]
     if not profile.get("location") and github_data.get("location"):
