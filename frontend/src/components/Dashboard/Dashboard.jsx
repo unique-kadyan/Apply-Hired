@@ -3,6 +3,19 @@ import { useEffect } from 'react';
 import styles from '@/lib/styles';
 import { Badge } from '@/components/shared/Badge';
 import { DonutChart, LineChart, BarChart, FunnelChart } from '@/components/shared/Charts';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
+import SendIcon from '@mui/icons-material/Send';
+import GroupsIcon from '@mui/icons-material/Groups';
+import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+import SkipNextIcon from '@mui/icons-material/SkipNext';
+import InsightsIcon from '@mui/icons-material/Insights';
+import SearchIcon from '@mui/icons-material/Search';
+import ListAltIcon from '@mui/icons-material/ListAlt';
+import BusinessCenterIcon from '@mui/icons-material/BusinessCenter';
+import WavingHandIcon from '@mui/icons-material/WavingHand';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 
 export default function Dashboard({ navigate, dashData, onRefresh }) {
   const _emptyStats = { new: 0, applied: 0, interview: 0, offer: 0, not_interested: 0, total: 0, response_rate: 0, sources: {}, cover_letter_ab: {} };
@@ -43,24 +56,28 @@ export default function Dashboard({ navigate, dashData, onRefresh }) {
           <p style={{ color: 'var(--muted)', fontSize: '0.88rem', marginTop: '0.2rem' }}>Your job search at a glance</p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => navigate('search')}>🔍 Search Jobs</button>
-          <button style={{ ...styles.btn, ...styles.btnSuccess }} onClick={() => navigate('jobs')}>📋 All Jobs</button>
+          <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => navigate('search')}>
+            <SearchIcon style={{ fontSize: 16 }} /> Search Jobs
+          </button>
+          <button style={{ ...styles.btn, ...styles.btnSuccess }} onClick={() => navigate('jobs')}>
+            <ListAltIcon style={{ fontSize: 16 }} /> All Jobs
+          </button>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
         {[
-          { n: stats.total,                          l: 'Total Found',   c: '#60a5fa', icon: '🗂' },
-          { n: stats.new,                            l: 'New',           c: '#67e8f9', icon: '✨' },
-          { n: stats.applied,                        l: 'Applied',       c: '#6ee7b7', icon: '📤' },
-          { n: stats.interview,                      l: 'Interviews',    c: '#d8b4fe', icon: '🎯' },
-          { n: stats.offer || 0,                     l: 'Offers',        c: '#fcd34d', icon: '🏆' },
-          { n: stats.not_interested,                 l: 'Skipped',       c: '#f87171', icon: '⏭' },
-          { n: `${Math.round((stats.avg_score || 0) * 100)}%`, l: 'Avg Match', c: '#fb923c', icon: '📊' },
+          { n: stats.total,   l: 'Total Found', c: '#60a5fa', icon: <FolderOpenIcon sx={{ fontSize: 24, color: '#60a5fa' }} /> },
+          { n: stats.new,     l: 'New',         c: '#67e8f9', icon: <AutorenewIcon  sx={{ fontSize: 24, color: '#67e8f9' }} /> },
+          { n: stats.applied, l: 'Applied',     c: '#6ee7b7', icon: <SendIcon        sx={{ fontSize: 24, color: '#6ee7b7' }} /> },
+          { n: stats.interview, l: 'Interviews',c: '#d8b4fe', icon: <GroupsIcon      sx={{ fontSize: 24, color: '#d8b4fe' }} /> },
+          { n: stats.offer || 0, l: 'Offers',  c: '#fcd34d', icon: <EmojiEventsIcon sx={{ fontSize: 24, color: '#fcd34d' }} /> },
+          { n: stats.not_interested, l: 'Skipped', c: '#f87171', icon: <SkipNextIcon sx={{ fontSize: 24, color: '#f87171' }} /> },
+          { n: `${Math.round((stats.avg_score || 0) * 100)}%`, l: 'Avg Match', c: '#fb923c', icon: <InsightsIcon sx={{ fontSize: 24, color: '#fb923c' }} /> },
         ].map((s, i) => (
           <div key={i} style={{ ...styles.card, textAlign: 'center', padding: '0.9rem 0.5rem', cursor: i < 3 ? 'pointer' : 'default', animation: statsLoading ? 'pulse 1.4s ease-in-out infinite' : 'none' }}
             onClick={() => { if (i === 0 || i === 1) navigate('jobs'); if (i === 2) navigate('jobs'); }}>
-            <div style={{ fontSize: '1.3rem', marginBottom: '0.2rem' }}>{s.icon}</div>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.3rem' }}>{s.icon}</div>
             {statsLoading
               ? <div style={{ height: 28, borderRadius: 6, background: 'var(--bg3)', margin: '0 auto', width: 48, animation: 'pulse 1.2s ease-in-out infinite' }} />
               : <div style={{ fontSize: '1.7rem', fontWeight: 800, color: s.c, lineHeight: 1 }}>{s.n}</div>
@@ -156,7 +173,11 @@ export default function Dashboard({ navigate, dashData, onRefresh }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {(stats.cover_letter_ab || []).map((ab, i) => (
                   <div key={i} style={{ padding: '0.7rem 0.9rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ fontSize: '1.4rem' }}>{ab.tone === 'formal' ? '🎩' : '👋'}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {ab.tone === 'formal'
+                        ? <BusinessCenterIcon sx={{ fontSize: 26, color: '#a5b4fc' }} />
+                        : <WavingHandIcon sx={{ fontSize: 26, color: '#fcd34d' }} />}
+                    </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontWeight: 700, fontSize: '0.88rem', textTransform: 'capitalize' }}>{ab.tone}</span>
@@ -196,7 +217,9 @@ export default function Dashboard({ navigate, dashData, onRefresh }) {
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                       <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#93c5fd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={j.title}>{j.title}</div>
-                      {j.followup_due && <span title={`Applied ${j.days_since_applied} days ago — follow up`} style={{ fontSize: '0.62rem', color: '#fde68a', background: 'rgba(234,179,8,0.2)', border: '1px solid rgba(234,179,8,0.4)', padding: '0.05rem 0.35rem', borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0 }}>⏰ {j.days_since_applied}d</span>}
+                      {j.followup_due && <span title={`Applied ${j.days_since_applied} days ago — follow up`} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: '0.62rem', color: '#fde68a', background: 'rgba(234,179,8,0.2)', border: '1px solid rgba(234,179,8,0.4)', padding: '0.05rem 0.35rem', borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        <AccessTimeIcon style={{ fontSize: 10 }} />{j.days_since_applied}d
+                      </span>}
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem' }}>
                       <span style={{ color: 'var(--muted)', fontSize: '0.76rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{j.company}</span>
@@ -207,7 +230,9 @@ export default function Dashboard({ navigate, dashData, onRefresh }) {
             }
             {group.jobs.length > 0 && (
               <div style={{ padding: '0.5rem', textAlign: 'center', borderTop: '1px solid rgba(51,65,85,0.4)' }}>
-                <button onClick={() => navigate('jobs')} style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, fontSize: '0.76rem' }}>View All →</button>
+                <button onClick={() => navigate('jobs')} style={{ ...styles.btn, ...styles.btnSm, ...styles.btnSecondary, fontSize: '0.76rem' }}>
+                View All <ArrowForwardIcon style={{ fontSize: 13, verticalAlign: 'middle' }} />
+              </button>
               </div>
             )}
           </div>

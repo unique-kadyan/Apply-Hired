@@ -4,7 +4,9 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+import random
+
+from flask import Blueprint, Response, jsonify, request
 
 from middleware import get_user_profile, is_admin, login_required
 from services.payment_service import (
@@ -24,26 +26,38 @@ _INTL_MARKUP = float(os.environ.get("INTL_MARKUP_PERCENT", 30)) / 100 + 1
 _BASE_CURRENCY = os.environ.get("BASE_CURRENCY", "INR")
 
 _SYMBOLS = {
-    "INR": "\u20b9", "USD": "$", "EUR": "\u20ac", "GBP": "\u00a3",
-    "AED": "AED ", "SGD": "S$", "AUD": "A$", "CAD": "C$",
+    "INR": "\u20b9",
+    "USD": "$",
+    "EUR": "\u20ac",
+    "GBP": "\u00a3",
+    "AED": "AED ",
+    "SGD": "S$",
+    "AUD": "A$",
+    "CAD": "C$",
     "JPY": "\u00a5",
 }
 
 _rate_cache = {"rates": {}, "fetched_at": 0}
 
+
 def _fetch_exchange_rates() -> dict:
     import time
+
     now = time.time()
     if _rate_cache["rates"] and now - _rate_cache["fetched_at"] < 3600:
         return _rate_cache["rates"]
     try:
         import requests as req
-        resp = req.get(f"https://api.exchangerate-api.com/v4/latest/{_BASE_CURRENCY}", timeout=5)
+
+        resp = req.get(
+            f"https://api.exchangerate-api.com/v4/latest/{_BASE_CURRENCY}", timeout=5
+        )
         _rate_cache["rates"] = resp.json().get("rates", {})
         _rate_cache["fetched_at"] = now
         return _rate_cache["rates"]
     except Exception:
         return _rate_cache.get("rates", {})
+
 
 def _get_user_currency(profile: dict) -> str:
     location = (profile.get("location") or "").lower()
@@ -56,12 +70,22 @@ def _get_user_currency(profile: dict) -> str:
                 mapping[parts[0].strip().lower()] = parts[1].strip().upper()
     if not mapping:
         mapping = {
-            "india": "INR", "usa": "USD", "united states": "USD",
-            "uk": "GBP", "united kingdom": "GBP",
-            "germany": "EUR", "france": "EUR", "spain": "EUR",
-            "netherlands": "EUR", "ireland": "EUR",
-            "europe": "EUR", "uae": "AED", "dubai": "AED",
-            "singapore": "SGD", "australia": "AUD", "canada": "CAD",
+            "india": "INR",
+            "usa": "USD",
+            "united states": "USD",
+            "uk": "GBP",
+            "united kingdom": "GBP",
+            "germany": "EUR",
+            "france": "EUR",
+            "spain": "EUR",
+            "netherlands": "EUR",
+            "ireland": "EUR",
+            "europe": "EUR",
+            "uae": "AED",
+            "dubai": "AED",
+            "singapore": "SGD",
+            "australia": "AUD",
+            "canada": "CAD",
             "japan": "JPY",
         }
     for keyword, currency in mapping.items():
@@ -69,11 +93,13 @@ def _get_user_currency(profile: dict) -> str:
             return currency
     return _BASE_CURRENCY
 
+
 def _calculate_price(currency: str) -> dict:
     symbol = _SYMBOLS.get(currency, currency + " ")
     if currency == _BASE_CURRENCY:
         return {
-            "currency": currency, "symbol": symbol,
+            "currency": currency,
+            "symbol": symbol,
             "display_amount": f"{symbol}{_BASE_PRICE}",
             "razorpay_amount": _BASE_PRICE * 100,
         }
@@ -87,10 +113,16 @@ def _calculate_price(currency: str) -> dict:
         currency = _BASE_CURRENCY
         symbol = _SYMBOLS.get(_BASE_CURRENCY, "")
     return {
-        "currency": currency, "symbol": symbol,
+        "currency": currency,
+        "symbol": symbol,
         "display_amount": f"{symbol}{converted}",
-        "razorpay_amount": round(_BASE_PRICE * _INTL_MARKUP * 100) if currency != _BASE_CURRENCY else _BASE_PRICE * 100,
+        "razorpay_amount": (
+            round(_BASE_PRICE * _INTL_MARKUP * 100)
+            if currency != _BASE_CURRENCY
+            else _BASE_PRICE * 100
+        ),
     }
+
 
 @payment_bp.route("/config", methods=["GET"])
 @login_required
@@ -98,14 +130,17 @@ def get_config():
     profile = get_user_profile(request.user)
     currency = _get_user_currency(profile)
     price = _calculate_price(currency)
-    return jsonify({
-        "key_id": _key_id(),
-        "amount": price["razorpay_amount"],
-        "currency": "INR",
-        "user_currency": currency,
-        "display_amount": price["display_amount"],
-        "configured": is_configured(),
-    })
+    return jsonify(
+        {
+            "key_id": _key_id(),
+            "amount": price["razorpay_amount"],
+            "currency": "INR",
+            "user_currency": currency,
+            "display_amount": price["display_amount"],
+            "configured": is_configured(),
+        }
+    )
+
 
 @payment_bp.route("/create-order", methods=["POST"])
 @login_required
@@ -122,23 +157,28 @@ def create_payment_order():
             receipt=f"r_{str(request.user['id'])[-8:]}_{int(datetime.now().timestamp())}",
         )
         db = _get_db()
-        db.payments.insert_one({
-            "user_id": str(request.user["id"]),
-            "order_id": order["id"],
-            "amount": price["razorpay_amount"],
-            "display_amount": price["display_amount"],
-            "status": "created",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-        return jsonify({
-            "order_id": order["id"],
-            "amount": order["amount"],
-            "currency": order["currency"],
-            "key_id": _key_id(),
-        })
+        db.payments.insert_one(
+            {
+                "user_id": str(request.user["id"]),
+                "order_id": order["id"],
+                "amount": price["razorpay_amount"],
+                "display_amount": price["display_amount"],
+                "status": "created",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        return jsonify(
+            {
+                "order_id": order["id"],
+                "amount": order["amount"],
+                "currency": order["currency"],
+                "key_id": _key_id(),
+            }
+        )
     except Exception as e:
         logger.error(f"Order creation failed: {e}")
         return jsonify({"error": "Failed to create payment order"}), 500
+
 
 @payment_bp.route("/verify", methods=["POST"])
 @login_required
@@ -157,14 +197,17 @@ def verify_payment_route():
     db = _get_db()
     db.payments.update_one(
         {"order_id": order_id, "user_id": str(request.user["id"])},
-        {"$set": {
-            "payment_id": payment_id,
-            "signature": signature,
-            "status": "paid",
-            "paid_at": datetime.now(timezone.utc).isoformat(),
-        }},
+        {
+            "$set": {
+                "payment_id": payment_id,
+                "signature": signature,
+                "status": "paid",
+                "paid_at": datetime.now(timezone.utc).isoformat(),
+            }
+        },
     )
     return jsonify({"message": "Payment verified", "paid": True})
+
 
 @payment_bp.route("/has-paid", methods=["GET"])
 @login_required
@@ -172,11 +215,14 @@ def has_paid():
     if is_admin(request.user):
         return jsonify({"paid": True, "admin": True})
     db = _get_db()
-    paid = db.payments.find_one({
-        "user_id": str(request.user["id"]),
-        "status": "paid",
-    })
+    paid = db.payments.find_one(
+        {
+            "user_id": str(request.user["id"]),
+            "status": "paid",
+        }
+    )
     return jsonify({"paid": bool(paid)})
+
 
 def _reconstruct_and_score(profile: dict, optimized: dict) -> dict:
     """Build plain-text resume from optimized JSON and score it."""
@@ -188,14 +234,25 @@ def _reconstruct_and_score(profile: dict, optimized: dict) -> dict:
     if profile.get("title"):
         lines.append(profile["title"])
 
-    contact = [x for x in [profile.get("email"), profile.get("phone"), profile.get("location")] if x]
+    contact = [
+        x
+        for x in [profile.get("email"), profile.get("phone"), profile.get("location")]
+        if x
+    ]
     if contact:
         lines.append(" | ".join(contact))
 
-    for field, label in [("linkedin_url", "linkedin"), ("github_url", "github")]:
-        val = profile.get(field, "")
-        if val:
-            lines.append(f"{label}: {val}")
+    linkedin = profile.get("linkedin") or profile.get("linkedin_url") or ""
+    github = (
+        profile.get("github_username")
+        or profile.get("github")
+        or profile.get("github_url")
+        or ""
+    )
+    if linkedin:
+        lines.append(f"linkedin: {linkedin}")
+    if github:
+        lines.append(f"github: {github}")
 
     lines.append("")
 
@@ -238,10 +295,12 @@ def optimize_resume():
     admin = is_admin(request.user)
     if not admin:
         db = _get_db()
-        paid = db.payments.find_one({
-            "user_id": str(request.user["id"]),
-            "status": "paid",
-        })
+        paid = db.payments.find_one(
+            {
+                "user_id": str(request.user["id"]),
+                "status": "paid",
+            }
+        )
         if not paid:
             return jsonify({"error": "Payment required to use this feature"}), 402
 
@@ -255,7 +314,7 @@ def optimize_resume():
         s for group in (profile.get("skills") or {}).values() for s in group
     )
     experience_text = ""
-    for exp in (profile.get("experience") or []):
+    for exp in profile.get("experience") or []:
         experience_text += f"\n{exp.get('title', '')} at {exp.get('company', '')} ({exp.get('period', '')})\n"
         for h in exp.get("highlights", []):
             experience_text += f"  - {h}\n"
@@ -336,7 +395,10 @@ Return ONLY valid JSON (no markdown, no code fences):
                 continue
 
         if not optimized:
-            return jsonify({"error": "All AI providers failed. Please try again later."}), 500
+            return (
+                jsonify({"error": "All AI providers failed. Please try again later."}),
+                500,
+            )
 
         profile["optimized_resume"] = optimized
         profile["optimized_for"] = {
@@ -357,15 +419,73 @@ Return ONLY valid JSON (no markdown, no code fences):
         if not admin:
             db.payments.update_one(
                 {"_id": paid["_id"]},
-                {"$set": {"status": "used", "used_at": datetime.now(timezone.utc).isoformat()}},
+                {
+                    "$set": {
+                        "status": "used",
+                        "used_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                },
             )
 
-        return jsonify({
-            "message": "Resume optimized successfully!",
-            "optimized": optimized,
-            "resume_score": new_score,
-            "profile": profile,
-        })
+        return jsonify(
+            {
+                "message": "Resume optimized successfully!",
+                "optimized": optimized,
+                "resume_score": new_score,
+                "profile": profile,
+            }
+        )
     except Exception as e:
         logger.error(f"Resume optimization failed: {e}")
         return jsonify({"error": f"Optimization failed: {str(e)}"}), 500
+
+
+_ACCENT_COLORS = [
+    "#2563eb", "#059669", "#7c3aed", "#b45309", "#0d9488",
+    "#dc2626", "#6366f1", "#0284c7", "#16a34a", "#ea580c",
+]
+
+_TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "resume_templates")
+
+
+@payment_bp.route("/download-resume-pdf", methods=["POST"])
+@login_required
+def download_resume_pdf():
+    """Generate resume PDF server-side using WeasyPrint + HTML templates.
+    Returns the PDF binary or 503 to signal the frontend to use its jsPDF fallback.
+    """
+    profile = get_user_profile(request.user)
+    optimized = profile.get("optimized_resume")
+    if not optimized:
+        return jsonify({"error": "No optimized resume found. Please optimize your resume first."}), 404
+
+    try:
+        from jinja2 import Environment, FileSystemLoader
+        from weasyprint import HTML
+
+        template_files = [f for f in os.listdir(_TEMPLATES_DIR) if f.endswith(".html")]
+        if not template_files:
+            return jsonify({"error": "server_pdf_unavailable"}), 503
+
+        env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), autoescape=True)
+        template_file = random.choice(template_files)
+        template = env.get_template(template_file)
+
+        accent_color = random.choice(_ACCENT_COLORS)
+        html_content = template.render(profile=profile, optimized=optimized, accent_color=accent_color)
+
+        pdf_bytes = HTML(string=html_content, base_url=_TEMPLATES_DIR).write_pdf()
+
+        safe_name = (profile.get("name") or "Resume").replace(" ", "_")
+        return Response(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}_Resume.pdf"'},
+        )
+
+    except ImportError:
+        logger.warning("WeasyPrint not installed — signalling frontend jsPDF fallback")
+        return jsonify({"error": "server_pdf_unavailable"}), 503
+    except Exception as e:
+        logger.error(f"Server PDF generation failed: {e}")
+        return jsonify({"error": "server_pdf_failed"}), 503

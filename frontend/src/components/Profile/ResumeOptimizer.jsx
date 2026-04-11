@@ -2,6 +2,11 @@
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
 import styles from "@/lib/styles";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import DownloadIcon from "@mui/icons-material/Download";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
+import { downloadResumePDF } from "@/lib/resumePDF";
 
 export default function ResumeOptimizer({ profile, setProfile, showToast }) {
   const [loading, setLoading] = useState(false);
@@ -100,171 +105,7 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
     setLoading(false);
   };
 
-  const downloadPDF = async () => {
-    const { default: jsPDF } = await import("jspdf");
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-
-    const pageW = 210;
-    const margin = 18;
-    const contentW = pageW - margin * 2;
-    let y = 0;
-
-    const addPage = () => {
-      doc.addPage();
-      y = margin;
-    };
-
-    const checkY = (needed = 8) => {
-      if (y + needed > 280) addPage();
-    };
-
-    const line = (text, fontSize, color, bold, indent = 0, align = "left") => {
-      doc.setFontSize(fontSize);
-      doc.setTextColor(...color);
-      doc.setFont("helvetica", bold ? "bold" : "normal");
-      const x = margin + indent;
-      const maxW = contentW - indent;
-      const lines = doc.splitTextToSize(text, maxW);
-      checkY(lines.length * fontSize * 0.4 + 2);
-      doc.text(
-        lines,
-        align === "center" ? pageW / 2 : x,
-        y,
-        align === "center" ? { align: "center" } : {},
-      );
-      y += lines.length * fontSize * 0.4 + 1;
-    };
-
-    const rule = (r = 200, g = 200, b = 200) => {
-      checkY(4);
-      doc.setDrawColor(r, g, b);
-      doc.line(margin, y, margin + contentW, y);
-      y += 3;
-    };
-
-    const section = (title) => {
-      y += 3;
-      checkY(10);
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(37, 99, 235);
-      doc.text(title.toUpperCase(), margin, y);
-      y += 1.5;
-      doc.setDrawColor(37, 99, 235);
-      doc.setLineWidth(0.5);
-      doc.line(margin, y, margin + contentW, y);
-      doc.setLineWidth(0.2);
-      y += 4;
-    };
-
-    doc.setFillColor(37, 99, 235);
-    doc.rect(0, 0, pageW, 38, "F");
-
-    y = 13;
-    line(profile.name || "Your Name", 18, [255, 255, 255], true, 0, "center");
-    y += 1;
-    line(profile.title || "", 10, [186, 210, 255], false, 0, "center");
-    y += 1;
-    const contact = [profile.email, profile.phone, profile.location]
-      .filter(Boolean)
-      .join("  |  ");
-    line(contact, 8.5, [186, 210, 255], false, 0, "center");
-    y = 46;
-
-    const links = [profile.linkedin_url, profile.github_url].filter(Boolean);
-    if (links.length > 0) {
-      line(links.join("  |  "), 8, [186, 210, 255], false, 0, "center");
-    }
-    y += 2;
-
-    if (optimized.summary) {
-      section("Professional Summary");
-      line(optimized.summary, 9.5, [30, 30, 30], false);
-    }
-
-    const skills = optimized.skills || {};
-    const skillGroups = Object.entries(skills).filter(
-      ([, v]) => v && v.length > 0,
-    );
-    if (skillGroups.length > 0) {
-      section("Skills");
-      const labels = {
-        languages: "Languages",
-        backend: "Backend",
-        frontend: "Frontend",
-        databases: "Databases",
-        cloud_devops: "Cloud & DevOps",
-        architecture: "Architecture",
-        testing: "Testing",
-      };
-      skillGroups.forEach(([key, vals]) => {
-        checkY(6);
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(60, 60, 60);
-        const label = (labels[key] || key) + ": ";
-        doc.text(label, margin, y);
-        const lw = doc.getTextWidth(label);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(30, 30, 30);
-        const valText = vals.join(", ");
-        const wrapped = doc.splitTextToSize(valText, contentW - lw);
-        doc.text(wrapped, margin + lw, y);
-        y += wrapped.length * 4 + 1.5;
-      });
-    }
-
-    if ((optimized.experience || []).length > 0) {
-      section("Experience");
-      optimized.experience.forEach((exp) => {
-        checkY(10);
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(20, 20, 20);
-        doc.text(exp.title || "", margin, y);
-        if (exp.period) {
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(100, 100, 100);
-          doc.setFontSize(8.5);
-          const pw = doc.getTextWidth(exp.period);
-          doc.text(exp.period, margin + contentW - pw, y);
-        }
-        y += 4.5;
-        if (exp.company) line(exp.company, 9, [37, 99, 235], false);
-        (exp.highlights || []).forEach((h) => {
-          checkY(5);
-          doc.setFontSize(8.8);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(40, 40, 40);
-          doc.text("\u2022", margin + 1, y);
-          const hw = doc.splitTextToSize(h, contentW - 6);
-          doc.text(hw, margin + 5, y);
-          y += hw.length * 4 + 1;
-        });
-        y += 3;
-      });
-    }
-
-    if (profile.education) {
-      section("Education");
-      line(profile.education, 9.5, [30, 30, 30], false);
-    }
-
-    if ((profile.certifications || []).length > 0) {
-      section("Certifications");
-      profile.certifications.forEach((c) =>
-        line("\u2022  " + c, 9.5, [30, 30, 30], false),
-      );
-    }
-
-    if ((optimized.ats_keywords || []).length > 0) {
-      section("ATS Keywords");
-      line(optimized.ats_keywords.join("  \u00b7  "), 9, [60, 60, 60], false);
-    }
-
-    const filename = `${(profile.name || "Resume").replace(/\s+/g, "_")}_Optimized_Resume.pdf`;
-    doc.save(filename);
-  };
+  const downloadPDF = () => downloadResumePDF(profile, optimized);
 
   if (optimized && !showForm) {
     return (
@@ -480,6 +321,7 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
               fontWeight: 600,
             }}
           >
+            <DownloadIcon style={{ fontSize: 17, marginRight: 6, verticalAlign: 'middle' }} />
             Download PDF
           </button>
           <button
@@ -493,7 +335,8 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
               fontSize: "0.85rem",
             }}
           >
-            Re-optimize for a Different Role
+            <RefreshIcon style={{ fontSize: 16, marginRight: 5, verticalAlign: 'middle' }} />
+            Re-optimize
           </button>
         </div>
       </div>
@@ -592,7 +435,7 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
             opacity: !targetRole ? 0.5 : 1,
           }}
         >
-          {loading ? "Optimizing..." : "Optimize Resume"}
+          {loading ? "Optimizing..." : <><AutoAwesomeIcon style={{ fontSize: 17, marginRight: 6, verticalAlign: 'middle' }} />Optimize Resume</>}
         </button>
       </div>
     );
@@ -665,6 +508,7 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
               boxShadow: "0 4px 15px rgba(37,99,235,0.3)",
             }}
           >
+            <WorkspacePremiumIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
             {priceLabel ? `Optimize for ${priceLabel}` : "Optimize Resume"}
           </button>
           <p

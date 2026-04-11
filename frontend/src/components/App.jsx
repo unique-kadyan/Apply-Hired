@@ -12,6 +12,13 @@ import Search from '@/components/Search/Search';
 import Profile from '@/components/Profile/Profile';
 import ProfileSetup from '@/components/Profile/ProfileSetup';
 import ResumePage from '@/components/Resume/ResumePage';
+import CircularProgress from '@mui/material/CircularProgress';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import WorkIcon from '@mui/icons-material/Work';
+import SearchIcon from '@mui/icons-material/Search';
+import ArticleIcon from '@mui/icons-material/Article';
+import PersonIcon from '@mui/icons-material/Person';
+import LogoutIcon from '@mui/icons-material/Logout';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -118,8 +125,9 @@ export default function App() {
 
   if (!authChecked) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: 'var(--muted)', fontSize: '1.1rem' }}>Loading...</p>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
+        <CircularProgress size={36} sx={{ color: '#60a5fa' }} />
+        <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>Loading…</p>
       </div>
     );
   }
@@ -149,7 +157,9 @@ export default function App() {
           <div style={{ ...styles.logo, cursor: 'pointer' }} onClick={() => navigate('dashboard')}>JobBot</div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{user.name}</span>
-            <button onClick={handleLogout} style={{ ...styles.navLink, color: '#f87171', fontSize: '0.82rem' }}>Logout</button>
+            <button onClick={handleLogout} style={{ ...styles.navLink, color: '#f87171', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+              <LogoutIcon style={{ fontSize: 15 }} />Logout
+            </button>
           </div>
         </div>
         <ProfileSetup profile={profile} setProfile={setProfile} showToast={showToast} onComplete={() => setSetupDone(true)} />
@@ -163,10 +173,16 @@ export default function App() {
       <div style={styles.navbar}>
         <div style={{ ...styles.logo, cursor: 'pointer' }} onClick={() => navigate('dashboard')}>JobBot</div>
         <nav style={{ display: 'flex', gap: '0.25rem', flex: 1 }}>
-          {[['dashboard', 'Dashboard'], ['jobs', 'Jobs'], ['search', 'Search'], ['resume', 'Resume'], ['profile', 'Profile']].map(([key, label]) => (
+          {[
+            ['dashboard', 'Dashboard', <DashboardIcon style={{ fontSize: 16 }} />],
+            ['jobs',      'Jobs',      <WorkIcon style={{ fontSize: 16 }} />],
+            ['search',    'Search',    <SearchIcon style={{ fontSize: 16 }} />],
+            ['resume',    'Resume',    <ArticleIcon style={{ fontSize: 16 }} />],
+            ['profile',   'Profile',   <PersonIcon style={{ fontSize: 16 }} />],
+          ].map(([key, label, icon]) => (
             <button key={key} onClick={() => navigate(key)}
-              style={{ ...styles.navLink, ...(page === key || (page === 'job' && key === 'jobs') ? styles.navActive : {}) }}>
-              {label}
+              style={{ ...styles.navLink, ...(page === key || (page === 'job' && key === 'jobs') ? styles.navActive : {}), display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+              {icon}<span className="hide-sm">{label}</span>
             </button>
           ))}
         </nav>
@@ -182,7 +198,9 @@ export default function App() {
             }
           </div>
           <span className="hide-sm" style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>{user.name}</span>
-          <button onClick={handleLogout} style={{ ...styles.navLink, color: '#f87171', fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}>Logout</button>
+          <button onClick={handleLogout} style={{ ...styles.navLink, color: '#f87171', fontSize: '0.8rem', padding: '0.35rem 0.6rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+            <LogoutIcon style={{ fontSize: 15 }} /><span className="hide-sm">Logout</span>
+          </button>
         </div>
       </div>
 

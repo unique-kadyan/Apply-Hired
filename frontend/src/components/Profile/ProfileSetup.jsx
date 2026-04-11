@@ -4,6 +4,12 @@ import api from '@/lib/api';
 import styles from '@/lib/styles';
 import ResumeScoreCard from './ResumeScoreCard';
 import ResumeOptimizer from './ResumeOptimizer';
+import CircularProgress from '@mui/material/CircularProgress';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import ArticleIcon from '@mui/icons-material/Article';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 export default function ProfileSetup({ profile, setProfile, showToast, onComplete }) {
   const fileRef = useRef(null);
@@ -80,9 +86,11 @@ export default function ProfileSetup({ profile, setProfile, showToast, onComplet
         )}
 
         <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', justifyContent: 'center' }}>
-          <button onClick={() => setStep(1)} style={{ ...styles.btn, ...styles.btnSecondary }}>Re-upload Resume</button>
+          <button onClick={() => setStep(1)} style={{ ...styles.btn, ...styles.btnSecondary }}>
+            <RefreshIcon style={{ fontSize: 16 }} /> Re-upload Resume
+          </button>
           <button onClick={onComplete} style={{ ...styles.btn, ...styles.btnPrimary, padding: '0.7rem 2rem', fontSize: '1rem' }}>
-            Continue to Dashboard
+            Continue to Dashboard <ArrowForwardIcon style={{ fontSize: 18 }} />
           </button>
         </div>
       </div>
@@ -92,7 +100,7 @@ export default function ProfileSetup({ profile, setProfile, showToast, onComplet
   return (
     <div style={{ maxWidth: 520, margin: '0 auto', padding: '2rem', animation: 'fadeIn 0.3s ease' }}>
       <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-        <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>&#128196;</div>
+        <ArticleIcon sx={{ fontSize: 56, color: 'var(--accent2)', mb: 0.5 }} />
         <h1 style={{ fontSize: '1.5rem', marginBottom: '0.3rem' }}>Set Up Your Profile</h1>
         <p style={{ color: 'var(--muted)', lineHeight: 1.6 }}>
           Upload your resume to get started. We&apos;ll parse your skills,<br />experience, and education automatically.
@@ -107,12 +115,13 @@ export default function ProfileSetup({ profile, setProfile, showToast, onComplet
         }} onClick={() => !uploading && fileRef.current.click()}>
           {uploading ? (
             <div>
-              <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem', color: 'var(--accent2)' }}>Parsing...</div>
-              <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>Analyzing your resume with AI</p>
+              <CircularProgress size={44} sx={{ color: 'var(--accent2)', mb: 1.5 }} />
+              <p style={{ color: 'var(--accent2)', fontWeight: 600, fontSize: '1rem', marginBottom: '0.25rem' }}>Parsing your resume…</p>
+              <p style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Analyzing with AI — this takes a few seconds</p>
             </div>
           ) : (
             <div>
-              <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>&#128195;</div>
+              <CloudUploadIcon sx={{ fontSize: 52, color: 'var(--muted)', mb: 0.75 }} />
               <p style={{ color: 'var(--text2)', fontWeight: 600, fontSize: '1rem', marginBottom: '0.3rem' }}>
                 Click to upload your resume
               </p>

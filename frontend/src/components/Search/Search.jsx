@@ -3,6 +3,19 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import styles from '@/lib/styles';
 import { SkillChip } from '@/components/shared/Badge';
+import Switch from '@mui/material/Switch';
+import LinearProgress from '@mui/material/LinearProgress';
+import CircularProgress from '@mui/material/CircularProgress';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import EditIcon from '@mui/icons-material/Edit';
+import WorkIcon from '@mui/icons-material/Work';
+import ReplayIcon from '@mui/icons-material/Replay';
+import SearchIcon from '@mui/icons-material/Search';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import TuneIcon from '@mui/icons-material/Tune';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import SaveIcon from '@mui/icons-material/Save';
 
 export default function Search({ profile, showToast, navigate }) {
   const [jobTitle, setJobTitle] = useState('');
@@ -128,7 +141,9 @@ export default function Search({ profile, showToast, navigate }) {
 
   return (
     <div style={styles.container}>
-      <h1 style={{ fontSize: '1.5rem', marginBottom: '1.5rem' }}>Search Jobs</h1>
+      <h1 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <SearchIcon sx={{ fontSize: 28, color: 'var(--accent2)' }} /> Search Jobs
+      </h1>
 
       <div style={styles.card}>
         <h2 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Configure Your Search</h2>
@@ -250,16 +265,20 @@ export default function Search({ profile, showToast, navigate }) {
 
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={startSearch} disabled={searchStatus?.running}>
-            {searchStatus?.running ? 'Searching...' : 'Start Search'}
+            {searchStatus?.running
+              ? <><CircularProgress size={14} sx={{ color: '#fff', mr: 0.5 }} /> Searching…</>
+              : <><SearchIcon style={{ fontSize: 16 }} /> Start Search</>}
           </button>
-          <button style={{ ...styles.btn, ...styles.btnSecondary }} onClick={selectRecommended}>Auto-Select Recommended</button>
+          <button style={{ ...styles.btn, ...styles.btnSecondary }} onClick={selectRecommended}>
+            <AutoAwesomeIcon style={{ fontSize: 16 }} /> Auto-Select Recommended
+          </button>
         </div>
       </div>
 
       <div style={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => setShowSchedule(v => !v)}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span style={{ fontSize: '1.1rem' }}>&#128336;</span>
+            <ScheduleIcon sx={{ fontSize: 20, color: scheduleEnabled ? '#6ee7b7' : 'var(--muted)' }} />
             <div>
               <span style={{ fontWeight: 700, fontSize: '0.92rem' }}>Auto-Search Schedule</span>
               {scheduleEnabled
@@ -308,7 +327,7 @@ export default function Search({ profile, showToast, navigate }) {
                 )}
                 <div style={{ marginTop: '0.25rem' }}>
                   <button onClick={() => setScheduleEditing(true)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '0.35rem 0.85rem', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                    &#9999;&#65039; Edit Schedule
+                    <EditIcon style={{ fontSize: 14 }} /> Edit Schedule
                   </button>
                 </div>
               </div>
@@ -341,11 +360,20 @@ export default function Search({ profile, showToast, navigate }) {
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', userSelect: 'none' }}>
-                    <div onClick={() => setScheduleEnabled(v => !v)} style={{ width: 38, height: 22, borderRadius: 11, background: scheduleEnabled ? '#059669' : '#334155', position: 'relative', transition: 'background 0.2s', cursor: 'pointer', flexShrink: 0 }}>
-                      <div style={{ position: 'absolute', top: 3, left: scheduleEnabled ? 19 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
-                    </div>
-                    <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>{scheduleEnabled ? 'Enabled' : 'Disabled'}</span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer', userSelect: 'none' }}>
+                    <Switch
+                      checked={scheduleEnabled}
+                      onChange={e => setScheduleEnabled(e.target.checked)}
+                      size="small"
+                      sx={{
+                        '& .MuiSwitch-switchBase.Mui-checked': { color: '#fff' },
+                        '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#059669', opacity: 1 },
+                        '& .MuiSwitch-track': { backgroundColor: '#334155', opacity: 1 },
+                      }}
+                    />
+                    <span style={{ fontSize: '0.88rem', fontWeight: 600, color: scheduleEnabled ? '#6ee7b7' : 'var(--muted)' }}>
+                      {scheduleEnabled ? 'Enabled' : 'Disabled'}
+                    </span>
                   </label>
                   {scheduleEnabled && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -362,7 +390,9 @@ export default function Search({ profile, showToast, navigate }) {
                     {scheduleLastRun && <button type="button" onClick={() => setScheduleEditing(false)} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '0.85rem', padding: '0.4rem 0.5rem' }}>Cancel</button>}
                     <button onClick={saveSchedule} disabled={scheduleSaving}
                       style={{ ...styles.btn, ...styles.btnSm, background: '#059669', color: '#fff' }}>
-                      {scheduleSaving ? 'Saving\u2026' : 'Save Schedule'}
+                      {scheduleSaving
+                        ? <><CircularProgress size={12} sx={{ color: '#fff' }} /> Saving…</>
+                        : <><SaveIcon style={{ fontSize: 14 }} /> Save Schedule</>}
                     </button>
                   </div>
                 </div>
@@ -375,8 +405,13 @@ export default function Search({ profile, showToast, navigate }) {
       {searchStatus && (searchStatus.running || searchStatus.progress > 0) && (
         <div style={styles.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-            <h2 style={{ fontSize: '1rem', margin: 0 }}>
-              {searchStatus.running ? '&#128269; Searching...' : searchStatus.progress >= 100 ? '&#9989; Search Complete' : '&#9888;&#65039; Search Ended'}
+            <h2 style={{ fontSize: '1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              {searchStatus.running
+                ? <><CircularProgress size={16} sx={{ color: '#60a5fa' }} /> Searching…</>
+                : searchStatus.progress >= 100
+                  ? <><CheckCircleIcon sx={{ fontSize: 18, color: '#6ee7b7' }} /> Search Complete</>
+                  : <><WarningAmberIcon sx={{ fontSize: 18, color: '#fcd34d' }} /> Search Ended</>
+              }
             </h2>
             {searchStatus.progress > 0 && (
               <span style={{ fontSize: '1rem', fontWeight: 700, color: searchStatus.progress >= 100 ? 'var(--green2)' : 'var(--accent2)' }}>
@@ -385,16 +420,27 @@ export default function Search({ profile, showToast, navigate }) {
             )}
           </div>
           {searchStatus.progress > 0 && (
-            <div style={{ background: 'var(--bg3)', borderRadius: 10, height: 22, overflow: 'hidden', marginBottom: '0.75rem', position: 'relative' }}>
-              <div style={{
-                background: searchStatus.progress >= 100 ? 'var(--green)' : (searchStatus.running ? 'linear-gradient(90deg, var(--accent), var(--accent2))' : '#dc2626'),
-                height: '100%', borderRadius: 10, transition: 'width 0.4s ease',
-                width: `${searchStatus.progress}%`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                {searchStatus.progress >= 15 && (
-                  <span style={{ color: '#fff', fontSize: '0.72rem', fontWeight: 700 }}>{searchStatus.progress}%</span>
-                )}
+            <div style={{ marginBottom: '0.75rem' }}>
+              <LinearProgress
+                variant="determinate"
+                value={searchStatus.progress}
+                sx={{
+                  height: 10,
+                  borderRadius: 5,
+                  backgroundColor: 'var(--bg3)',
+                  '& .MuiLinearProgress-bar': {
+                    borderRadius: 5,
+                    background: searchStatus.progress >= 100
+                      ? '#059669'
+                      : searchStatus.running
+                        ? 'linear-gradient(90deg, #2563eb, #7c3aed)'
+                        : '#dc2626',
+                    transition: 'transform 0.4s ease',
+                  },
+                }}
+              />
+              <div style={{ textAlign: 'right', fontSize: '0.72rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
+                {searchStatus.progress}%
               </div>
             </div>
           )}
@@ -402,11 +448,11 @@ export default function Search({ profile, showToast, navigate }) {
           {!searchStatus.running && (
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
               <button onClick={() => navigate('jobs')} style={{ ...styles.btn, ...styles.btnPrimary, ...styles.btnSm }}>
-                &#128203; View Jobs
+                <WorkIcon style={{ fontSize: 15 }} /> View Jobs
               </button>
               {searchStatus.progress < 100 && (
                 <button onClick={startSearch} style={{ ...styles.btn, ...styles.btnSecondary, ...styles.btnSm }}>
-                  &#8634; Retry Search
+                  <ReplayIcon style={{ fontSize: 15 }} /> Retry Search
                 </button>
               )}
             </div>

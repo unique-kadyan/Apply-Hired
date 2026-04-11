@@ -29,9 +29,6 @@ export default function Profile({ profile, setProfile, showToast }) {
     profile.expected_salary_max
   );
   const [prefEditing, setPrefEditing] = useState(!_prefSaved);
-  const [linkedinUrl, setLinkedinUrl] = useState(profile.linkedin_url || "");
-  const [githubUrl, setGithubUrl] = useState(profile.github_url || "");
-  const [linksSaving, setLinksSaving] = useState(false);
 
   const uploadAvatar = async (e) => {
     const file = e.target.files[0];
@@ -101,24 +98,6 @@ export default function Profile({ profile, setProfile, showToast }) {
     }
     setJsonParsing(false);
     e.target.value = "";
-  };
-
-  const saveLinks = async () => {
-    setLinksSaving(true);
-    try {
-      const res = await api.put("/api/profile", {
-        linkedin_url: linkedinUrl,
-        github_url: githubUrl,
-      });
-      if (res.error) showToast(res.error, "error");
-      else {
-        setProfile(res);
-        showToast("Profile links saved!", "success");
-      }
-    } catch {
-      showToast("Save failed", "error");
-    }
-    setLinksSaving(false);
   };
 
   const savePreferences = async () => {
@@ -356,99 +335,6 @@ export default function Profile({ profile, setProfile, showToast }) {
             PDF, DOCX, TXT
           </span>
         </div>
-      </div>
-
-      <div style={styles.card}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "0.75rem",
-          }}
-        >
-          <div>
-            <h2 style={{ fontSize: "1.1rem", margin: "0 0 0.15rem" }}>
-              Profile Links
-            </h2>
-            <p style={{ color: "var(--muted)", fontSize: "0.8rem", margin: 0 }}>
-              Required for a 100/100 resume score
-            </p>
-          </div>
-          {(profile.linkedin_url || profile.github_url) && (
-            <span
-              style={{
-                background: "#065f46",
-                color: "#6ee7b7",
-                padding: "0.15rem 0.6rem",
-                borderRadius: 20,
-                fontSize: "0.72rem",
-                fontWeight: 600,
-              }}
-            >
-              +4 pts
-            </span>
-          )}
-        </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "0.75rem",
-            marginBottom: "0.75rem",
-          }}
-        >
-          <div>
-            <label
-              style={{
-                display: "block",
-                color: "var(--muted)",
-                fontSize: "0.8rem",
-                fontWeight: 600,
-                marginBottom: "0.3rem",
-              }}
-            >
-              LinkedIn URL
-            </label>
-            <input
-              style={styles.input}
-              value={linkedinUrl}
-              onChange={(e) => setLinkedinUrl(e.target.value)}
-              placeholder="linkedin.com/in/yourname"
-            />
-          </div>
-          <div>
-            <label
-              style={{
-                display: "block",
-                color: "var(--muted)",
-                fontSize: "0.8rem",
-                fontWeight: 600,
-                marginBottom: "0.3rem",
-              }}
-            >
-              GitHub URL
-            </label>
-            <input
-              style={styles.input}
-              value={githubUrl}
-              onChange={(e) => setGithubUrl(e.target.value)}
-              placeholder="github.com/yourname"
-            />
-          </div>
-        </div>
-        <button
-          onClick={saveLinks}
-          disabled={linksSaving}
-          style={{
-            ...styles.btn,
-            ...styles.btnPrimary,
-            fontSize: "0.85rem",
-            opacity: linksSaving ? 0.6 : 1,
-          }}
-        >
-          {linksSaving ? "Saving..." : "Save Links"}
-        </button>
       </div>
 
       <ConnectAccounts

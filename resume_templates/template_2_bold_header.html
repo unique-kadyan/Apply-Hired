@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Arial', 'Helvetica Neue', Helvetica, sans-serif; font-size: 10pt; color: #222; line-height: 1.5; }
+  .header { background: {{ accent_color }}; color: #fff; padding: 22mm 20mm 16mm; }
+  .header-name { font-size: 30pt; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; }
+  .header-title { font-size: 12pt; font-weight: 400; opacity: 0.9; margin-top: 4px; letter-spacing: 0.5px; }
+  .header-contact { font-size: 8.5pt; margin-top: 10px; opacity: 0.85; }
+  .header-contact span { margin-right: 18px; }
+  .body { padding: 12mm 20mm 18mm; }
+  .section-title { font-size: 10pt; font-weight: 900; text-transform: uppercase; letter-spacing: 3px; color: {{ accent_color }}; border-bottom: 2px solid {{ accent_color }}; padding-bottom: 3px; margin: 14px 0 8px; }
+  .summary { font-size: 9.5pt; color: #333; line-height: 1.7; }
+  .skills-table { width: 100%; border-collapse: collapse; }
+  .skills-table td { padding: 2px 6px 2px 0; font-size: 9pt; vertical-align: top; }
+  .skills-table td:first-child { font-weight: 700; color: #444; width: 130px; }
+  .skills-table td:last-child { color: #555; }
+  .exp-entry { margin-bottom: 11px; page-break-inside: avoid; }
+  .exp-top { display: table; width: 100%; }
+  .exp-left { display: table-cell; }
+  .exp-right { display: table-cell; text-align: right; white-space: nowrap; }
+  .exp-title { font-weight: 700; font-size: 10.5pt; color: #111; }
+  .exp-company { font-size: 9.5pt; color: {{ accent_color }}; font-weight: 600; }
+  .exp-period { font-size: 9pt; color: #777; }
+  .bullet-list { margin: 4px 0 0 16px; }
+  .bullet-list li { font-size: 9pt; color: #333; margin-bottom: 2px; line-height: 1.5; }
+  .edu-text { font-size: 9.5pt; color: #333; }
+  .cert-list { margin: 4px 0 0 16px; }
+  .cert-list li { font-size: 9pt; color: #333; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-name">{{ profile.name or '' }}</div>
+  <div class="header-title">{{ profile.title or '' }}</div>
+  <div class="header-contact">
+    {% if profile.email %}<span>{{ profile.email }}</span>{% endif %}
+    {% if profile.phone %}<span>{{ profile.phone }}</span>{% endif %}
+    {% if profile.location %}<span>{{ profile.location }}</span>{% endif %}
+    {% if profile.linkedin %}<span>{{ profile.linkedin }}</span>{% endif %}
+    {% if profile.github_username %}<span>github.com/{{ profile.github_username }}</span>{% endif %}
+  </div>
+</div>
+
+<div class="body">
+
+{% if optimized.summary %}
+<div class="section-title">Summary</div>
+<div class="summary">{{ optimized.summary }}</div>
+{% endif %}
+
+{% set all_skills = [] %}
+{% for cat, vals in (optimized.skills or {}).items() %}
+  {% if vals %}{% set _ = all_skills.append((cat, vals)) %}{% endif %}
+{% endfor %}
+{% if all_skills %}
+<div class="section-title">Skills</div>
+<table class="skills-table">
+  {% for cat, vals in all_skills %}
+  <tr>
+    <td>{{ {'languages':'Languages','backend':'Backend','frontend':'Frontend','databases':'Databases','cloud_devops':'Cloud & DevOps','architecture':'Architecture','testing':'Testing'}.get(cat, cat.title()) }}</td>
+    <td>{{ vals | join(' · ') }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if optimized.experience %}
+<div class="section-title">Experience</div>
+{% for exp in optimized.experience %}
+<div class="exp-entry">
+  <div class="exp-top">
+    <div class="exp-left">
+      <div class="exp-title">{{ exp.title or '' }}</div>
+      <div class="exp-company">{{ exp.company or '' }}</div>
+    </div>
+    <div class="exp-right">
+      <div class="exp-period">{{ exp.period or '' }}</div>
+    </div>
+  </div>
+  <ul class="bullet-list">
+    {% for h in (exp.highlights or []) %}
+    <li>{{ h }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if profile.education %}
+<div class="section-title">Education</div>
+<div class="edu-text">{{ profile.education }}</div>
+{% endif %}
+
+{% if profile.certifications %}
+<div class="section-title">Certifications</div>
+<ul class="cert-list">
+  {% for c in profile.certifications %}
+  <li>{{ c }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+</div>
+</body>
+</html>

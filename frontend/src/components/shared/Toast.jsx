@@ -1,15 +1,42 @@
 'use client';
 import { useEffect } from 'react';
+import Alert from '@mui/material/Alert';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import InfoIcon from '@mui/icons-material/Info';
+
+const CONFIG = {
+  success: { icon: <CheckCircleIcon fontSize="small" />, bg: '#065f46', fg: '#6ee7b7', border: 'rgba(110,231,183,0.25)' },
+  error:   { icon: <ErrorIcon fontSize="small" />,        bg: '#7f1d1d', fg: '#fca5a5', border: 'rgba(252,165,165,0.25)' },
+  warning: { icon: <WarningAmberIcon fontSize="small" />, bg: '#78350f', fg: '#fcd34d', border: 'rgba(252,211,77,0.25)' },
+  info:    { icon: <InfoIcon fontSize="small" />,         bg: '#1e3a5f', fg: '#93c5fd', border: 'rgba(147,197,253,0.25)' },
+};
 
 export default function Toast({ message, type, onClose }) {
-  useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, []);
-  const bg = type === 'success' ? '#065f46' : type === 'error' ? '#7f1d1d' : '#78350f';
-  const fg = type === 'success' ? '#6ee7b7' : type === 'error' ? '#fca5a5' : '#fcd34d';
+  useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [message]);
+  const c = CONFIG[type] || CONFIG.info;
   return (
-    <div style={{ position: 'fixed', bottom: 20, right: 20, background: 'var(--bg2)', border: `1px solid ${fg}33`, borderRadius: 12, padding: '1rem 1.5rem', zIndex: 200, boxShadow: '0 8px 30px rgba(0,0,0,0.5)', maxWidth: 400, animation: 'fadeIn 0.3s', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-      <span style={{ color: fg, fontSize: '1.2rem' }}>{type === 'success' ? '✓' : type === 'error' ? '✗' : '⚠'}</span>
-      <span style={{ color: fg, fontWeight: 500 }}>{message}</span>
-      <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', marginLeft: 'auto', fontSize: '1rem' }}>&times;</button>
+    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, maxWidth: 420, minWidth: 280, animation: 'fadeIn 0.25s ease' }}>
+      <Alert
+        severity={type || 'info'}
+        icon={c.icon}
+        onClose={onClose}
+        sx={{
+          background: c.bg,
+          color: c.fg,
+          border: `1px solid ${c.border}`,
+          borderRadius: '12px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
+          fontWeight: 500,
+          fontSize: '0.9rem',
+          alignItems: 'center',
+          '& .MuiAlert-icon': { color: c.fg, marginRight: '10px' },
+          '& .MuiAlert-action button': { color: c.fg, opacity: 0.75, '&:hover': { opacity: 1 } },
+        }}
+      >
+        {message}
+      </Alert>
     </div>
   );
 }

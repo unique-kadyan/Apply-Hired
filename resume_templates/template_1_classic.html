@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Garamond&family=EB+Garamond:wght@400;600;700&display=swap');
+  @page { size: A4; margin: 18mm 20mm 18mm 20mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'EB Garamond', Garamond, 'Times New Roman', serif; font-size: 10.5pt; color: #1a1a2e; line-height: 1.5; }
+  .name { font-size: 28pt; font-weight: 700; color: {{ accent_color }}; letter-spacing: 1px; }
+  .title { font-size: 12pt; color: #444; margin-top: 3px; font-style: italic; }
+  .contact { font-size: 9pt; color: #555; margin-top: 6px; }
+  .divider { border: none; border-top: 2px solid {{ accent_color }}; margin: 10px 0 8px; }
+  .thin-divider { border: none; border-top: 1px solid #ddd; margin: 6px 0; }
+  .section-title { font-size: 12pt; font-weight: 700; color: {{ accent_color }}; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; margin-top: 12px; }
+  .summary { font-size: 10pt; color: #333; line-height: 1.7; margin-bottom: 4px; }
+  .skills-grid { display: table; width: 100%; }
+  .skills-row { display: table-row; }
+  .skills-label { display: table-cell; font-weight: 600; color: #333; font-size: 9.5pt; width: 120px; padding-bottom: 3px; }
+  .skills-value { display: table-cell; color: #444; font-size: 9.5pt; padding-bottom: 3px; }
+  .exp-header { margin-bottom: 2px; }
+  .exp-title { font-weight: 700; font-size: 10.5pt; color: #1a1a2e; }
+  .exp-company { font-size: 10pt; color: {{ accent_color }}; font-style: italic; }
+  .exp-period { font-size: 9pt; color: #666; float: right; }
+  .exp-entry { margin-bottom: 10px; page-break-inside: avoid; }
+  .bullet-list { margin: 4px 0 0 14px; }
+  .bullet-list li { font-size: 9.5pt; color: #333; margin-bottom: 2px; line-height: 1.5; }
+  .clearfix::after { content: ''; display: table; clear: both; }
+  .cert-list { margin: 4px 0 0 14px; }
+  .cert-list li { font-size: 9.5pt; color: #333; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+
+<div class="name">{{ profile.name or '' }}</div>
+<div class="title">{{ profile.title or '' }}</div>
+<div class="contact">
+  {% set parts = [] %}
+  {% if profile.email %}{% set _ = parts.append(profile.email) %}{% endif %}
+  {% if profile.phone %}{% set _ = parts.append(profile.phone) %}{% endif %}
+  {% if profile.location %}{% set _ = parts.append(profile.location) %}{% endif %}
+  {% if profile.linkedin %}{% set _ = parts.append(profile.linkedin) %}{% endif %}
+  {% if profile.github_username %}{% set _ = parts.append('github.com/' ~ profile.github_username) %}{% endif %}
+  {{ parts | join('  ·  ') }}
+</div>
+
+<hr class="divider">
+
+{% if optimized.summary %}
+<div class="section-title">Professional Summary</div>
+<div class="summary">{{ optimized.summary }}</div>
+{% endif %}
+
+{% set all_skills = [] %}
+{% for cat, vals in (optimized.skills or {}).items() %}
+  {% if vals %}{% set _ = all_skills.append((cat, vals)) %}{% endif %}
+{% endfor %}
+{% if all_skills %}
+<div class="section-title">Skills</div>
+<div class="skills-grid">
+  {% for cat, vals in all_skills %}
+  <div class="skills-row">
+    <div class="skills-label">{{ {'languages':'Languages','backend':'Backend','frontend':'Frontend','databases':'Databases','cloud_devops':'Cloud & DevOps','architecture':'Architecture','testing':'Testing'}.get(cat, cat.title()) }}</div>
+    <div class="skills-value">{{ vals | join(', ') }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if optimized.experience %}
+<div class="section-title">Experience</div>
+{% for exp in optimized.experience %}
+<div class="exp-entry">
+  <div class="exp-header clearfix">
+    <span class="exp-period">{{ exp.period or '' }}</span>
+    <span class="exp-title">{{ exp.title or '' }}</span>
+    <span style="color:#666"> — </span>
+    <span class="exp-company">{{ exp.company or '' }}</span>
+  </div>
+  <ul class="bullet-list">
+    {% for h in (exp.highlights or []) %}
+    <li>{{ h }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if profile.education %}
+<div class="section-title">Education</div>
+<div class="summary">{{ profile.education }}</div>
+{% endif %}
+
+{% if profile.certifications %}
+<div class="section-title">Certifications</div>
+<ul class="cert-list">
+  {% for c in profile.certifications %}
+  <li>{{ c }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+</body>
+</html>

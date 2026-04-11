@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Georgia', 'Times New Roman', serif; font-size: 10pt; color: #1a1a1a; line-height: 1.55; }
+  .top-bar { height: 6mm; background: {{ accent_color }}; }
+  .header { padding: 10mm 22mm 8mm; border-bottom: 1px solid #ddd; }
+  .header-name { font-size: 26pt; font-weight: 700; color: #1a1a1a; letter-spacing: 0.5px; }
+  .header-title { font-size: 11pt; color: {{ accent_color }}; font-style: italic; margin-top: 4px; }
+  .header-contact { font-size: 8.5pt; color: #555; margin-top: 8px; }
+  .header-contact span { margin-right: 20px; }
+  .body { padding: 8mm 22mm 18mm; }
+  .section-wrap { margin-bottom: 14px; }
+  .section-title { font-size: 10pt; font-weight: 700; color: #1a1a1a; text-transform: uppercase; letter-spacing: 3px; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ accent_color }}; }
+  .section-title::before { content: ''; display: inline-block; width: 4px; height: 11px; background: {{ accent_color }}; margin-right: 8px; vertical-align: middle; }
+  .summary { font-size: 9.5pt; color: #333; line-height: 1.75; font-style: italic; }
+  .skills-grid { display: table; width: 100%; }
+  .skills-row { display: table-row; }
+  .sk-label { display: table-cell; font-weight: 700; font-size: 8.5pt; color: #333; width: 110px; padding: 2px 8px 2px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+  .sk-val { display: table-cell; font-size: 8.5pt; color: #555; padding: 2px 0; }
+  .exp-entry { margin-bottom: 12px; page-break-inside: avoid; }
+  .exp-header-row { display: table; width: 100%; }
+  .exp-header-left { display: table-cell; }
+  .exp-header-right { display: table-cell; text-align: right; }
+  .exp-title { font-weight: 700; font-size: 10.5pt; color: #111; }
+  .exp-company { font-size: 9.5pt; color: {{ accent_color }}; }
+  .exp-period { font-size: 8.5pt; color: #777; font-style: italic; }
+  .exp-location { font-size: 8.5pt; color: #999; }
+  .bullet-list { margin: 5px 0 0 18px; }
+  .bullet-list li { font-size: 9pt; color: #333; margin-bottom: 3px; line-height: 1.55; }
+  .edu-block { font-size: 9.5pt; color: #333; }
+  .cert-list { margin: 4px 0 0 18px; }
+  .cert-list li { font-size: 9pt; color: #333; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+
+<div class="top-bar"></div>
+
+<div class="header">
+  <div class="header-name">{{ profile.name or '' }}</div>
+  <div class="header-title">{{ profile.title or '' }}</div>
+  <div class="header-contact">
+    {% if profile.email %}<span>{{ profile.email }}</span>{% endif %}
+    {% if profile.phone %}<span>{{ profile.phone }}</span>{% endif %}
+    {% if profile.location %}<span>{{ profile.location }}</span>{% endif %}
+    {% if profile.linkedin %}<span>{{ profile.linkedin }}</span>{% endif %}
+    {% if profile.github_username %}<span>github.com/{{ profile.github_username }}</span>{% endif %}
+  </div>
+</div>
+
+<div class="body">
+
+{% if optimized.summary %}
+<div class="section-wrap">
+  <div class="section-title">Executive Profile</div>
+  <div class="summary">{{ optimized.summary }}</div>
+</div>
+{% endif %}
+
+{% set all_skills = [] %}
+{% for cat, vals in (optimized.skills or {}).items() %}
+  {% if vals %}{% set _ = all_skills.append((cat, vals)) %}{% endif %}
+{% endfor %}
+{% if all_skills %}
+<div class="section-wrap">
+  <div class="section-title">Core Competencies</div>
+  <div class="skills-grid">
+    {% for cat, vals in all_skills %}
+    <div class="skills-row">
+      <div class="sk-label">{{ {'languages':'Languages','backend':'Backend','frontend':'Frontend','databases':'Databases','cloud_devops':'Cloud & DevOps','architecture':'Architecture','testing':'Testing'}.get(cat, cat.title()) }}</div>
+      <div class="sk-val">{{ vals | join('  ·  ') }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if optimized.experience %}
+<div class="section-wrap">
+  <div class="section-title">Professional Experience</div>
+  {% for exp in optimized.experience %}
+  <div class="exp-entry">
+    <div class="exp-header-row">
+      <div class="exp-header-left">
+        <div class="exp-title">{{ exp.title or '' }}</div>
+        <div class="exp-company">{{ exp.company or '' }}</div>
+      </div>
+      <div class="exp-header-right">
+        <div class="exp-period">{{ exp.period or '' }}</div>
+      </div>
+    </div>
+    <ul class="bullet-list">
+      {% for h in (exp.highlights or []) %}
+      <li>{{ h }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if profile.education %}
+<div class="section-wrap">
+  <div class="section-title">Education</div>
+  <div class="edu-block">{{ profile.education }}</div>
+</div>
+{% endif %}
+
+{% if profile.certifications %}
+<div class="section-wrap">
+  <div class="section-title">Certifications</div>
+  <ul class="cert-list">
+    {% for c in profile.certifications %}
+    <li>{{ c }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+</div>
+</body>
+</html>
