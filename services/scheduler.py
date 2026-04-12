@@ -7,9 +7,22 @@ Registered jobs:
 """
 
 import logging
+import os
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+
+def _keep_alive():
+    """Ping own /health every 45 s to prevent Render free-tier spin-down."""
+    url = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+    if not url:
+        return
+    try:
+        import requests as _req
+        r = _req.get(f"{url}/health", timeout=10)
+        logger.debug(f"Keep-alive ping → {r.status_code}")
+    except Exception as e:
+        logger.warning(f"Keep-alive ping failed: {e}")
 
 _scheduler = None
 
@@ -90,8 +103,15 @@ def start_scheduler():
             replace_existing=True,
         )
 
+        _scheduler.add_job(
+            _keep_alive,
+            IntervalTrigger(seconds=45),
+            id="keep_alive",
+            replace_existing=True,
+        )
+
         _scheduler.start()
-        logger.info("Background scheduler started (auto-search: hourly, stale-pruner: weekly)")
+        logger.info("Background scheduler started (auto-search: hourly, stale-pruner: weekly, keep-alive: 45 s)")
 
     except ImportError:
         logger.warning("APScheduler not installed — scheduled tasks disabled. Run: pip install APScheduler")
