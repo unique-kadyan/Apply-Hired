@@ -3,7 +3,6 @@
 import logging
 import os
 import random
-import re
 from datetime import datetime, timezone
 
 from flask import Blueprint, Response, jsonify, request
