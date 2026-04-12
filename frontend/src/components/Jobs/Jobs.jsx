@@ -6,6 +6,22 @@ import { Badge, StatusBadge } from '@/components/shared/Badge';
 
 const CURRENCY_SYMBOLS = { INR:'₹', GBP:'£', EUR:'€', JPY:'¥', AUD:'A$', CAD:'C$', SGD:'S$', AED:'AED ', ZAR:'R', BRL:'R$', USD:'$', CHF:'CHF ', SEK:'SEK ', NOK:'NOK ', DKK:'DKK ', PLN:'PLN ', HUF:'HUF ', MXN:'MX$', NZD:'NZ$', HKD:'HK$' };
 
+// Returns the direct application form URL, deriving it from known ATS patterns when possible.
+function getApplyUrl(job) {
+  if (job.apply_url) return job.apply_url;
+  const url = (job.url || '').split('?')[0].replace(/\/$/, '');
+  if (!url) return job.url || '';
+  // Lever: jobs.lever.co/company/uuid → .../apply
+  if (/jobs\.lever\.co\/[^/]+\/[^/]+$/.test(url)) return url + '/apply';
+  // Greenhouse: boards.greenhouse.io/company/jobs/id
+  if (/boards\.greenhouse\.io\/.+\/jobs\/\d+$/.test(url)) return url + '/apply';
+  // Ashby: jobs.ashbyhq.com/company/uuid
+  if (/jobs\.ashbyhq\.com\/[^/]+\/[^/]+$/.test(url)) return url + '/apply';
+  // Workable: apply.workable.com — already an apply URL
+  // Default: use listing URL as-is
+  return job.url || '';
+}
+
 function detectCurrency(salaryStr, location) {
   const s = salaryStr || '';
   if (/₹|INR|Rs/i.test(s)) return 'INR';
@@ -125,7 +141,7 @@ export default function Jobs({ navigate, showToast, isVisible }) {
   const [tab, setTab] = useState('not_applied');
   const [jobPanel, setJobPanel] = useState(null);
   const [jobPanelLoading, setJobPanelLoading] = useState(false);
-  const [tabCounts, setTabCounts] = useState({ not_applied: null, applied: null, not_interested: null, saved: null });
+  const [tabCounts, setTabCounts] = useState({ not_applied: null, applied: null, not_interested: null, saved: null, history: null });
   const [searchQ, setSearchQ] = useState('');
   const [sortBy, setSortBy] = useState('');
   const [sortDir, setSortDir] = useState('desc');
@@ -446,6 +462,7 @@ export default function Jobs({ navigate, showToast, isVisible }) {
           { key: 'saved',          label: 'Saved',          color: '#fbbf24'        },
           { key: 'applied',        label: 'Applied',        color: 'var(--green2)'  },
           { key: 'not_interested', label: 'Not Interested', color: 'var(--red2)'    },
+          { key: 'history',        label: 'History',        color: '#94a3b8'        },
         ].map(t => {
           const count = tabCounts[t.key];
           return (
@@ -548,15 +565,63 @@ export default function Jobs({ navigate, showToast, isVisible }) {
         <select style={{ ...styles.select, minWidth: 110 }} value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }} title="Rows per page">
           {[30, 40, 50, 75, 100].map(n => <option key={n} value={n}>{n} / page</option>)}
         </select>
-        <button style={{ ...styles.btn, ...styles.btnSm, ...styles.btnDanger }} onClick={async () => {
-          if (!confirm('Clear all non-applied jobs? Jobs with status Applied, Interview, and Offer will be kept.')) return;
-          const res = await api.post('/api/jobs/clear', {});
-          showToast(`Cleared ${res.deleted} jobs. Kept ${res.kept?.join(', ')}.`, 'success');
-          setPage(1); loadJobs();
-        }}>Clear Old Jobs</button>
+        {tab !== 'history' && (
+          <button style={{ ...styles.btn, ...styles.btnSm, ...styles.btnDanger }} onClick={async () => {
+            if (!confirm('Clear all non-applied jobs from view? Their records are kept to prevent re-applying. Applied, Interview, and Offer jobs are unaffected.')) return;
+            const res = await api.post('/api/jobs/clear', {});
+            showToast(`Cleared ${res.cleared} jobs from view. Status history preserved.`, 'success');
+            setPage(1); loadJobs();
+          }}>Clear Old Jobs</button>
+        )}
       </div>
 
-      <div style={{ ...styles.card, padding: 0, overflow: 'hidden', marginBottom: selected.size > 0 ? 70 : 0 }}>
+      {tab === 'history' && !loading && jobs.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1.5rem' }}>
+          {jobs.map(j => {
+            const isCleared = j.cleared;
+            const statusColor = {
+              applied: '#6ee7b7', interview: '#d8b4fe', offer: '#86efac',
+              rejected: '#fca5a5', not_interested: '#fca5a5',
+            }[j.status] || '#94a3b8';
+            const statusBg = {
+              applied: '#065f46', interview: '#581c87', offer: '#14532d',
+              rejected: '#7f1d1d', not_interested: '#7f1d1d',
+            }[j.status] || '#1e293b';
+            const displayStatus = isCleared && j.status !== 'not_interested' && !['applied','interview','offer','rejected'].includes(j.status)
+              ? 'cleared' : j.status;
+            return (
+              <div key={j.id} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '0.85rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <a href={j.url} target="_blank" rel="noopener noreferrer"
+                      style={{ fontWeight: 700, color: '#93c5fd', fontSize: '0.95rem', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      title={j.title}>{j.title}</a>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>{j.company}{j.location ? ` · ${j.location}` : ''}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                    <Badge score={j.score} />
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.55rem', borderRadius: 20, background: statusBg, color: statusColor, border: `1px solid ${statusColor}33`, textTransform: 'capitalize' }}>
+                      {displayStatus}
+                    </span>
+                  </div>
+                </div>
+                {j.notes && (
+                  <div style={{ fontSize: '0.82rem', color: '#cbd5e1', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.4rem 0.65rem', marginTop: '0.15rem' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginRight: '0.4rem' }}>Note:</span>
+                    {j.notes}
+                  </div>
+                )}
+                <div style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'flex', gap: '1rem', marginTop: '0.1rem' }}>
+                  {j.applied_at && <span>Applied: {fmtDate(j.applied_at?.slice(0,10))}</span>}
+                  {j.updated_at && <span>Updated: {fmtDate(j.updated_at?.slice(0,10))}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {tab !== 'history' && <div style={{ ...styles.card, padding: 0, overflow: 'hidden', marginBottom: selected.size > 0 ? 70 : 0 }}>
         <div style={{ overflowX: 'auto' }}>
           <table className="jobs-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
@@ -633,20 +698,20 @@ export default function Jobs({ navigate, showToast, isVisible }) {
                   <td className="action-cell" style={{ padding: '0.4rem 0.6rem', width: '1%' }} onClick={e => e.stopPropagation()}>
                     {tab === 'not_interested' ? (
                       <div className="action-btns">
-                        <a href={j.url} target="_blank" rel="noopener"
-                          title="View Job"
+                        <a href={getApplyUrl(j)} target="_blank" rel="noopener"
+                          title="Apply Directly"
                           className="action-btn"
                           style={{ background: 'var(--bg3)', color: 'var(--muted)', textDecoration: 'none' }}>
-                          ↗<span className="btn-label">View</span>
+                          ↗<span className="btn-label">Apply</span>
                         </a>
                       </div>
                     ) : tab === 'applied' ? (
                       <div className="action-btns">
-                        <a href={j.url} target="_blank" rel="noopener"
-                          title="View Job"
+                        <a href={getApplyUrl(j)} target="_blank" rel="noopener"
+                          title="Apply Directly"
                           className="action-btn"
                           style={{ background: 'var(--bg3)', color: 'var(--muted)', textDecoration: 'none' }}>
-                          ↗<span className="btn-label">View</span>
+                          ↗<span className="btn-label">Apply</span>
                         </a>
                         <button
                           title="Track Interview / Offer"
@@ -665,12 +730,12 @@ export default function Jobs({ navigate, showToast, isVisible }) {
                       </div>
                     ) : tab === 'saved' ? (
                       <div className="action-btns">
-                        <a href={j.url} target="_blank" rel="noopener"
+                        <a href={getApplyUrl(j)} target="_blank" rel="noopener"
                           onClick={e => e.stopPropagation()}
-                          title="Open Job Posting"
+                          title="Apply Directly"
                           className="action-btn"
                           style={{ background: 'var(--accent)', color: '#fff', textDecoration: 'none' }}>
-                          ↗<span className="btn-label">Open</span>
+                          ↗<span className="btn-label">Apply</span>
                         </a>
                         <button
                           title="Mark as Applied"
@@ -710,12 +775,12 @@ export default function Jobs({ navigate, showToast, isVisible }) {
                       </div>
                     ) : (
                       <div className="action-btns">
-                        <a href={j.url} target="_blank" rel="noopener"
+                        <a href={getApplyUrl(j)} target="_blank" rel="noopener"
                           onClick={e => e.stopPropagation()}
-                          title="Open Job Posting"
+                          title="Apply Directly"
                           className="action-btn"
                           style={{ background: 'var(--accent)', color: '#fff', textDecoration: 'none' }}>
-                          ↗<span className="btn-label">Open</span>
+                          ↗<span className="btn-label">Apply</span>
                         </a>
                         <button
                           title="Save for later"
@@ -770,7 +835,7 @@ export default function Jobs({ navigate, showToast, isVisible }) {
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
 
       {loading && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem' }}>Loading...</p>}
       {!loading && jobs.length === 0 && (
@@ -958,8 +1023,12 @@ export default function Jobs({ navigate, showToast, isVisible }) {
               </div>
 
               <div style={{ padding: '0.85rem 1rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '0.4rem', background: 'var(--bg2)', position: 'sticky', bottom: 0 }}>
-                <a href={j.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}
-                  style={{ ...styles.btn, ...styles.btnPrimary, flex: 1, fontSize: '0.82rem', padding: '0.5rem 0.4rem', justifyContent: 'center', minWidth: 0, whiteSpace: 'nowrap' }}>↗ Open</a>
+                <a href={getApplyUrl(j)} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}
+                  style={{ ...styles.btn, ...styles.btnPrimary, flex: 1, fontSize: '0.82rem', padding: '0.5rem 0.4rem', justifyContent: 'center', minWidth: 0, whiteSpace: 'nowrap' }}>↗ Apply</a>
+                {getApplyUrl(j) !== j.url && j.url && (
+                  <a href={j.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}
+                    style={{ ...styles.btn, flex: 1, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)', fontSize: '0.82rem', padding: '0.5rem 0.4rem', justifyContent: 'center', minWidth: 0, whiteSpace: 'nowrap', textDecoration: 'none' }}>View Posting</a>
+                )}
                 <button onClick={() => openCoverLetter(j)}
                   style={{ ...styles.btn, flex: 1, background: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.4)', fontSize: '0.82rem', padding: '0.5rem 0.4rem', minWidth: 0, whiteSpace: 'nowrap' }}>
                   {j.cover_letter ? '📄 Cover Letter' : '✨ Gen CL'}

@@ -69,6 +69,8 @@ def list_jobs():
     status_in = None
     status_nin = None
     is_saved = None
+    include_cleared = False
+    history_or = None
     default_sort = "score"
 
     if tab == "not_applied":
@@ -85,6 +87,13 @@ def list_jobs():
         is_saved = True
         status_nin = _EXCLUDE_FROM_NOT_APPLIED
         default_sort = "updated_at"
+    elif tab == "history":
+        include_cleared = True
+        history_or = [
+            {"status": {"$in": APPLIED_STATUSES + [NOT_INTERESTED_STATUS]}},
+            {"cleared": True},
+        ]
+        default_sort = "updated_at"
 
     from tracker import VALID_SORT_FIELDS
 
@@ -95,6 +104,8 @@ def list_jobs():
         status_in=status_in,
         status_nin=status_nin,
         is_saved=is_saved,
+        include_cleared=include_cleared,
+        history_or=history_or,
         min_score=min_score,
         source=source or None,
         sort_by=final_sort,
@@ -116,7 +127,7 @@ def tab_counts():
     db = _get_db()
     uid = str(request.user["id"])
     not_applied = db.jobs.count_documents(
-        {"user_id": uid, "status": {"$nin": _EXCLUDE_FROM_NOT_APPLIED}, "is_saved": {"$ne": True}}
+        {"user_id": uid, "status": {"$nin": _EXCLUDE_FROM_NOT_APPLIED}, "is_saved": {"$ne": True}, "cleared": {"$ne": True}}
     )
     applied = db.jobs.count_documents(
         {"user_id": uid, "status": {"$in": APPLIED_STATUSES}}
@@ -125,14 +136,19 @@ def tab_counts():
         {"user_id": uid, "status": NOT_INTERESTED_STATUS}
     )
     saved = db.jobs.count_documents(
-        {"user_id": uid, "is_saved": True, "status": {"$nin": _EXCLUDE_FROM_NOT_APPLIED}}
+        {"user_id": uid, "is_saved": True, "status": {"$nin": _EXCLUDE_FROM_NOT_APPLIED}, "cleared": {"$ne": True}}
     )
+    history = db.jobs.count_documents({"user_id": uid, "$or": [
+        {"status": {"$in": APPLIED_STATUSES + [NOT_INTERESTED_STATUS]}},
+        {"cleared": True},
+    ]})
     return jsonify(
         {
             "not_applied": not_applied,
             "applied": applied,
             "not_interested": not_interested,
             "saved": saved,
+            "history": history,
         }
     )
 
@@ -309,16 +325,18 @@ def save_offer(job_id):
 @jobs_bp.route("/jobs/clear", methods=["POST"])
 @login_required
 def clear_jobs():
-    """Delete non-applied jobs. Keeps applied, interview, and offer jobs."""
+    """Mark non-applied jobs as cleared (hidden from view forever). Never deletes from DB."""
     keep_statuses = {"applied", "interview", "offer"}
     db = _get_db()
-    result = db.jobs.delete_many(
+    result = db.jobs.update_many(
         {
             "user_id": str(request.user["id"]),
             "status": {"$nin": list(keep_statuses)},
-        }
+            "cleared": {"$ne": True},
+        },
+        {"$set": {"cleared": True, "updated_at": datetime.now().isoformat()}},
     )
-    return jsonify({"deleted": result.deleted_count, "kept": list(keep_statuses)})
+    return jsonify({"cleared": result.modified_count, "kept": list(keep_statuses)})
 
 @jobs_bp.route("/mark-applied-by-url", methods=["POST"])
 @login_required

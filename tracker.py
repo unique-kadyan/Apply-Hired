@@ -383,6 +383,7 @@ def _build_job_doc(job, score_data: dict, cover_letter: str = "", user_id=None) 
         "company": job.company[:100],
         "location": job.location[:100] if job.location else "",
         "url": job.url,
+        "apply_url": (job.apply_url or "")[:500],
         "source": job.source,
         "description": (job.description or "")[:3000],
         "salary": (job.salary or "")[:50],
@@ -434,10 +435,22 @@ def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     companies = list({(d.get("company") or "")[:60] for d in best_docs})
 
+    # Permanently cleared jobs — never re-insert regardless of age
+    cleared_keys: set[str] = set()
+    if companies:
+        for ex in db.jobs.find(
+            {"user_id": uid_str, "company": {"$in": companies}, "cleared": True},
+            {"company": 1, "title": 1},
+        ):
+            cleared_keys.add(
+                f"{(ex.get('company') or '').lower().strip()[:60]}"
+                f"|{(ex.get('title') or '').lower().strip()[:80]}"
+            )
+
     existing_map: dict[str, dict] = {}
     if companies:
         for ex in db.jobs.find(
-            {"user_id": uid_str, "company": {"$in": companies}, "created_at": {"$gte": cutoff}},
+            {"user_id": uid_str, "company": {"$in": companies}, "created_at": {"$gte": cutoff}, "cleared": {"$ne": True}},
             {"_id": 1, "company": 1, "title": 1, "score": 1},
         ):
             ex_key = (
@@ -452,6 +465,8 @@ def save_jobs_bulk(ranked: list[tuple], user_id=None) -> int:
             f"{(doc.get('company') or '').lower().strip()[:60]}"
             f"|{(doc.get('title') or '').lower().strip()[:80]}"
         )
+        if key in cleared_keys:
+            continue  # permanently hidden — never re-surface
         if key in existing_map:
             ex = existing_map[key]
             if doc["score"] > ex.get("score", 0):
@@ -550,16 +565,22 @@ def get_jobs(
     sort_dir: str = "desc",
     search: Optional[str] = None,
     user_id=None,
+    include_cleared: bool = False,
+    history_or: Optional[list] = None,
 ) -> tuple[list[dict], int]:
     """Retrieve paginated jobs with optional filters, search, and sort."""
     from pymongo import ASCENDING
 
     db = _get_db()
     query: dict = {"score": {"$gte": min_score}}
+    if not include_cleared:
+        query["cleared"] = {"$ne": True}
 
     if user_id is not None:
         query["user_id"] = str(user_id)
-    if status:
+    if history_or:
+        query["$or"] = history_or
+    elif status:
         query["status"] = status
     elif status_in:
         query["status"] = {"$in": status_in}

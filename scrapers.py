@@ -41,6 +41,7 @@ class Job:
     tags: list[str] = field(default_factory=list)
     date_posted: str = ""
     job_type: str = "remote"
+    apply_url: str = ""  # Direct application form URL (may differ from listing url)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -395,6 +396,7 @@ class JSearchScraper(BaseScraper):
                     company=item.get("employer_name", ""),
                     location=location,
                     url=item.get("job_apply_link", ""),
+                    apply_url=item.get("job_apply_link", ""),
                     source=self.name,
                     description=description[:2000],
                     salary=salary,
@@ -748,6 +750,7 @@ class TheMuseScraper(BaseScraper):
                     company=company,
                     location=location,
                     url=item.get("refs", {}).get("landing_page", ""),
+                    apply_url=item.get("refs", {}).get("external_url", ""),
                     source=self.name,
                     description=_clean_html(description),
                     salary="",
