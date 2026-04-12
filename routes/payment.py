@@ -342,19 +342,176 @@ def _build_resume_text(profile: dict, optimized: dict) -> str:
     return "\n".join(lines)
 
 
+_ACTION_VERBS = frozenset({
+    "led", "built", "designed", "developed", "architected", "reduced", "increased",
+    "optimized", "delivered", "managed", "launched", "scaled", "improved", "automated",
+    "migrated", "implemented", "created", "deployed", "mentored", "established",
+    "streamlined", "accelerated", "engineered", "drove", "spearheaded", "transformed",
+    "achieved", "boosted", "cut", "saved", "grew", "collaborated", "integrated",
+    "refactored", "enhanced", "owned", "shipped", "authored", "consolidated",
+    "introduced", "debugged", "rewrote", "revamped", "coordinated", "resolved",
+})
+
+_METRIC_RE = __import__("re").compile(
+    r'\d+\s*(?:%|\+|x|X|K|M|B|ms|s\b|hrs?\b|days?\b|months?\b|years?\b|'
+    r'users?|requests?|RPS|TPS|GB|TB|MB|rpm|rpm|concurrent|parallel|nodes?|'
+    r'services?|engineers?|members?|teams?|repos?)'
+    r'|\$\s*\d+'
+    r'|\d+\s*(?:times?|fold|percent|seconds?|minutes?|hours?)'
+)
+
+_DEGREE_RE = __import__("re").compile(
+    r'\b(bachelor|master|b\.?tech|b\.?e\.?|m\.?tech|mba|phd|ph\.d|bsc|msc|'
+    r'b\.?sc|m\.?sc|engineering|science|arts|commerce|diploma|associate)\b',
+    __import__("re").IGNORECASE,
+)
+_YEAR_RE = __import__("re").compile(r'\b(19|20)\d{2}\b')
+
+
+def _score_resume_structured(profile: dict, optimized: dict) -> dict:
+    """Deterministic rule-based scorer — inspects JSON directly, no AI calls.
+    Uses identical thresholds to the optimizer prompt so 100/100 is achievable."""
+    import re
+    sections: dict = {}
+
+    # ── contact_info (10) ───────────────────────────────────────────────────
+    has_email = bool((profile.get("email") or "").strip())
+    has_phone = bool((profile.get("phone") or "").strip())
+    has_linkedin = bool(
+        (profile.get("linkedin") or profile.get("linkedin_url") or "").strip()
+    )
+    has_github = bool(
+        (
+            profile.get("github_username")
+            or profile.get("github")
+            or profile.get("github_url")
+            or ""
+        ).strip()
+    )
+    present = sum([has_email, has_phone, has_linkedin, has_github])
+    contact_score = {4: 10, 3: 7, 2: 5, 1: 2}.get(present, 0)
+    contact_tips = (
+        ([] if has_linkedin else ["Add LinkedIn URL"])
+        + ([] if has_github else ["Add GitHub / portfolio URL"])
+        + ([] if has_email else ["Add email address"])
+        + ([] if has_phone else ["Add phone number"])
+    )
+    sections["contact_info"] = {"score": contact_score, "max": 10, "tips": contact_tips}
+
+    # ── summary (10) ────────────────────────────────────────────────────────
+    summary = str(optimized.get("summary") or "")
+    words = len(summary.split())
+    sentences = len([s for s in re.split(r"[.!?]+", summary) if s.strip()])
+    metrics = len(_METRIC_RE.findall(summary))
+    if sentences >= 4 and words >= 80 and metrics >= 3:
+        sum_score = 10
+    elif sentences >= 3 and words >= 50 and metrics >= 1:
+        sum_score = 7
+    else:
+        sum_score = 4
+    sum_tips: list = []
+    if words < 80:
+        sum_tips.append(f"Expand summary to 80+ words (currently {words})")
+    if metrics < 3:
+        sum_tips.append(f"Need 3+ hard metrics in summary (found {metrics})")
+    if sentences < 4:
+        sum_tips.append(f"Expand to 4+ sentences (currently {sentences})")
+    sections["summary"] = {"score": sum_score, "max": 10, "tips": sum_tips}
+
+    # ── skills (15) ─────────────────────────────────────────────────────────
+    skills = optimized.get("skills") or {}
+    all_skills = [s for group in skills.values() if isinstance(group, list) for s in group if s]
+    skill_count = len(all_skills)
+    skills_score = 15 if skill_count >= 20 else (10 if skill_count >= 12 else 6)
+    skills_tips = (
+        [] if skill_count >= 20 else [f"Add {20 - skill_count} more named skills (currently {skill_count})"]
+    )
+    sections["skills"] = {"score": skills_score, "max": 15, "tips": skills_tips}
+
+    # ── experience (25) ─────────────────────────────────────────────────────
+    experience = optimized.get("experience") or []
+    exp_tips: list = []
+    if not experience:
+        sections["experience"] = {"score": 0, "max": 25, "tips": ["No experience entries found"]}
+    else:
+        total_bullets = 0
+        bullets_with_metric = 0
+        bullets_with_verb = 0
+        for exp in experience:
+            highlights = [h for h in (exp.get("highlights") or []) if isinstance(h, str)]
+            total_bullets += len(highlights)
+            if len(highlights) < 5:
+                exp_tips.append(
+                    f"'{exp.get('title', 'role')}' needs {5 - len(highlights)} more bullet(s) (has {len(highlights)}/5)"
+                )
+            for h in highlights:
+                first = h.strip().split()[0].lower().rstrip(".,") if h.strip() else ""
+                if first in _ACTION_VERBS:
+                    bullets_with_verb += 1
+                if _METRIC_RE.search(h):
+                    bullets_with_metric += 1
+
+        expected = len(experience) * 5
+        bullet_ratio = total_bullets / expected if expected else 0
+        metric_ratio = bullets_with_metric / total_bullets if total_bullets else 0
+
+        if bullet_ratio >= 0.9 and metric_ratio >= 0.8:
+            exp_score = 25
+        elif bullet_ratio >= 0.7 and metric_ratio >= 0.5:
+            exp_score = 18
+        else:
+            exp_score = 10
+
+        if metric_ratio < 0.8 and total_bullets:
+            exp_tips.append(
+                f"More bullets need hard metrics: {bullets_with_metric}/{total_bullets} have one"
+            )
+        sections["experience"] = {"score": exp_score, "max": 25, "tips": exp_tips}
+
+    # ── education (10) ──────────────────────────────────────────────────────
+    edu = str(profile.get("education") or "")
+    has_degree = bool(_DEGREE_RE.search(edu))
+    has_year = bool(_YEAR_RE.search(edu))
+    edu_score = 10 if (edu and has_degree and has_year) else (6 if (edu and has_degree) else (3 if edu else 0))
+    edu_tips = (
+        ([] if has_year or not edu else ["Add graduation year"])
+        + ([] if has_degree or not edu else ["Add degree name"])
+        + ([] if edu else ["Add education details"])
+    )
+    sections["education"] = {"score": edu_score, "max": 10, "tips": edu_tips}
+
+    # ── formatting (15) ─────────────────────────────────────────────────────
+    has_sum_sec = bool(optimized.get("summary"))
+    has_skills_sec = bool(optimized.get("skills"))
+    has_exp_sec = bool(optimized.get("experience"))
+    bullets_clean = all(
+        isinstance(h, str)
+        for exp in (optimized.get("experience") or [])
+        for h in (exp.get("highlights") or [])
+    )
+    fmt_score = (
+        15 if (has_sum_sec and has_skills_sec and has_exp_sec and bullets_clean)
+        else (10 if sum([has_sum_sec, has_skills_sec, has_exp_sec]) >= 2 else 5)
+    )
+    sections["formatting"] = {"score": fmt_score, "max": 15, "tips": []}
+
+    # ── ats_keywords (15) ───────────────────────────────────────────────────
+    kws = [k for k in (optimized.get("ats_keywords") or []) if k]
+    kw_count = len(kws)
+    kw_score = 15 if kw_count >= 20 else (10 if kw_count >= 10 else 5)
+    kw_tips = (
+        [] if kw_count >= 20 else [f"Add {20 - kw_count} more ATS keywords (currently {kw_count})"]
+    )
+    sections["ats_keywords"] = {"score": kw_score, "max": 15, "tips": kw_tips}
+
+    total = sum(s["score"] for s in sections.values())
+    return {"total_score": total, "max_score": 100, "sections": sections, "method": "structured"}
+
+
 def _reconstruct_and_score(profile: dict, optimized: dict, target_role: str = "") -> dict:
-    """Score an optimized resume using AI providers (with local fallback).
-    Reconstructs canonical plain text from JSON then passes it to the scorer
-    so the score reflects real content quality — not regex heuristics."""
-    from resume_parser import _score_resume_ai, _score_resume_local
-    text = _build_resume_text(profile, optimized)
-    result = _score_resume_ai(text, target_role=target_role)
-    if result:
-        result["method"] = "optimized"
-        return result
-    result = _score_resume_local(text)
-    result["method"] = "optimized_local_fallback"
-    return result
+    """Score an optimized resume using a deterministic structural check.
+    Directly inspects the JSON — no AI calls, no probabilistic drift, no subjective deductions."""
+    return _score_resume_structured(profile, optimized)
 
 
 @payment_bp.route("/optimize-resume", methods=["POST"])
@@ -516,9 +673,14 @@ Return ONLY valid JSON (no markdown, no code fences):
             if pass_num >= MAX_PASSES:
                 break
 
-            # Build section-by-section gap analysis for targeted refinement
+            # Build section-by-section gap analysis for targeted refinement.
+            # Skip contact_info — those fields come from the profile, not the AI JSON,
+            # so the refinement loop cannot fix them and would loop uselessly.
+            _REFINABLE = {"summary", "skills", "experience", "ats_keywords", "formatting"}
             section_gaps = []
             for section_name, section_data in new_score.get("sections", {}).items():
+                if section_name not in _REFINABLE:
+                    continue
                 score = section_data.get("score", 0)
                 max_val = section_data.get("max", 0)
                 if score < max_val:

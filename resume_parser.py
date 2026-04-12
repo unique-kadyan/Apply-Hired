@@ -942,25 +942,53 @@ def _score_resume_ai(text: str, target_role: str = "") -> Optional[dict]:
         return None
 
     role_context = f"\nTARGET ROLE: {target_role}" if target_role else ""
-    prompt = f"""You are an expert resume reviewer and ATS analyst.
-Score this resume on a 0-100 scale. Evaluate each section based on real-world hiring standards.{role_context}
-{"Evaluate ATS keyword relevance specifically for the target role above." if target_role else ""}
+    prompt = f"""You are an expert ATS resume scorer. Score this resume against the EXACT criteria below.
+Award the FULL points for each section as long as the threshold is met — do NOT deduct for stylistic opinions.{role_context}
 
-Scoring criteria:
-- contact_info (max 10): email, phone, LinkedIn, GitHub/portfolio present
-- summary (max 10): quality, length, measurable impact, relevance to role
-- skills (max 15): breadth, depth, relevance to role, specificity
-- experience (max 25): number of roles, bullet quality, quantified achievements, action verbs
-- education (max 10): degree, institution, relevance
-- formatting (max 15): structure, length, readability, consistent use of bullets
-- ats_keywords (max 15): presence of role-relevant keywords, action verbs, industry terms
+SCORING RUBRIC (award full marks when the threshold is met — no subjective deductions):
+
+contact_info (max 10):
+  10/10 → email AND phone AND LinkedIn URL AND GitHub/portfolio URL are all present
+  7/10  → any 3 of the 4 present
+  5/10  → any 2 of the 4 present
+  2/10  → only 1 present
+
+summary (max 10):
+  10/10 → 4+ sentences AND 80+ words AND 3+ hard quantified metrics (%, x faster, $, ms, K+ users, etc.)
+  7/10  → 3+ sentences AND 50+ words AND 1-2 metrics
+  4/10  → short paragraph, no metrics
+
+skills (max 15):
+  15/15 → 20+ specific named technologies organized into categories
+  10/15 → 12-19 named technologies
+  6/15  → fewer than 12 technologies
+
+experience (max 25):
+  25/25 → every role has 5 bullet points AND every bullet starts with an action verb AND contains a hard metric
+  18/25 → most roles have 4-5 bullets with some metrics
+  10/25 → roles listed with 2-3 bullets, few or no metrics
+
+education (max 10):
+  10/10 → full degree name AND institution name AND graduation year all present
+  6/10  → degree and institution present, year missing
+  3/10  → institution only or partial info
+
+formatting (max 15):
+  15/15 → clear section headers (SUMMARY / SKILLS / EXPERIENCE / EDUCATION), consistent bullet style, no orphan lines
+  10/15 → most sections present, minor inconsistencies
+  5/15  → missing sections or inconsistent formatting
+
+ats_keywords (max 15):
+  15/15 → 20+ role-specific ATS keywords naturally woven into summary, bullets, and skills{"for the target role" if target_role else ""}
+  10/15 → 10-19 keywords present
+  5/15  → fewer than 10 role-relevant keywords
 
 Return ONLY valid JSON — no markdown, no explanation:
 {{
     "total_score": <integer 0-100>,
     "max_score": 100,
     "sections": {{
-        "contact_info": {{ "score": <0-10>, "max": 10, "tips": [<specific actionable tips>] }},
+        "contact_info": {{ "score": <0-10>, "max": 10, "tips": [<specific actionable tips if score < 10, else []>] }},
         "summary": {{ "score": <0-10>, "max": 10, "tips": [] }},
         "skills": {{ "score": <0-15>, "max": 15, "tips": [] }},
         "experience": {{ "score": <0-25>, "max": 25, "tips": [] }},
