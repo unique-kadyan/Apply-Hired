@@ -145,17 +145,21 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
               <span
                 style={{
                   background:
-                    resumeScore.total_score >= 90
-                      ? "#065f46"
-                      : resumeScore.total_score >= 70
-                        ? "#713f12"
-                        : "#450a0a",
+                    resumeScore.total_score >= 100
+                      ? "#064e3b"
+                      : resumeScore.total_score >= 90
+                        ? "#065f46"
+                        : resumeScore.total_score >= 70
+                          ? "#713f12"
+                          : "#450a0a",
                   color:
-                    resumeScore.total_score >= 90
-                      ? "#6ee7b7"
-                      : resumeScore.total_score >= 70
-                        ? "#fcd34d"
-                        : "#fca5a5",
+                    resumeScore.total_score >= 100
+                      ? "#34d399"
+                      : resumeScore.total_score >= 90
+                        ? "#6ee7b7"
+                        : resumeScore.total_score >= 70
+                          ? "#fcd34d"
+                          : "#fca5a5",
                   padding: "0.2rem 0.75rem",
                   borderRadius: 20,
                   fontSize: "0.8rem",
@@ -175,6 +179,70 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
             </span>
           )}
         </div>
+
+        {/* Score breakdown — show when < 100 so user knows exactly what to fix */}
+        {resumeScore && resumeScore.total_score < 100 && resumeScore.sections && (() => {
+          const PROFILE_SECTIONS = new Set(["contact_info", "education"]);
+          const gaps = Object.entries(resumeScore.sections).filter(
+            ([, s]) => s.score < s.max
+          );
+          if (!gaps.length) return null;
+          const profileGaps = gaps.filter(([k]) => PROFILE_SECTIONS.has(k));
+          const contentGaps = gaps.filter(([k]) => !PROFILE_SECTIONS.has(k));
+          return (
+            <div style={{
+              background: "rgba(234,88,12,0.08)",
+              border: "1px solid rgba(234,88,12,0.3)",
+              borderRadius: 10,
+              padding: "0.9rem 1rem",
+              marginBottom: "1rem",
+              fontSize: "0.82rem",
+            }}>
+              <div style={{ fontWeight: 700, color: "#fb923c", marginBottom: "0.5rem" }}>
+                Score breakdown — {resumeScore.total_score}/100
+                {profileGaps.length > 0 && (
+                  <span style={{ fontWeight: 400, color: "#94a3b8", marginLeft: 8 }}>
+                    (some gaps require profile update, not re-optimization)
+                  </span>
+                )}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem 1.2rem" }}>
+                {Object.entries(resumeScore.sections).map(([key, s]) => (
+                  <span key={key} style={{
+                    color: s.score >= s.max ? "#6ee7b7" : "#fca5a5",
+                    fontWeight: s.score >= s.max ? 400 : 600,
+                  }}>
+                    {key.replace(/_/g, " ")}: {s.score}/{s.max}
+                  </span>
+                ))}
+              </div>
+              {contentGaps.length > 0 && (
+                <div style={{ marginTop: "0.6rem", color: "#cbd5e1" }}>
+                  <strong style={{ color: "#60a5fa" }}>AI can fix (re-optimize):</strong>
+                  <ul style={{ margin: "0.3rem 0 0", paddingLeft: "1.1rem", lineHeight: 1.7 }}>
+                    {contentGaps.flatMap(([key, s]) =>
+                      (s.tips || []).map((t, i) => (
+                        <li key={`${key}-${i}`}>{t}</li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              )}
+              {profileGaps.length > 0 && (
+                <div style={{ marginTop: "0.6rem", color: "#cbd5e1" }}>
+                  <strong style={{ color: "#fb923c" }}>Fix in Profile Settings to reach 100:</strong>
+                  <ul style={{ margin: "0.3rem 0 0", paddingLeft: "1.1rem", lineHeight: 1.7 }}>
+                    {profileGaps.flatMap(([key, s]) =>
+                      (s.tips || []).map((t, i) => (
+                        <li key={`${key}-${i}`}>{t}</li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         <div
           style={{
             background: "var(--bg)",
