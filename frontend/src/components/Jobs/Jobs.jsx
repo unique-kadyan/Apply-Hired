@@ -78,53 +78,110 @@ async function exportCoverLetterPdf(letter, jobTitle, company) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
 
   const PAGE_W = 210, PAGE_H = 297;
-  const ML = 22, MR = 22, MT = 24, MB = 22;
+  const ML = 25, MR = 25, MB = 25;
   const CONTENT_W = PAGE_W - ML - MR;
-  const BODY_FONT = 11, SMALL_FONT = 9, LINE_H = 6.2;
+  const BODY_SIZE = 11, LINE_H = 6.8, PARA_GAP = 5, BULLET_INDENT = 5;
+  const ACCENT = [37, 99, 235];
+  const TEXT_DARK = [22, 22, 22];
+  const TEXT_MUTED = [100, 100, 100];
 
-  doc.setFillColor(37, 99, 235);
-  doc.rect(0, 0, PAGE_W, 18, 'F');
+  // ── Header bar ──────────────────────────────────────────────────────────
+  doc.setFillColor(...ACCENT);
+  doc.rect(0, 0, PAGE_W, 22, 'F');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
+  doc.setFontSize(14);
   doc.setTextColor(255, 255, 255);
-  doc.text(jobTitle || 'Cover Letter', ML, 11);
+  doc.text(jobTitle || 'Cover Letter', ML, 13);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(SMALL_FONT);
-  doc.text(company ? `Application for ${company}` : '', ML, 16);
+  doc.setFontSize(9);
+  doc.text(company ? `Application · ${company}` : '', ML, 19.5);
 
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  doc.setTextColor(120, 120, 120);
-  doc.setFontSize(SMALL_FONT);
-  doc.text(dateStr, PAGE_W - MR, 16, { align: 'right' });
+  doc.text(dateStr, PAGE_W - MR, 19.5, { align: 'right' });
 
-  doc.setTextColor(30, 30, 30);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(BODY_FONT);
+  // ── Body ─────────────────────────────────────────────────────────────────
+  let y = 34; // first body line below header
 
-  const paragraphs = letter.trim().split(/\n{2,}|\r\n\r\n/);
-  let y = MT + 8;
+  const addPage = () => {
+    doc.addPage();
+    doc.setFillColor(...ACCENT);
+    doc.rect(0, 0, PAGE_W, 4, 'F');
+    y = 16;
+  };
 
-  for (const para of paragraphs) {
-    const lines = doc.splitTextToSize(para.trim(), CONTENT_W);
-    if (y + lines.length * LINE_H > PAGE_H - MB) {
-      doc.addPage();
-      doc.setFillColor(37, 99, 235);
-      doc.rect(0, 0, PAGE_W, 4, 'F');
-      y = MT;
+  const ensureSpace = (needed) => { if (y + needed > PAGE_H - MB) addPage(); };
+
+  // Split letter into paragraphs (double newline) then into individual lines
+  const rawParas = letter.trim().split(/\n{2,}|\r\n\r\n/);
+
+  for (const para of rawParas) {
+    const rawLines = para.split(/\n/);
+
+    for (const rawLine of rawLines) {
+      const line = rawLine.trimEnd();
+      if (!line) { y += PARA_GAP * 0.5; continue; }
+
+      // Detect bullet lines: -, •, *, –
+      const bulletMatch = line.match(/^(\s*[-•*–])\s+(.+)/);
+      // Detect salutation / closing (Dear…, Sincerely…, Best…, Regards…)
+      const isSalutation = /^(Dear |To |Hiring|Regards|Sincerely|Best|Yours|Warm|Thank you)/i.test(line.trim());
+      // Detect section heading (all caps short line, or ends with :)
+      const isHeading = /^[A-Z][A-Z\s]{2,}:?\s*$/.test(line.trim()) || (line.trim().endsWith(':') && line.trim().length < 50);
+
+      if (isHeading) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(BODY_SIZE);
+        doc.setTextColor(...ACCENT);
+        const wrapped = doc.splitTextToSize(line.trim(), CONTENT_W);
+        ensureSpace(wrapped.length * LINE_H + PARA_GAP);
+        doc.text(wrapped, ML, y);
+        y += wrapped.length * LINE_H + 2;
+        doc.setTextColor(...TEXT_DARK);
+        doc.setFont('helvetica', 'normal');
+      } else if (isSalutation) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(BODY_SIZE);
+        doc.setTextColor(...TEXT_DARK);
+        const wrapped = doc.splitTextToSize(line.trim(), CONTENT_W);
+        ensureSpace(wrapped.length * LINE_H + PARA_GAP);
+        doc.text(wrapped, ML, y);
+        y += wrapped.length * LINE_H + PARA_GAP;
+      } else if (bulletMatch) {
+        const bulletText = bulletMatch[2];
+        const textW = CONTENT_W - BULLET_INDENT;
+        const wrapped = doc.splitTextToSize(bulletText, textW);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(BODY_SIZE);
+        doc.setTextColor(...TEXT_DARK);
+        ensureSpace(wrapped.length * LINE_H + 2);
+        // Draw accent bullet dot
+        doc.setFillColor(...ACCENT);
+        doc.circle(ML + 1.2, y - 1.5, 0.9, 'F');
+        doc.text(wrapped, ML + BULLET_INDENT, y);
+        y += wrapped.length * LINE_H + 2;
+      } else {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(BODY_SIZE);
+        doc.setTextColor(...TEXT_DARK);
+        const wrapped = doc.splitTextToSize(line.trim(), CONTENT_W);
+        ensureSpace(wrapped.length * LINE_H + 1);
+        doc.text(wrapped, ML, y);
+        y += wrapped.length * LINE_H + 1;
+      }
     }
-    doc.text(lines, ML, y);
-    y += lines.length * LINE_H + 3;
+
+    y += PARA_GAP; // space between paragraphs
   }
 
+  // ── Page numbers (multi-page only) ───────────────────────────────────────
   const totalPages = doc.internal.getNumberOfPages();
-  for (let p = 1; p <= totalPages; p++) {
-    doc.setPage(p);
-    doc.setDrawColor(200, 200, 200);
-    doc.line(ML, PAGE_H - MB + 3, PAGE_W - MR, PAGE_H - MB + 3);
-    doc.setFontSize(7.5);
-    doc.setTextColor(160, 160, 160);
-    doc.text('Generated by JobBot', ML, PAGE_H - MB + 7);
-    if (totalPages > 1) doc.text(`${p} / ${totalPages}`, PAGE_W - MR, PAGE_H - MB + 7, { align: 'right' });
+  if (totalPages > 1) {
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      doc.setFontSize(7.5);
+      doc.setTextColor(...TEXT_MUTED);
+      doc.text(`${p} / ${totalPages}`, PAGE_W - MR, PAGE_H - 10, { align: 'right' });
+    }
   }
 
   const slug = s => (s || '').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase();

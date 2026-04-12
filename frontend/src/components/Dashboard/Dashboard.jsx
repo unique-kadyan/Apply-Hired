@@ -139,32 +139,8 @@ export default function Dashboard({ navigate, dashData, onRefresh }) {
         </div>
       )}
 
-      {((stats.source_conversion || []).length > 0 || (stats.cover_letter_ab || []).length > 1) && (
+      {(stats.cover_letter_ab || []).length > 1 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
-          {(stats.source_conversion || []).length > 0 && (
-            <div style={styles.card}>
-              <h3 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.9rem' }}>
-                Interview Rate by Job Board
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                {(stats.source_conversion || []).map((s, i) => (
-                  <div key={i}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text)' }}>{s.source}</span>
-                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{s.interviews}/{s.applied}</span>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: s.rate >= 20 ? '#4ade80' : s.rate >= 10 ? '#fbbf24' : '#f87171', minWidth: 36, textAlign: 'right' }}>{s.rate}%</span>
-                      </div>
-                    </div>
-                    <div style={{ background: 'var(--bg3)', borderRadius: 4, height: 5, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', borderRadius: 4, width: `${Math.min(s.rate * 2, 100)}%`, background: s.rate >= 20 ? '#22c55e' : s.rate >= 10 ? '#f59e0b' : '#3b82f6', transition: 'width 0.5s' }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {(stats.cover_letter_ab || []).length > 1 && (
             <div style={styles.card}>
               <h3 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.9rem' }}>
