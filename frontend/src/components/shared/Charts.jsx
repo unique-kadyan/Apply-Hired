@@ -5,12 +5,18 @@ function useChart(ref, config, deps) {
   useEffect(() => {
     if (!ref.current) return;
     let chart;
+    let cancelled = false;
     import('chart.js/auto').then(({ default: Chart }) => {
-      if (!ref.current) return;
-      const ctx = ref.current.getContext('2d');
-      chart = new Chart(ctx, config);
+      if (cancelled || !ref.current) return;
+      // Destroy any pre-existing chart on this canvas (navigation back causes reuse)
+      const existing = Chart.getChart(ref.current);
+      if (existing) existing.destroy();
+      chart = new Chart(ref.current.getContext('2d'), config);
     });
-    return () => { if (chart) chart.destroy(); };
+    return () => {
+      cancelled = true;
+      if (chart) chart.destroy();
+    };
   }, deps);
 }
 
