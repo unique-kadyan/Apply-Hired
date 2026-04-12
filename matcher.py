@@ -5,6 +5,21 @@ import re
 from typing import Optional
 
 from config import PROFILE, SEARCH_PREFERENCES
+from constants import (
+    AI_SCORE_WEIGHT,
+    CITY_MATCH_BONUS,
+    EXPERIENCE_LEVELS,
+    JUNIOR_ROLE_PENALTY,
+    LOCAL_SCORE_WEIGHT,
+    OVERQUALIFIED_PENALTY_CAP,
+    OVERQUALIFIED_PENALTY_PER_YEAR,
+    REMOTE_LOCATION_BONUS,
+    ROLE_TITLE_KEYWORDS,
+    SENIOR_ROLE_BONUS,
+    TITLE_EXACT_MATCH_BONUS,
+    TITLE_KEYWORD_BONUS_CAP,
+    TITLE_KEYWORD_BONUS_PER_MATCH,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,22 +58,12 @@ def _title_relevance(job_title: str) -> float:
     title_lower = job_title.lower()
     for role in SEARCH_PREFERENCES["target_roles"]:
         if re.search(rf"\b{re.escape(role.lower())}\b", title_lower):
-            return 0.2
-    # Partial word-boundary matches — use \b so "java" doesn't match "javascript"
-    role_keywords = {"senior", "backend", "engineer", "developer", "java", "python", "spring", "full stack", "sde", "platform"}
-    matches = sum(1 for kw in role_keywords if re.search(rf"\b{re.escape(kw)}\b", title_lower))
-    return min(matches * 0.05, 0.15)
+            return TITLE_EXACT_MATCH_BONUS
+    matches = sum(1 for kw in ROLE_TITLE_KEYWORDS if re.search(rf"\b{re.escape(kw)}\b", title_lower))
+    return min(matches * TITLE_KEYWORD_BONUS_PER_MATCH, TITLE_KEYWORD_BONUS_CAP)
 
 
-# Experience level → (min_years, max_years).  max_years=None means no upper cap.
-LEVEL_YEAR_RANGES: dict[str, tuple[int, int | None]] = {
-    "Junior":     (0, 2),
-    "Mid-Level":  (2, 5),
-    "Senior":     (5, 8),
-    "Lead":       (7, 12),
-    "Staff":      (10, 15),
-    "Principal":  (12, None),
-}
+LEVEL_YEAR_RANGES = EXPERIENCE_LEVELS  # alias — kept for any legacy callers
 
 
 def _extract_required_years(text: str) -> int | None:
@@ -90,9 +95,9 @@ def _seniority_check(job_title: str, job_description: str,
     score = 0.0
 
     if any(word in text for word in ["junior", "entry level", "intern", "trainee", "graduate"]):
-        score -= 0.3
+        score -= JUNIOR_ROLE_PENALTY
     elif any(word in text for word in ["senior", "lead", "staff", "principal", "sde-3", "sde 3", "iii"]):
-        score += 0.1
+        score += SENIOR_ROLE_BONUS
 
     # Year-based experience filter
     if selected_levels:
@@ -114,7 +119,7 @@ def _seniority_check(job_title: str, job_description: str,
             if required is not None and required > max_years_allowed:
                 # Penalty scales with how much over: +1 yr → -0.1, +3 yr → -0.25 (capped)
                 excess = required - max_years_allowed
-                score -= min(0.1 * excess, 0.35)
+                score -= min(OVERQUALIFIED_PENALTY_PER_YEAR * excess, OVERQUALIFIED_PENALTY_CAP)
 
     return score
 
@@ -134,13 +139,12 @@ def _location_score(job_location: str) -> float:
 
     # Remote is always a positive signal
     if "remote" in job_loc or "worldwide" in job_loc or "anywhere" in job_loc:
-        return 0.05
+        return REMOTE_LOCATION_BONUS
 
-    # Match any token from user's location string (city, state, country)
     user_tokens = [t.strip() for t in re.split(r"[,/]", user_loc) if len(t.strip()) > 2]
     for token in user_tokens:
         if token in job_loc:
-            return 0.10
+            return CITY_MATCH_BONUS
 
     # Allowed locations from config
     for allowed in LOCATION_PREFERENCES.get("allowed_locations", []):
@@ -244,7 +248,7 @@ def score_job(job, use_ai: bool = False, selected_levels: list[str] | None = Non
             result["ai_recommendation"] = ai_result.get("recommendation")
             if result["ai_score"] is not None:
                 result["final_score"] = round(
-                    0.4 * local_score + 0.6 * result["ai_score"], 3
+                    LOCAL_SCORE_WEIGHT * local_score + AI_SCORE_WEIGHT * result["ai_score"], 3
                 )
 
     return result

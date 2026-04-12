@@ -59,7 +59,7 @@ _SYMBOL_MAP = [
     (r'\$', "USD"),
 ]
 
-_LOCATION_CURRENCY = {
+LOCATION_CURRENCY: dict[str, str] = {
     "india": "INR",
     "united kingdom": "GBP",
     " uk": "GBP",
@@ -103,7 +103,7 @@ def detect_currency(salary_str: str, location: str = "") -> str:
             return code
 
     loc = (location or "").lower()
-    for keyword, code in _LOCATION_CURRENCY.items():
+    for keyword, code in LOCATION_CURRENCY.items():
         if keyword in loc:
             return code
 

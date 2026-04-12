@@ -5,6 +5,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 from config import LOCATION_PREFERENCES, PROFILE, SEARCH_PREFERENCES
+from constants import JOB_MAX_AGE_DAYS, LANGUAGE_CONFLICTS, MAX_SEARCH_QUERIES
 from matcher import rank_jobs
 from scrapers import ALL_SCRAPERS, search_all_boards
 from services.currency import normalize_salary_annual_usd
@@ -75,32 +76,18 @@ def _run_search(params: dict, user_id: int):
         if not queries:
             queries = ["software engineer", "backend developer", "full stack developer"]
 
-        queries = list(dict.fromkeys(q.strip() for q in queries if q.strip()))[:10]
+        queries = list(dict.fromkeys(q.strip() for q in queries if q.strip()))[:MAX_SEARCH_QUERIES]
 
         _update(user_id, message=f"Searching for: {', '.join(queries[:3])}...", progress=20)
 
         all_jobs = search_all_boards(queries, location=location, country=country)
 
         if skills:
-            _CONFLICTS: dict[str, list[str]] = {
-                "java":       ["javascript", "javafx"],
-                "c":          ["c++", "c#", "objective-c", "cobol", "clojure"],
-                "go":         ["golang"],
-                "r":          ["ruby", "rust", "rails"],
-                "python":     [],
-                "kotlin":     [],
-                "swift":      [],
-                "rust":       ["rustic"],
-                "perl":       ["perlite"],
-                "dart":       [],
-                "scala":      [],
-                "spring":     [],
-            }
             skill_set_lower = {s.lower() for s in skills}
             conflict_filters = []
 
             for skill in skill_set_lower:
-                conflicts = _CONFLICTS.get(skill, [])
+                conflicts = LANGUAGE_CONFLICTS.get(skill, [])
                 active_conflicts = [c for c in conflicts if c not in skill_set_lower]
                 if active_conflicts:
                     conflict_filters.append((skill, active_conflicts))
@@ -121,7 +108,7 @@ def _run_search(params: dict, user_id: int):
                 if dropped:
                     _update(user_id, message=f"Filtered {dropped} mismatched skill jobs (e.g. JavaScript ≠ Java).")
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=120)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=JOB_MAX_AGE_DAYS)
         fresh = []
         for job in all_jobs:
             dp = job.date_posted or ""

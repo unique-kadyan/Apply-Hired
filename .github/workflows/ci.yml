@@ -192,6 +192,7 @@ jobs:
 
           blueprints = [
               "routes.auth",
+              "routes.config_routes",
               "routes.profile",
               "routes.jobs",
               "routes.search",

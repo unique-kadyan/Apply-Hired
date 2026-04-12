@@ -6,6 +6,7 @@ import os
 from flask import Flask, jsonify, request, send_from_directory
 
 from routes.auth import auth_bp
+from routes.config_routes import config_bp
 from routes.gmail import gmail_bp
 from routes.jobs import jobs_bp
 from routes.payment import payment_bp
@@ -24,6 +25,7 @@ def create_app() -> Flask:
     app.config["SESSION_COOKIE_SECURE"] = not os.environ.get("FLASK_DEBUG")
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(config_bp)
     app.register_blueprint(profile_bp)
     app.register_blueprint(jobs_bp)
     app.register_blueprint(search_bp)

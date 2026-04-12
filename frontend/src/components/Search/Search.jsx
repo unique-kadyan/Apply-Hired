@@ -38,6 +38,24 @@ export default function Search({ profile, showToast, navigate }) {
   const [scheduleCountry, setScheduleCountry] = useState('India');
   const pollRef = useRef(null);
 
+  // Config loaded from /api/config — no hardcoded values in JSX
+  const [cfg, setCfg] = useState({
+    experience_levels: [
+      { value: 'Junior', label: 'Junior', years: '0–2 yrs' },
+      { value: 'Mid-Level', label: 'Mid-Level', years: '2–5 yrs' },
+      { value: 'Senior', label: 'Senior', years: '5–8 yrs' },
+      { value: 'Lead', label: 'Lead', years: '7–12 yrs' },
+      { value: 'Staff', label: 'Staff', years: '10–15 yrs' },
+      { value: 'Principal', label: 'Principal', years: '12+ yrs' },
+    ],
+    schedule_interval_options: [6, 12, 24, 48],
+    default_schedule_interval_hours: 24,
+    country_options: [],
+    salary: { min_usd: 0, max_usd: 300000, step_usd: 10000, label_breakpoints: [50000, 100000, 150000, 200000, 300000] },
+    poll_intervals: { search_status_ms: 2000, schedule_refresh_ms: 60000 },
+    exchange_rates: { INR: 83.5, GBP: 0.79, EUR: 0.92 },
+  });
+
   const _computeNextRun = (lastRun, intervalH) => {
     if (!lastRun) return new Date(Date.now() + intervalH * 3600 * 1000);
     return new Date(new Date(lastRun).getTime() + intervalH * 3600 * 1000);
@@ -52,8 +70,12 @@ export default function Search({ profile, showToast, navigate }) {
   };
 
   const selectRecommended = () => {
-    setSelectedSkills(new Set(['Java', 'Python', 'Spring Boot', 'React.js', 'PostgreSQL', 'AWS', 'Docker', 'Kafka', 'Microservices', 'REST APIs', 'Redis']));
-    if (!jobTitle) setJobTitle('Senior Backend Engineer');
+    // Use all skills from the user's profile — no hardcoded preset
+    const profileSkills = profile?.skills
+      ? Object.values(profile.skills).flat()
+      : [];
+    setSelectedSkills(new Set(profileSkills));
+    if (!jobTitle) setJobTitle(profile?.title?.split('·')[0]?.trim() || '');
   };
 
   const selectGroup = (group) => {
@@ -88,6 +110,7 @@ export default function Search({ profile, showToast, navigate }) {
 
   const pollStatus = () => {
     if (pollRef.current) clearInterval(pollRef.current);
+    const pollMs = cfg.poll_intervals?.search_status_ms || 2000;
     pollRef.current = setInterval(async () => {
       try {
         const status = await api.get('/api/search/status');
@@ -100,7 +123,7 @@ export default function Search({ profile, showToast, navigate }) {
           }
         }
       } catch (_) { }
-    }, 2000);
+    }, pollMs);
   };
 
   const fetchSchedule = () => {
@@ -119,8 +142,20 @@ export default function Search({ profile, showToast, navigate }) {
   useEffect(() => {
     api.get('/api/search/status').then(s => { setSearchStatus(s); if (s.running) pollStatus(); });
     fetchSchedule();
+    api.get('/api/config').then(c => {
+      if (c && c.schedule_interval_options) setCfg(c);
+      // Sync interval default from server config
+      if (c?.default_schedule_interval_hours) setScheduleInterval(c.default_schedule_interval_hours);
+    }).catch(() => {});
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
+
+  useEffect(() => {
+    if (!showSchedule || !scheduleEnabled) return;
+    const ms = cfg.poll_intervals?.schedule_refresh_ms || 60_000;
+    const timer = setInterval(fetchSchedule, ms);
+    return () => clearInterval(timer);
+  }, [showSchedule, scheduleEnabled, cfg]);
 
   const saveSchedule = async () => {
     setScheduleSaving(true);
@@ -174,25 +209,9 @@ export default function Search({ profile, showToast, navigate }) {
             <div style={{ marginTop: '0.75rem' }}>
               <select style={{ ...styles.select, width: '100%', maxWidth: 350 }} value={remoteCountry} onChange={e => setRemoteCountry(e.target.value)}>
                 <option value="">Select country...</option>
-                <option value="USA">United States (USA)</option>
-                <option value="UK">United Kingdom (UK)</option>
-                <option value="Canada">Canada</option>
-                <option value="Germany">Germany</option>
-                <option value="Netherlands">Netherlands</option>
-                <option value="India">India</option>
-                <option value="Australia">Australia</option>
-                <option value="Singapore">Singapore</option>
-                <option value="UAE">UAE / Dubai</option>
-                <option value="France">France</option>
-                <option value="Spain">Spain</option>
-                <option value="Ireland">Ireland</option>
-                <option value="Sweden">Sweden</option>
-                <option value="Switzerland">Switzerland</option>
-                <option value="Japan">Japan</option>
-                <option value="Brazil">Brazil</option>
-                <option value="Europe">Europe (Any)</option>
-                <option value="APAC">Asia-Pacific (Any)</option>
-                <option value="LATAM">Latin America (Any)</option>
+                {cfg.country_options.map(c => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
               </select>
               <input style={{ ...styles.input, marginTop: '0.5rem', maxWidth: 350 }} value={remoteCountry} onChange={e => setRemoteCountry(e.target.value)} placeholder="Or type any country/region..." />
             </div>
@@ -206,13 +225,21 @@ export default function Search({ profile, showToast, navigate }) {
           <label style={{ display: 'block', color: 'var(--muted)', fontWeight: 600, marginBottom: '0.4rem', fontSize: '0.9rem' }}>
             Minimum Salary (USD): <strong style={{ color: minSalary > 0 ? 'var(--green2)' : 'var(--text)' }}>{minSalary > 0 ? `$${minSalary.toLocaleString()}+/yr` : 'Any'}</strong>
           </label>
-          <input type="range" min="0" max="300000" step="10000" value={minSalary} onChange={e => setMinSalary(Number(e.target.value))} style={{ width: '100%', accentColor: 'var(--accent)' }} />
+          <input type="range"
+            min={cfg.salary.min_usd} max={cfg.salary.max_usd} step={cfg.salary.step_usd}
+            value={minSalary} onChange={e => setMinSalary(Number(e.target.value))}
+            style={{ width: '100%', accentColor: 'var(--accent)' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
-            <span>Any</span><span>$50k</span><span>$100k</span><span>$150k</span><span>$200k</span><span>$300k</span>
+            <span>Any</span>
+            {(cfg.salary.label_breakpoints || []).map(v => (
+              <span key={v}>${(v / 1000).toFixed(0)}k</span>
+            ))}
           </div>
           {minSalary > 0 && (
             <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.3rem' }}>
-              Auto-converts to job's local currency (&#8377;{Math.round(minSalary * 83.5).toLocaleString()} INR · &pound;{Math.round(minSalary * 0.79).toLocaleString()} GBP · &euro;{Math.round(minSalary * 0.92).toLocaleString()} EUR)
+              Auto-converts to job's local currency (&#8377;{Math.round(minSalary * (cfg.exchange_rates?.INR || 83.5)).toLocaleString()} INR
+              · &pound;{Math.round(minSalary * (cfg.exchange_rates?.GBP || 0.79)).toLocaleString()} GBP
+              · &euro;{Math.round(minSalary * (cfg.exchange_rates?.EUR || 0.92)).toLocaleString()} EUR)
             </p>
           )}
         </div>
@@ -239,20 +266,13 @@ export default function Search({ profile, showToast, navigate }) {
         <div style={{ marginBottom: '1.5rem' }}>
           <label style={{ display: 'block', color: 'var(--muted)', fontWeight: 600, marginBottom: '0.4rem', fontSize: '0.9rem' }}>Experience Level</label>
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-            {[
-              { label: 'Junior', years: '0–2 yrs' },
-              { label: 'Mid-Level', years: '2–5 yrs' },
-              { label: 'Senior', years: '5–8 yrs' },
-              { label: 'Lead', years: '7–12 yrs' },
-              { label: 'Staff', years: '10–15 yrs' },
-              { label: 'Principal', years: '12+ yrs' },
-            ].map(({ label, years }) => (
-              <button key={label} onClick={() => toggleLevel(label)}
+            {cfg.experience_levels.map(({ value, label, years }) => (
+              <button key={value} onClick={() => toggleLevel(value)}
                 style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  padding: '0.4rem 0.85rem', borderRadius: 20, border: `1px solid ${levels.has(label) ? 'var(--accent2)' : 'var(--border)'}`,
-                  background: levels.has(label) ? 'rgba(37,99,235,0.18)' : 'transparent',
-                  color: levels.has(label) ? 'var(--accent2)' : 'var(--muted)',
+                  padding: '0.4rem 0.85rem', borderRadius: 20, border: `1px solid ${levels.has(value) ? 'var(--accent2)' : 'var(--border)'}`,
+                  background: levels.has(value) ? 'rgba(37,99,235,0.18)' : 'transparent',
+                  color: levels.has(value) ? 'var(--accent2)' : 'var(--muted)',
                   cursor: 'pointer', transition: 'all 0.15s', lineHeight: 1.2,
                 }}>
                 <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>{label}</span>
@@ -324,13 +344,27 @@ export default function Search({ profile, showToast, navigate }) {
                       <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 110 }}>Next Search</span>
                       {(() => {
                         const next = _computeNextRun(scheduleLastRun, scheduleInterval);
-                        const overdue = next <= new Date();
-                        return overdue ? (
-                          <span style={{ color: '#fbbf24', fontSize: '0.9rem', fontWeight: 600 }}>Pending — will run at next check</span>
-                        ) : (
+                        const now = new Date();
+                        const overdue = next <= now;
+                        if (overdue) {
+                          const minsLate = Math.round((now - next) / 60000);
+                          return (
+                            <span style={{ color: '#fbbf24', fontSize: '0.9rem', fontWeight: 600 }}>
+                              Running soon
+                              <span style={{ fontWeight: 400, color: '#94a3b8', marginLeft: 6, fontSize: '0.8rem' }}>
+                                (due {minsLate < 2 ? 'just now' : `${minsLate} min ago`} — scheduler picks up within 1h)
+                              </span>
+                            </span>
+                          );
+                        }
+                        const minsUntil = Math.round((next - now) / 60000);
+                        const label = minsUntil < 60
+                          ? `in ${minsUntil} min`
+                          : `in ${Math.round(minsUntil / 60)}h`;
+                        return (
                           <>
                             <span style={{ color: '#6ee7b7', fontSize: '0.9rem', fontWeight: 600 }}>{next.toLocaleString()}</span>
-                            <span style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>— runs automatically</span>
+                            <span style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>— {label}</span>
                           </>
                         );
                       })()}
@@ -390,7 +424,7 @@ export default function Search({ profile, showToast, navigate }) {
                   {scheduleEnabled && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Every</span>
-                      {[6, 12, 24, 48].map(h => (
+                      {cfg.schedule_interval_options.map(h => (
                         <button key={h} onClick={() => setScheduleInterval(h)}
                           style={{ ...styles.btn, ...styles.btnSm, background: scheduleInterval === h ? 'var(--accent)' : 'var(--bg3)', color: scheduleInterval === h ? '#fff' : 'var(--muted)', fontWeight: scheduleInterval === h ? 700 : 400, border: scheduleInterval === h ? '1px solid var(--accent)' : '1px solid var(--border)', minWidth: 40 }}>
                           {h}h
