@@ -224,156 +224,69 @@ def has_paid():
     return jsonify({"paid": bool(paid)})
 
 
-def _reconstruct_and_score(profile: dict, optimized: dict) -> dict:
-    """Score optimized resume directly from its structured JSON — no regex round-trip."""
-    scores = {}
-    total = 0
+def _build_resume_text(profile: dict, optimized: dict) -> str:
+    """Reconstruct plain-text resume from profile + optimized JSON.
+    This is the canonical text representation used for scoring — identical
+    structure to what _score_resume_local expects from an uploaded file."""
+    lines = []
+    if profile.get("name"):
+        lines.append(profile["name"])
+    if profile.get("title"):
+        lines.append(profile["title"])
 
-    # 1. Contact info (10 pts) — scored from profile fields directly
-    contact_score = 0
-    contact_tips = []
-    if profile.get("email"):
-        contact_score += 3
-    else:
-        contact_tips.append("Add your email address")
-    if profile.get("phone"):
-        contact_score += 3
-    else:
-        contact_tips.append("Add your phone number")
-    has_linkedin = bool(profile.get("linkedin") or profile.get("linkedin_url"))
-    has_github = bool(
-        profile.get("github_username") or profile.get("github") or profile.get("github_url")
-    )
-    if has_linkedin:
-        contact_score += 2
-    else:
-        contact_tips.append("Add your LinkedIn profile URL")
-    if has_github:
-        contact_score += 2
-    else:
-        contact_tips.append("Add your GitHub profile URL")
-    scores["contact_info"] = {"score": contact_score, "max": 10, "tips": contact_tips}
-    total += contact_score
+    contact = [x for x in [profile.get("email"), profile.get("phone"), profile.get("location")] if x]
+    if contact:
+        lines.append(" | ".join(contact))
 
-    # 2. Summary (10 pts) — scored from optimized summary string
-    summary_text = optimized.get("summary", "")
-    summary_words = len(summary_text.split()) if summary_text else 0
-    if summary_words >= 30:
-        summary_score = 10
-    elif summary_words >= 15:
-        summary_score = 7
-    elif summary_words > 0:
-        summary_score = 4
-    else:
-        summary_score = 0
-    summary_tips = []
-    if summary_score < 10:
-        if not summary_text:
-            summary_tips.append("Add a professional summary at the top of your resume")
-        else:
-            summary_tips.append("Expand your summary to 2-3 sentences with measurable impact")
-    scores["summary"] = {"score": summary_score, "max": 10, "tips": summary_tips}
-    total += summary_score
+    linkedin = profile.get("linkedin") or profile.get("linkedin_url") or ""
+    github = profile.get("github_username") or profile.get("github") or profile.get("github_url") or ""
+    if linkedin:
+        lines.append(f"linkedin: {linkedin}")
+    if github:
+        lines.append(f"github: {github}")
+    lines.append("")
 
-    # 3. Skills (15 pts) — scored from optimized skills dict
-    skills_dict = optimized.get("skills", {})
-    skill_count = sum(len(v) for v in skills_dict.values() if isinstance(v, list))
-    skill_score = min(15, round(skill_count * 1.5))
-    skill_tips = []
-    if skill_score < 15:
-        skill_tips.append(f"Found {skill_count} skills — aim for 10+ relevant technical skills")
-    scores["skills"] = {"score": skill_score, "max": 15, "tips": skill_tips}
-    total += skill_score
+    summary = optimized.get("summary", "")
+    if summary:
+        lines += ["SUMMARY", summary, ""]
 
-    # 4. Experience (25 pts) — scored from optimized experience list
-    experience_list = optimized.get("experience", [])
-    exp_score = 0
-    exp_tips = []
-    if experience_list:
-        role_count = len(experience_list)
-        exp_score += min(10, role_count * 3)
-        all_highlights = [h for exp in experience_list for h in exp.get("highlights", [])]
-        bullet_count = len(all_highlights)
-        exp_score += min(10, bullet_count * 2)
-        highlights_text = " ".join(all_highlights)
-        metrics = len(re.findall(
-            r'\d+[%xX]|\$[\d,]+|\d+\+?\s*(?:users|clients|engineers|teams|rps)',
-            highlights_text,
-            re.IGNORECASE,
-        ))
-        exp_score += min(5, round(metrics * 1.5))
-        if bullet_count < 6:
-            exp_tips.append("Add more bullet points to each role (3-5 per job)")
-        if metrics < 3:
-            exp_tips.append("Quantify achievements with numbers (%, $, users, etc.)")
-    else:
-        exp_tips.append("Add your work experience with company names and dates")
-    exp_score = min(25, exp_score)
-    scores["experience"] = {"score": exp_score, "max": 25, "tips": exp_tips}
-    total += exp_score
+    skills = optimized.get("skills", {})
+    skill_lines = [f"{cat}: {', '.join(v)}" for cat, v in skills.items() if v]
+    if skill_lines:
+        lines += ["SKILLS"] + skill_lines + [""]
 
-    # 5. Education (10 pts) — scored from profile education field
-    edu_text = profile.get("education", "") or ""
-    edu_score = 10 if len(edu_text.strip()) > 10 else 0
-    edu_tips = [] if edu_score else ["Add your education with degree, university, and year"]
-    scores["education"] = {"score": edu_score, "max": 10, "tips": edu_tips}
-    total += edu_score
+    experience = optimized.get("experience", [])
+    if experience:
+        lines.append("EXPERIENCE")
+        for exp in experience:
+            lines.append(f"{exp.get('title', '')} | {exp.get('company', '')} {exp.get('period', '')}")
+            for h in exp.get("highlights", []):
+                lines.append(f"\u2022 {h}")
+            lines.append("")
 
-    # 6. Formatting & length (15 pts) — computed from structured content
-    all_text_parts = [summary_text]
-    for exp in experience_list:
-        all_text_parts += exp.get("highlights", [])
-    for v in skills_dict.values():
-        if isinstance(v, list):
-            all_text_parts += v
-    full_text = " ".join(all_text_parts)
-    word_count = len(full_text.split())
-    format_score = 0
-    if 300 <= word_count <= 1200:
-        format_score += 5
-    elif word_count > 100:
-        format_score += 3
-    total_bullets = sum(len(e.get("highlights", [])) for e in experience_list)
-    if total_bullets >= 5:
-        format_score += 5
-    if experience_list and skills_dict and summary_text:
-        format_score += 5
-    format_tips = []
-    if format_score < 15:
-        if word_count < 300:
-            format_tips.append("Resume seems too short — aim for 400-800 words")
-        if total_bullets < 5:
-            format_tips.append("Use bullet points for achievements instead of paragraphs")
-    scores["formatting"] = {"score": min(15, format_score), "max": 15, "tips": format_tips}
-    total += min(15, format_score)
+    if profile.get("education"):
+        lines += ["EDUCATION", profile["education"], ""]
 
-    # 7. Keywords & ATS (15 pts) — checked across all text in optimized JSON
-    ats_text = " ".join([
-        summary_text,
-        " ".join(str(v) for v in skills_dict.values()),
-        " ".join(h for exp in experience_list for h in exp.get("highlights", [])),
-        " ".join(
-            f"{exp.get('title', '')} {exp.get('company', '')}" for exp in experience_list
-        ),
-    ])
-    ats_keywords = [
-        "team", "lead", "manage", "develop", "design", "implement", "optimize",
-        "deploy", "scale", "architect", "mentor", "collaborate", "deliver", "automate",
-    ]
-    keyword_hits = sum(1 for kw in ats_keywords if re.search(rf"\b{kw}", ats_text, re.IGNORECASE))
-    ats_score = min(15, keyword_hits * 2)
-    ats_tips = []
-    if ats_score < 15:
-        ats_tips.append("Use action verbs: led, built, optimized, delivered, scaled, automated")
-    scores["ats_keywords"] = {"score": round(ats_score), "max": 15, "tips": ats_tips}
-    total += ats_score
+    certs = profile.get("certifications", [])
+    if certs:
+        lines += ["CERTIFICATIONS"] + [f"\u2022 {c}" for c in certs] + [""]
 
-    return {
-        "total_score": round(min(100, total)),
-        "max_score": 100,
-        "sections": scores,
-        "method": "optimized",
-    }
+    return "\n".join(lines)
+
+
+def _reconstruct_and_score(profile: dict, optimized: dict, target_role: str = "") -> dict:
+    """Score an optimized resume using AI providers (with local fallback).
+    Reconstructs canonical plain text from JSON then passes it to the scorer
+    so the score reflects real content quality — not regex heuristics."""
+    from resume_parser import _score_resume_ai, _score_resume_local
+    text = _build_resume_text(profile, optimized)
+    result = _score_resume_ai(text, target_role=target_role)
+    if result:
+        result["method"] = "optimized"
+        return result
+    result = _score_resume_local(text)
+    result["method"] = "optimized_local_fallback"
+    return result
 
 
 @payment_bp.route("/optimize-resume", methods=["POST"])
@@ -487,19 +400,83 @@ Return ONLY valid JSON (no markdown, no code fences):
                 500,
             )
 
+        # Score and refine loop — keep improving until score = 100 or max passes reached
+        import json as _json
+        MAX_PASSES = 3
+        new_score = None
+        for pass_num in range(1, MAX_PASSES + 1):
+            try:
+                new_score = _reconstruct_and_score(profile, optimized, target_role=target_role)
+            except Exception as score_err:
+                logger.warning(f"Scoring failed on pass {pass_num}: {score_err}")
+                break
+
+            current_total = new_score.get("total_score", 0)
+            logger.info(f"Resume score after pass {pass_num}: {current_total}/100")
+
+            if current_total >= 100:
+                break
+
+            if pass_num >= MAX_PASSES:
+                break
+
+            # Collect all actionable tips from weak sections — AI-generated, not hardcoded
+            weak_tips = []
+            for section_name, section_data in new_score.get("sections", {}).items():
+                if section_data.get("score", 0) < section_data.get("max", 0):
+                    for tip in section_data.get("tips", []):
+                        weak_tips.append(f"- [{section_name}] {tip}")
+
+            if not weak_tips:
+                break
+
+            refinement_prompt = f"""You are a professional resume writer and ATS optimization expert.
+This resume scored {current_total}/100 for the role: {target_role or "Software Engineer"}.
+The AI reviewer identified these specific weaknesses — fix each one precisely.
+
+WEAKNESSES (from AI reviewer):
+{chr(10).join(weak_tips)}
+
+CURRENT RESUME JSON:
+{_json.dumps(optimized, indent=2)[:4000]}
+
+CANDIDATE'S ACTUAL SKILLS: {skills_text}
+
+Instructions:
+1. Fix only the sections flagged above — do not alter unaffected sections.
+2. Never fabricate skills, companies, dates, or metrics the candidate does not have.
+3. Use your knowledge of what ATS systems and hiring managers look for in a {target_role or "software engineering"} role.
+4. Return ONLY valid JSON in the exact same schema — no markdown, no code fences.
+"""
+            refined = None
+            for provider in providers:
+                try:
+                    result_text = _call_ai_text(provider, refinement_prompt)
+                    parsed = _parse_ai_response(result_text)
+                    if parsed and "summary" in parsed:
+                        refined = parsed
+                        logger.info(f"Refinement pass {pass_num} succeeded with {provider['name']}")
+                        break
+                except Exception as e:
+                    if _is_quota_error(e):
+                        continue
+                    logger.warning(f"Refinement pass {pass_num} failed ({provider['name']}): {e}")
+                    continue
+
+            if refined:
+                optimized = refined
+            else:
+                logger.warning(f"Refinement pass {pass_num}: all providers failed, keeping current")
+                break
+
         profile["optimized_resume"] = optimized
         profile["optimized_for"] = {
             "role": target_role,
             "company": target_company,
             "optimized_at": datetime.now(timezone.utc).isoformat(),
         }
-
-        try:
-            new_score = _reconstruct_and_score(profile, optimized)
+        if new_score:
             profile["resume_score"] = new_score
-        except Exception as score_err:
-            logger.warning(f"Post-optimization scoring failed: {score_err}")
-            new_score = None
 
         update_user_profile(request.user["id"], profile)
 

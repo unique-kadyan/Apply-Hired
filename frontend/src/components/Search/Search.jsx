@@ -103,8 +103,7 @@ export default function Search({ profile, showToast, navigate }) {
     }, 2000);
   };
 
-  useEffect(() => {
-    api.get('/api/search/status').then(s => { setSearchStatus(s); if (s.running) pollStatus(); });
+  const fetchSchedule = () => {
     api.get('/api/search/schedule').then(s => {
       setScheduleEnabled(s.enabled || false);
       setScheduleInterval(s.interval_hours || 24);
@@ -115,6 +114,11 @@ export default function Search({ profile, showToast, navigate }) {
       else if (savedLoc.startsWith('remote ')) { setScheduleLocType('remote_country'); setScheduleCountry(savedLoc.replace('remote ', '')); }
       else { setScheduleLocType('custom'); setScheduleCountry(savedLoc); }
     }).catch(() => {});
+  };
+
+  useEffect(() => {
+    api.get('/api/search/status').then(s => { setSearchStatus(s); if (s.running) pollStatus(); });
+    fetchSchedule();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
@@ -276,7 +280,7 @@ export default function Search({ profile, showToast, navigate }) {
       </div>
 
       <div style={styles.card}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => setShowSchedule(v => !v)}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => { setShowSchedule(v => { if (!v) fetchSchedule(); return !v; }); }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <ScheduleIcon sx={{ fontSize: 20, color: scheduleEnabled ? '#6ee7b7' : 'var(--muted)' }} />
             <div>
@@ -318,10 +322,18 @@ export default function Search({ profile, showToast, navigate }) {
                     )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                       <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 110 }}>Next Search</span>
-                      <span style={{ color: '#6ee7b7', fontSize: '0.9rem', fontWeight: 600 }}>
-                        {_computeNextRun(scheduleLastRun, scheduleInterval).toLocaleString()}
-                      </span>
-                      <span style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>— runs automatically</span>
+                      {(() => {
+                        const next = _computeNextRun(scheduleLastRun, scheduleInterval);
+                        const overdue = next <= new Date();
+                        return overdue ? (
+                          <span style={{ color: '#fbbf24', fontSize: '0.9rem', fontWeight: 600 }}>Pending — will run at next check</span>
+                        ) : (
+                          <>
+                            <span style={{ color: '#6ee7b7', fontSize: '0.9rem', fontWeight: 600 }}>{next.toLocaleString()}</span>
+                            <span style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>— runs automatically</span>
+                          </>
+                        );
+                      })()}
                     </div>
                   </>
                 )}

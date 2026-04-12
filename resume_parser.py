@@ -934,43 +934,52 @@ def _score_resume_local(text: str) -> dict:
     }
 
 
-_SCORE_PROMPT_TEMPLATE = """You are an expert resume reviewer and ATS analyst.
-Score this resume on a 0-100 scale across these categories. Be strict but fair.
-
-Return ONLY valid JSON:
-{{
-    "total_score": 0-100,
-    "max_score": 100,
-    "sections": {{
-        "contact_info": {{ "score": 0-10, "max": 10, "tips": [] }},
-        "summary": {{ "score": 0-10, "max": 10, "tips": [] }},
-        "skills": {{ "score": 0-15, "max": 15, "tips": [] }},
-        "experience": {{ "score": 0-25, "max": 25, "tips": [] }},
-        "education": {{ "score": 0-10, "max": 10, "tips": [] }},
-        "formatting": {{ "score": 0-15, "max": 15, "tips": [] }},
-        "ats_keywords": {{ "score": 0-15, "max": 15, "tips": [] }}
-    }}
-}}
-
-RESUME TEXT:
-"""
-
-
-def _score_resume_ai(text: str) -> Optional[dict]:
-    """Score a resume using AI providers with automatic failover."""
+def _score_resume_ai(text: str, target_role: str = "") -> Optional[dict]:
+    """Score a resume using AI providers with automatic failover.
+    Passes target_role context so the AI evaluates ATS fit against the specific role."""
     providers = _build_ai_providers()
     if not providers:
         return None
 
-    prompt = _SCORE_PROMPT_TEMPLATE + text[:8000]
+    role_context = f"\nTARGET ROLE: {target_role}" if target_role else ""
+    prompt = f"""You are an expert resume reviewer and ATS analyst.
+Score this resume on a 0-100 scale. Evaluate each section based on real-world hiring standards.{role_context}
+{"Evaluate ATS keyword relevance specifically for the target role above." if target_role else ""}
+
+Scoring criteria:
+- contact_info (max 10): email, phone, LinkedIn, GitHub/portfolio present
+- summary (max 10): quality, length, measurable impact, relevance to role
+- skills (max 15): breadth, depth, relevance to role, specificity
+- experience (max 25): number of roles, bullet quality, quantified achievements, action verbs
+- education (max 10): degree, institution, relevance
+- formatting (max 15): structure, length, readability, consistent use of bullets
+- ats_keywords (max 15): presence of role-relevant keywords, action verbs, industry terms
+
+Return ONLY valid JSON — no markdown, no explanation:
+{{
+    "total_score": <integer 0-100>,
+    "max_score": 100,
+    "sections": {{
+        "contact_info": {{ "score": <0-10>, "max": 10, "tips": [<specific actionable tips>] }},
+        "summary": {{ "score": <0-10>, "max": 10, "tips": [] }},
+        "skills": {{ "score": <0-15>, "max": 15, "tips": [] }},
+        "experience": {{ "score": <0-25>, "max": 25, "tips": [] }},
+        "education": {{ "score": <0-10>, "max": 10, "tips": [] }},
+        "formatting": {{ "score": <0-15>, "max": 15, "tips": [] }},
+        "ats_keywords": {{ "score": <0-15>, "max": 15, "tips": [] }}
+    }}
+}}
+
+RESUME TEXT:
+{text[:8000]}"""
 
     for provider in providers:
         try:
-            logger.info(f"Trying resume score with {provider['name']}")
+            logger.info(f"Scoring resume with {provider['name']}")
             result_text = _call_ai_text(provider, prompt)
             parsed = _parse_ai_response(result_text)
             if parsed and "total_score" in parsed:
-                logger.info(f"Resume scored with {provider['name']}")
+                logger.info(f"Resume scored with {provider['name']}: {parsed.get('total_score')}/100")
                 return parsed
         except Exception as e:
             if _is_quota_error(e):
@@ -982,19 +991,17 @@ def _score_resume_ai(text: str) -> Optional[dict]:
     return None
 
 
-def score_resume(filepath: str) -> dict:
+def score_resume(filepath: str, target_role: str = "") -> dict:
     """Score a resume file. Uses AI providers with failover, falls back to heuristics."""
     text = extract_text(filepath)
     if not text.strip():
         raise ValueError("Could not extract text from the resume file.")
 
-    # Try AI scoring (OpenAI → Pollinations → local)
-    ai_score = _score_resume_ai(text)
+    ai_score = _score_resume_ai(text, target_role=target_role)
     if ai_score:
         ai_score["method"] = "ai"
         return ai_score
 
-    # Fall back to local scoring — always works
     result = _score_resume_local(text)
     result["method"] = "local"
     return result

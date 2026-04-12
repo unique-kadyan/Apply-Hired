@@ -331,7 +331,9 @@ def score_resume_endpoint():
     file.save(filepath)
 
     try:
-        result = score_resume(filepath)
+        profile = get_user_profile(request.user)
+        target_role = profile.get("title", "") or request.form.get("target_role", "")
+        result = score_resume(filepath, target_role=target_role)
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": f"Failed to score resume: {str(e)}"}), 500

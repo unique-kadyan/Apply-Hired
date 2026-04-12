@@ -58,6 +58,20 @@ export default function App() {
   const [visited, setVisited] = useState({ dashboard: true });
 
   useEffect(() => {
+    const onSessionExpired = () => {
+      setUser(null);
+      setProfile({});
+      setDashData(null);
+      setVisited({ dashboard: true });
+      setPage('dashboard');
+      setToast({ message: 'Your session has expired. Please sign in again.', type: 'warning' });
+      try { sessionStorage.removeItem('_dashData'); } catch {}
+    };
+    window.addEventListener('session:expired', onSessionExpired);
+    return () => window.removeEventListener('session:expired', onSessionExpired);
+  }, []);
+
+  useEffect(() => {
     api.get('/api/auth/me').then(res => {
       if (res.user) {
         setUser(res.user);
