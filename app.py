@@ -1,5 +1,6 @@
 """Flask application factory — registers blueprints and serves the SPA."""
 
+import atexit
 import os
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -30,13 +31,12 @@ def create_app() -> Flask:
     app.register_blueprint(gmail_bp)
 
     start_scheduler()
+    atexit.register(stop_scheduler)
 
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
     if render_url:
         print(f"  Public URL: {render_url}")
         print(f"  Health:     {render_url}/health")
-
-    app.teardown_appcontext(lambda _: stop_scheduler())
 
     @app.route("/health")
     def health():
