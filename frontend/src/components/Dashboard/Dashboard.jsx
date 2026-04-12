@@ -198,7 +198,7 @@ export default function Dashboard({ navigate, dashData, onRefresh }) {
                       </span>}
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem' }}>
-                      <span style={{ color: 'var(--muted)', fontSize: '0.76rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{j.company}</span>
+                      <span style={{ color: 'var(--muted)', fontSize: '0.76rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{String(j.company || '')}</span>
                       <Badge score={j.score} />
                     </div>
                   </div>

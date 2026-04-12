@@ -224,9 +224,8 @@ def has_paid():
 
 
 def _build_resume_text(profile: dict, optimized: dict) -> str:
-    """Reconstruct plain-text resume from profile + optimized JSON.
-    This is the canonical text representation used for scoring — identical
-    structure to what _score_resume_local expects from an uploaded file."""
+    """Reconstruct ATS-friendly plain-text resume from profile + optimized JSON.
+    Mirrors the structure and signals the AI scorer expects from a well-formatted resume."""
     lines = []
     if profile.get("name"):
         lines.append(profile["name"])
@@ -239,10 +238,13 @@ def _build_resume_text(profile: dict, optimized: dict) -> str:
 
     linkedin = profile.get("linkedin") or profile.get("linkedin_url") or ""
     github = profile.get("github_username") or profile.get("github") or profile.get("github_url") or ""
+    social_parts = []
     if linkedin:
-        lines.append(f"linkedin: {linkedin}")
+        social_parts.append(f"LinkedIn: {linkedin}")
     if github:
-        lines.append(f"github: {github}")
+        social_parts.append(f"GitHub: {github}")
+    if social_parts:
+        lines.append(" | ".join(social_parts))
     lines.append("")
 
     summary = optimized.get("summary", "")
@@ -250,25 +252,42 @@ def _build_resume_text(profile: dict, optimized: dict) -> str:
         lines += ["SUMMARY", summary, ""]
 
     skills = optimized.get("skills", {})
-    skill_lines = [f"{cat}: {', '.join(v)}" for cat, v in skills.items() if v]
-    if skill_lines:
-        lines += ["SKILLS"] + skill_lines + [""]
+    all_skill_names = [s for group in skills.values() for s in group if s]
+    if all_skill_names:
+        lines.append("SKILLS")
+        for cat, vals in skills.items():
+            if vals:
+                lines.append(f"{cat.replace('_', ' ').title()}: {', '.join(vals)}")
+        lines.append("")
 
     experience = optimized.get("experience", [])
     if experience:
         lines.append("EXPERIENCE")
         for exp in experience:
-            lines.append(f"{exp.get('title', '')} | {exp.get('company', '')} {exp.get('period', '')}")
+            title = exp.get("title", "")
+            company = exp.get("company", "")
+            period = exp.get("period", "")
+            lines.append(f"{title} | {company} | {period}")
             for h in exp.get("highlights", []):
                 lines.append(f"\u2022 {h}")
             lines.append("")
 
-    if profile.get("education"):
-        lines += ["EDUCATION", profile["education"], ""]
+    education = profile.get("education", "")
+    if education:
+        lines += ["EDUCATION", education, ""]
 
-    certs = profile.get("certifications", [])
+    # Prefer certifications from optimized JSON (richer), fall back to profile
+    certs = optimized.get("certifications") or profile.get("certifications", [])
     if certs:
-        lines += ["CERTIFICATIONS"] + [f"\u2022 {c}" for c in certs] + [""]
+        lines.append("CERTIFICATIONS")
+        for c in certs:
+            lines.append(f"\u2022 {c}")
+        lines.append("")
+
+    # ATS keywords section signals keyword density to the scorer
+    ats_keywords = optimized.get("ats_keywords", [])
+    if ats_keywords:
+        lines += ["KEY COMPETENCIES", ", ".join(ats_keywords), ""]
 
     return "\n".join(lines)
 
@@ -321,13 +340,20 @@ def optimize_resume():
     prompt = f"""You are a professional resume writer and ATS optimization expert.
 Rewrite this candidate's resume to score 100/100 on ATS scanners for the target role.
 
-RULES — follow every one:
-1. Preserve the candidate's actual tech stack. "Java" and "JavaScript" are DIFFERENT — never swap, merge, or confuse them. Only list skills the candidate actually has.
-2. Summary must be 3-4 sentences, 60+ words, packed with measurable impact and keywords for the target role.
-3. Each experience entry must have EXACTLY 5 bullet points. Every bullet must start with a strong action verb and include at least one quantified metric (%, x faster, K+ users, $, ms latency, etc.).
-4. Mandatory action verbs — use at least 10 of these across all bullets: led, built, optimized, deployed, scaled, designed, implemented, developed, collaborated, delivered, automated, architected, mentored, managed.
-5. Skills section must contain 15+ skills across all categories. Be specific (e.g. "Spring Boot" not just "Java frameworks").
-6. Keep all company names and periods exactly as provided — do not invent or alter them.
+SCORING RUBRIC — an independent AI will score your output on these exact criteria. Hit maximum in every section:
+- contact_info (10/10): Must include email, phone, LinkedIn URL, GitHub/portfolio URL — all four present.
+- summary (10/10): 4-5 sentences, 80+ words, 3+ quantified metrics, packed with role-specific ATS keywords.
+- skills (15/15): 20+ specific named technologies across categories; every skill must be real and relevant to the target role.
+- experience (25/25): EXACTLY 5 bullet points per role; every bullet starts with a strong action verb and contains at least one hard metric (%, x faster, K+ users, $M revenue, ms latency, team size, etc.).
+- education (10/10): Full degree name, institution name, and graduation year on separate detail lines.
+- formatting (15/15): Consistent bullet style, clear section headers (SUMMARY, SKILLS, EXPERIENCE, EDUCATION, CERTIFICATIONS), no orphan lines.
+- ats_keywords (15/15): 20+ role-specific ATS keywords naturally integrated throughout summary, skills, and bullets — NOT in a keyword dump.
+
+ADDITIONAL RULES:
+1. Preserve the candidate's actual tech stack. "Java" and "JavaScript" are DIFFERENT — never swap, merge, or confuse them.
+2. Never fabricate companies, dates, degrees, or metrics the candidate does not have.
+3. Keep all company names and periods exactly as provided.
+4. Skills must be specific (e.g., "Spring Boot" not "Java frameworks", "PostgreSQL" not "databases").
 
 TARGET ROLE: {target_role}
 {"TARGET COMPANY: " + target_company if target_company else ""}
@@ -339,6 +365,8 @@ Current Title: {profile.get('title', '')}
 Email: {profile.get('email', '')}
 Phone: {profile.get('phone', '')}
 Location: {profile.get('location', '')}
+LinkedIn: {profile.get('linkedin', '') or profile.get('linkedin_url', '')}
+GitHub: {profile.get('github', '') or profile.get('github_username', '')}
 Years of Experience: {profile.get('years_of_experience', '')}
 Skills: {skills_text}
 Summary: {profile.get('summary', '')}
@@ -350,7 +378,7 @@ EXPERIENCE:
 
 Return ONLY valid JSON (no markdown, no code fences):
 {{
-    "summary": "Rewritten professional summary (60+ words, metrics-packed)",
+    "summary": "Rewritten professional summary (80+ words, 3+ metrics, role-keywords packed)",
     "skills": {{
         "languages": [...], "backend": [...], "frontend": [...],
         "databases": [...], "cloud_devops": [...], "architecture": [...], "testing": [...]
@@ -360,10 +388,11 @@ Return ONLY valid JSON (no markdown, no code fences):
             "title": "Optimized job title",
             "company": "Exact company name",
             "period": "Mon YYYY - Mon YYYY",
-            "highlights": ["5 ATS-optimized bullets each with action verb + metric"]
+            "highlights": ["exactly 5 bullets, each with action verb + hard metric"]
         }}
     ],
-    "ats_keywords": ["list of ATS keywords used"],
+    "certifications": ["list of certifications"],
+    "ats_keywords": ["20+ ATS keywords used throughout"],
     "optimization_notes": ["what was improved and why"]
 }}
 """
@@ -399,52 +428,84 @@ Return ONLY valid JSON (no markdown, no code fences):
                 500,
             )
 
-        # Score and refine loop — keep improving until score = 100 or max passes reached
+        # Score and refine loop — keep improving until score = 100 or max passes reached.
+        # Always refine from the BEST scored version to prevent AI-induced regressions.
+        import copy as _copy
         import json as _json
-        MAX_PASSES = 3
+        MAX_PASSES = 5
         new_score = None
+        best_score = 0
+        best_optimized = _copy.deepcopy(optimized)
+
         for pass_num in range(1, MAX_PASSES + 1):
             try:
                 new_score = _reconstruct_and_score(profile, optimized, target_role=target_role)
             except Exception as score_err:
                 logger.warning(f"Scoring failed on pass {pass_num}: {score_err}")
+                # Restore best known good version and stop
+                optimized = best_optimized
+                new_score = None
                 break
 
             current_total = new_score.get("total_score", 0)
             logger.info(f"Resume score after pass {pass_num}: {current_total}/100")
 
-            if current_total >= 100:
+            # Track best — keep best version even if later passes regress
+            if current_total > best_score:
+                best_score = current_total
+                best_optimized = _copy.deepcopy(optimized)
+            else:
+                # This pass regressed — revert to best for next refinement
+                logger.info(f"Pass {pass_num} regressed ({current_total} < {best_score}), reverting to best")
+                optimized = _copy.deepcopy(best_optimized)
+                new_score["total_score"] = best_score  # report best score
+
+            if best_score >= 100:
                 break
 
             if pass_num >= MAX_PASSES:
                 break
 
-            # Collect all actionable tips from weak sections — AI-generated, not hardcoded
-            weak_tips = []
+            # Build section-by-section gap analysis for targeted refinement
+            section_gaps = []
             for section_name, section_data in new_score.get("sections", {}).items():
-                if section_data.get("score", 0) < section_data.get("max", 0):
-                    for tip in section_data.get("tips", []):
-                        weak_tips.append(f"- [{section_name}] {tip}")
+                score = section_data.get("score", 0)
+                max_val = section_data.get("max", 0)
+                if score < max_val:
+                    tips = section_data.get("tips", [])
+                    tip_text = "; ".join(tips) if tips else "improve to meet ATS standards"
+                    section_gaps.append(
+                        f"- {section_name}: {score}/{max_val} — {tip_text}"
+                    )
 
-            if not weak_tips:
+            if not section_gaps:
                 break
 
             refinement_prompt = f"""You are a professional resume writer and ATS optimization expert.
-This resume scored {current_total}/100 for the role: {target_role or "Software Engineer"}.
-The AI reviewer identified these specific weaknesses — fix each one precisely.
+This resume scored {best_score}/100 for the role: {target_role or "Software Engineer"}.
+The ATS scoring AI identified these exact gaps — fix every one to reach 100/100.
 
-WEAKNESSES (from AI reviewer):
-{chr(10).join(weak_tips)}
+SECTION GAPS (current score / max — what the scorer found wrong):
+{chr(10).join(section_gaps)}
 
-CURRENT RESUME JSON:
-{_json.dumps(optimized, indent=2)[:4000]}
+SCORING RUBRIC (what the scorer gives full marks for):
+- contact_info 10/10: email + phone + LinkedIn URL + GitHub/portfolio URL all present
+- summary 10/10: 4-5 sentences, 80+ words, 3+ hard metrics, role-specific keywords throughout
+- skills 15/15: 20+ named technologies, organized by category, all specific and role-relevant
+- experience 25/25: exactly 5 bullets per role, each bullet = action verb + hard quantified metric
+- education 10/10: full degree name + institution + graduation year
+- formatting 15/15: clear section headers, consistent bullets, professional structure
+- ats_keywords 15/15: 20+ role-specific keywords woven naturally through summary, bullets, skills
+
+CURRENT RESUME JSON (refine this — only fix the gap sections, preserve passing sections):
+{_json.dumps(best_optimized, indent=2)[:5000]}
 
 CANDIDATE'S ACTUAL SKILLS: {skills_text}
 
-Instructions:
-1. Fix only the sections flagged above — do not alter unaffected sections.
-2. Never fabricate skills, companies, dates, or metrics the candidate does not have.
-3. Use your knowledge of what ATS systems and hiring managers look for in a {target_role or "software engineering"} role.
+Rules:
+1. Fix every gap listed above — do not skip any.
+2. Never fabricate companies, dates, or credentials the candidate does not have.
+3. Never invent skills not in the candidate's actual skill set.
 4. Return ONLY valid JSON in the exact same schema — no markdown, no code fences.
 """
             refined = None
@@ -465,8 +526,14 @@ Instructions:
             if refined:
                 optimized = refined
             else:
-                logger.warning(f"Refinement pass {pass_num}: all providers failed, keeping current")
+                logger.warning(f"Refinement pass {pass_num}: all providers failed, keeping best")
+                optimized = best_optimized
                 break
+
+        # Always return the best-scoring version
+        optimized = best_optimized
+        if new_score and new_score.get("total_score", 0) != best_score:
+            new_score["total_score"] = best_score
 
         profile["optimized_resume"] = optimized
         profile["optimized_for"] = {

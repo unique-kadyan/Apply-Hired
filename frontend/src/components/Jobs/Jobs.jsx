@@ -653,7 +653,7 @@ export default function Jobs({ navigate, showToast, isVisible }) {
                     <a href={j.url} target="_blank" rel="noopener noreferrer"
                       style={{ fontWeight: 700, color: '#93c5fd', fontSize: '0.95rem', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                       title={j.title}>{j.title}</a>
-                    <span style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>{j.company}{j.location ? ` · ${j.location}` : ''}</span>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>{String(j.company || '')}{j.location ? ` · ${j.location}` : ''}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
                     <Badge score={j.score} />
@@ -729,7 +729,7 @@ export default function Jobs({ navigate, showToast, isVisible }) {
                   <td style={{ padding: '0.5rem 0.6rem', maxWidth: 0, width: '40%' }}>
                     <span onClick={e => { e.stopPropagation(); setJobPanel(j); }} style={{ fontWeight: 600, cursor: 'pointer', color: '#93c5fd', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={j.title}>{j.title}</span>
                   </td>
-                  <td className="hide-sm" style={{ padding: '0.5rem 0.6rem', fontSize: '0.83rem', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.company.substring(0, 20)}</td>
+                  <td className="hide-sm" style={{ padding: '0.5rem 0.6rem', fontSize: '0.83rem', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(j.company || '').substring(0, 20)}</td>
                   <td className="hide-md" style={{ padding: '0.5rem 0.6rem' }}>
                     <span style={_modePill(_jobMode(j))}>{_jobMode(j)}</span>
                   </td>
@@ -966,7 +966,7 @@ export default function Jobs({ navigate, showToast, isVisible }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.2rem', lineHeight: 1.3 }}>{j.title}</h2>
-                    <p style={{ color: '#60a5fa', fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.15rem' }}>{j.company}</p>
+                    <p style={{ color: '#60a5fa', fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.15rem' }}>{String(j.company || '')}</p>
                     <p style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>{[j.location, fmtDate(j.date_posted)].filter(Boolean).join(' · ')}</p>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem', flexShrink: 0 }}>

@@ -49,11 +49,25 @@ def _get_db():
     logger.info(f"Connected to MongoDB: {_db.name}")
     return _db
 
+_JOB_STRING_FIELDS = ("title", "company", "location", "salary", "source", "description", "job_type", "tags")
+
 def _id_str(doc: dict) -> dict:
-    """Convert MongoDB _id (ObjectId) to string 'id' for JSON compatibility."""
-    if doc and "_id" in doc:
+    """Convert MongoDB _id to string id and coerce job string fields to str.
+    Guards against docs where a field was inadvertently stored as a nested object."""
+    if not doc:
+        return doc
+    if "_id" in doc:
         doc["id"] = str(doc["_id"])
         del doc["_id"]
+    for field in _JOB_STRING_FIELDS:
+        val = doc.get(field)
+        if val is not None and not isinstance(val, str):
+            if isinstance(val, dict):
+                doc[field] = val.get("name") or val.get("display_name") or val.get("title") or ""
+            elif isinstance(val, list):
+                doc[field] = ", ".join(str(v) for v in val)
+            else:
+                doc[field] = str(val)
     return doc
 
 def _to_object_id(id_val):
