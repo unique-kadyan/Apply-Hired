@@ -194,7 +194,7 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
             Professional Summary
           </h3>
           <p style={{ color: "#cbd5e1", lineHeight: 1.7, margin: 0 }}>
-            {optimized.summary}
+            {String(optimized.summary || '')}
           </p>
         </div>
         {(optimized.experience || []).map((exp, i) => (
@@ -240,7 +240,7 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
               }}
             >
               {(exp.highlights || []).map((h, j) => (
-                <li key={j}>{h}</li>
+                <li key={j}>{typeof h === 'string' ? h : (h?.name || h?.text || String(h || ''))}</li>
               ))}
             </ul>
           </div>
@@ -268,7 +268,7 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
                     fontSize: "0.78rem",
                   }}
                 >
-                  {kw}
+                  {typeof kw === 'string' ? kw : (kw?.name || String(kw || ''))}
                 </span>
               ))}
             </div>
@@ -304,7 +304,7 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
                 }}
               >
                 {optimized.optimization_notes.map((n, i) => (
-                  <li key={i}>{n}</li>
+                  <li key={i}>{typeof n === 'string' ? n : (n?.name || n?.text || String(n || ''))}</li>
                 ))}
               </ul>
             </div>

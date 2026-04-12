@@ -223,6 +223,56 @@ def has_paid():
     return jsonify({"paid": bool(paid)})
 
 
+def _str(val) -> str:
+    """Coerce a value that should be a plain string to str.
+    AI occasionally returns skill/keyword/highlight entries as dicts."""
+    if val is None:
+        return ""
+    if isinstance(val, str):
+        return val
+    if isinstance(val, dict):
+        return val.get("name") or val.get("text") or val.get("value") or str(val)
+    return str(val)
+
+
+def _sanitize_optimized(data: dict) -> dict:
+    """Guarantee that all leaf values the frontend renders as text are plain strings.
+    Guards against AI hallucinating objects where strings are expected."""
+    if not isinstance(data, dict):
+        return data
+
+    # summary
+    if "summary" in data:
+        data["summary"] = _str(data["summary"])
+
+    # skills: each category must be a list of strings
+    skills = data.get("skills") or {}
+    if isinstance(skills, dict):
+        for cat, vals in skills.items():
+            if isinstance(vals, list):
+                skills[cat] = [_str(v) for v in vals]
+    data["skills"] = skills
+
+    # experience: highlights and technologies must be lists of strings
+    experience = data.get("experience") or []
+    for exp in experience:
+        if not isinstance(exp, dict):
+            continue
+        for field in ("title", "company", "period"):
+            exp[field] = _str(exp.get(field, ""))
+        exp["highlights"] = [_str(h) for h in (exp.get("highlights") or [])]
+        exp["technologies"] = [_str(t) for t in (exp.get("technologies") or [])]
+    data["experience"] = experience
+
+    # flat string-list fields
+    for field in ("ats_keywords", "optimization_notes", "certifications"):
+        lst = data.get(field) or []
+        if isinstance(lst, list):
+            data[field] = [_str(v) for v in lst]
+
+    return data
+
+
 def _build_resume_text(profile: dict, optimized: dict) -> str:
     """Reconstruct ATS-friendly plain-text resume from profile + optimized JSON.
     Mirrors the structure and signals the AI scorer expects from a well-formatted resume."""
@@ -413,7 +463,7 @@ Return ONLY valid JSON (no markdown, no code fences):
                 result_text = _call_ai_text(provider, prompt)
                 parsed = _parse_ai_response(result_text)
                 if parsed and "summary" in parsed:
-                    optimized = parsed
+                    optimized = _sanitize_optimized(parsed)
                     logger.info(f"Resume optimized with {provider['name']}")
                     break
             except Exception as e:
@@ -514,7 +564,7 @@ Rules:
                     result_text = _call_ai_text(provider, refinement_prompt)
                     parsed = _parse_ai_response(result_text)
                     if parsed and "summary" in parsed:
-                        refined = parsed
+                        refined = _sanitize_optimized(parsed)
                         logger.info(f"Refinement pass {pass_num} succeeded with {provider['name']}")
                         break
                 except Exception as e:
