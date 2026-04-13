@@ -1895,8 +1895,9 @@ ALL_SCRAPERS: list[BaseScraper] = [
     JSearchScraper(),  # RapidAPI · aggregates Indeed + LinkedIn + Glassdoor
     AdzunaScraper(),  # Adzuna official API · strong India + UK coverage
     JoobleScraper(),  # Jooble official API · 71-country aggregator
-    ReedScraper(),  # Reed.co.uk official API · strong UK + remote
-    USAJobsScraper(),  # USAJobs.gov · US federal / remote-US roles
+    # Disabled — require registration on their own portal to apply:
+    # ReedScraper(),     # Reed.co.uk account required for "Apply on Reed"
+    # USAJobsScraper(),  # USAJobs.gov federal login.gov account required
     # ── New legitimate APIs ───────────────────────────────────────────────
     SerpApiGoogleJobsScraper(),  # SerpAPI Google Jobs · aggregates Indeed + LinkedIn + Glassdoor + Naukri (SERPAPI_KEY)
     CareerJetScraper(),  # CareerJet official API · 2,500+ boards, strong India coverage (CAREERJET_AFFID)
