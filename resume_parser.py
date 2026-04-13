@@ -858,8 +858,8 @@ def _score_resume_local(text: str) -> dict:
     # 3. Skills (15 pts)
     skills = _extract_skills(text)
     skill_count = sum(len(v) for v in skills.values())
-    skill_score = min(15, skill_count * 1.5)
-    scores["skills"] = {"score": round(skill_score), "max": 15, "tips": []}
+    skill_score = round(min(15, skill_count * 1.5))
+    scores["skills"] = {"score": skill_score, "max": 15, "tips": []}
     if skill_score < 15:
         scores["skills"]["tips"].append(f"Found {skill_count} skills — aim for 10+ relevant technical skills")
         if not skills.get("cloud_devops"):
@@ -877,8 +877,9 @@ def _score_resume_local(text: str) -> dict:
         exp_score += min(10, bullet_count * 2)  # up to 10 for bullets
         # Check for quantified achievements
         metrics = len(re.findall(r'\d+[%xX]|\$[\d,]+|\d+\+?\s*(?:users|clients|engineers|teams|rps)', text, re.IGNORECASE))
-        exp_score += min(5, metrics * 1.5)  # up to 5 for metrics
-    scores["experience"] = {"score": round(min(25, exp_score)), "max": 25, "tips": []}
+        exp_score += min(5, round(metrics * 1.5))  # up to 5 for metrics
+    exp_score = min(25, exp_score)
+    scores["experience"] = {"score": exp_score, "max": 25, "tips": []}
     if exp_score < 25:
         if not exp:
             scores["experience"]["tips"].append("Add your work experience with company names and dates")
@@ -886,7 +887,7 @@ def _score_resume_local(text: str) -> dict:
             scores["experience"]["tips"].append("Add more bullet points to each role (3-5 per job)")
         if metrics < 3:
             scores["experience"]["tips"].append("Quantify achievements with numbers (%, $, users, etc.)")
-    total += min(25, exp_score)
+    total += exp_score
 
     # 5. Education (10 pts)
     edu = _extract_education(text)
@@ -927,8 +928,11 @@ def _score_resume_local(text: str) -> dict:
         scores["ats_keywords"]["tips"].append("Use action verbs: led, built, optimized, delivered, scaled, automated")
     total += ats_score
 
+    # Recompute total from section scores — prevents float drift from accumulated
+    # intermediate values diverging from the rounded per-section display values.
+    total = sum(s["score"] for s in scores.values())
     return {
-        "total_score": round(min(100, total)),
+        "total_score": min(100, total),
         "max_score": 100,
         "sections": scores,
     }
@@ -1006,8 +1010,13 @@ RESUME TEXT:
             logger.info(f"Scoring resume with {provider['name']}")
             result_text = _call_ai_text(provider, prompt)
             parsed = _parse_ai_response(result_text)
-            if parsed and "total_score" in parsed:
-                logger.info(f"Resume scored with {provider['name']}: {parsed.get('total_score')}/100")
+            if parsed and "sections" in parsed:
+                # Recompute total from section scores — never trust the AI's top-level
+                # total_score field, which the model generates independently and can
+                # contradict the individual section scores it also returns.
+                computed = sum(s.get("score", 0) for s in parsed["sections"].values())
+                parsed["total_score"] = min(100, computed)
+                logger.info(f"Resume scored with {provider['name']}: {parsed['total_score']}/100")
                 return parsed
         except Exception as e:
             if _is_quota_error(e):
