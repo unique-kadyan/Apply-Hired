@@ -40,7 +40,8 @@ export async function downloadResumePDF(profile, optimized) {
 
   // Option A — ask the server to generate the PDF
   try {
-    const BASE = process.env.NEXT_PUBLIC_API_BASE || '';
+    const _h = typeof window !== 'undefined' ? window.location.hostname : '';
+    const BASE = (_h === 'localhost' || _h === '127.0.0.1') ? 'http://localhost:5000' : '';
     const res = await fetch(`${BASE}/api/payment/download-resume-pdf`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -89,7 +90,7 @@ async function _downloadResumePDFLocal(profile, optimized, safeName) {
     renderCompact,
     renderTopBorderStripe,
     renderBoxSections,
-    renderDiagonalSplit,
+    renderSplitHeader,
     renderMinimalist,
   ];
 
@@ -637,36 +638,41 @@ function renderBoxSections(doc, accent, bullet, profile, optimized) {
 
 // ─── 8 — Diagonal Split ──────────────────────────────────────────────────────
 // Parallelogram-style header: accent block left, white right with name.
-function renderDiagonalSplit(doc, accent, bullet, profile, optimized) {
+// ─── 8 — Split Header (replaces broken DiagonalSplit) ───────────────────────
+// Full-width accent top band + white name on left, role pill on right. Clean rectangles only.
+function renderSplitHeader(doc, accent, bullet, profile, optimized) {
   const M = 16, W = PW - M * 2;
-  const H = 42;
+  const H = 38;
 
-  // Accent left block with diagonal right edge
+  // Full-width header band
   doc.setFillColor(...accent);
-  doc.triangle(0, 0, 120, 0, 100, H, 'F');
-  doc.setFillColor(...accent);
-  doc.rect(0, 0, 100, H, 'F');
-  // Diagonal triangle to create slanted right edge
-  doc.setFillColor(255, 255, 255);
-  doc.triangle(100, 0, 120, 0, 100, H, 'F');
+  doc.rect(0, 0, PW, H, 'F');
 
-  let y = 14;
-  doc.setFontSize(18); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
-  doc.text(profile.name || 'Your Name', M, y); y += 6;
-  doc.setFontSize(9.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...lighter(accent, 170));
-  doc.text(profile.title || '', M, y); y += 5;
-  doc.setFontSize(8); doc.setTextColor(...lighter(accent, 200));
-  doc.text(contactLine(profile), M, y); y += 4;
+  // Subtle lighter strip at bottom of band
+  doc.setFillColor(...lighter(accent, 60));
+  doc.rect(0, H - 6, PW, 6, 'F');
+
+  let y = 13;
+  doc.setFontSize(20); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
+  doc.text(profile.name || 'Your Name', M, y);
+
+  // Role label right-aligned in header
+  const title = profile.title || '';
+  if (title) {
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(...lighter(accent, 190));
+    doc.text(title, PW - M - doc.getTextWidth(title), y);
+  }
+  y += 7;
+
+  doc.setFontSize(8.5); doc.setTextColor(...lighter(accent, 200));
+  doc.text(contactLine(profile), M, y);
   const lnk = linksLine(profile);
-  if (lnk) { doc.text(lnk, M, y); }
+  if (lnk) {
+    doc.setFontSize(8); doc.setTextColor(...lighter(accent, 180));
+    doc.text(lnk, PW - M - doc.getTextWidth(lnk), y);
+  }
 
-  // Right side of header: years of experience badge
-  doc.setFontSize(28); doc.setFont('helvetica', 'bold'); doc.setTextColor(...lighter(accent, 190));
-  doc.text(String(profile.years_of_experience || ''), 155, 22);
-  doc.setFontSize(8); doc.setFont('helvetica', 'normal');
-  doc.text('years exp', 153, 30);
-
-  y = H + 7;
+  y = H + 8;
 
   const section = (t) => {
     y += 2; y = pageCheck(doc, y);
