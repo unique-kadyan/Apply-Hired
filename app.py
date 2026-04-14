@@ -1,6 +1,11 @@
-"""Flask application factory — registers blueprints and serves the SPA."""
+"""Flask application factory — registers blueprints and serves the SPA.
+
+Production entrypoint is wsgi.py (which monkey-patches gevent before importing
+this module). Local dev: `python wsgi.py` or `gunicorn --reload wsgi:app --config gunicorn.conf.py`.
+"""
 
 import atexit
+import logging
 import os
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -14,7 +19,8 @@ from routes.payment import payment_bp
 from routes.profile import profile_bp
 from routes.search import search_bp
 from services.scheduler import start_scheduler, stop_scheduler
-from tracker import init_db
+
+logger = logging.getLogger(__name__)
 
 
 def create_app() -> Flask:
@@ -39,12 +45,19 @@ def create_app() -> Flask:
 
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
     if render_url:
-        print(f"  Public URL: {render_url}")
-        print(f"  Health:     {render_url}/health")
+        logger.info(f"Public URL: {render_url}")
+        logger.info(f"Health: {render_url}/health")
 
     @app.route("/health")
     def health():
-        return jsonify({"status": "ok"}), 200
+        """Liveness + readiness probe — pings MongoDB so Render restarts on DB failure."""
+        try:
+            from tracker import _get_db
+            _get_db().command("ping")
+            return jsonify({"status": "ok", "db": "ok"}), 200
+        except Exception as e:
+            logger.warning(f"Health check degraded: {e}")
+            return jsonify({"status": "degraded", "db": "unreachable"}), 503
 
     @app.route("/")
     def index():
@@ -60,14 +73,5 @@ def create_app() -> Flask:
 
     return app
 
-app = create_app()
 
-if __name__ == "__main__":
-    init_db()
-    port = int(os.environ.get("PORT", 5000))
-    debug = not os.environ.get("RENDER")
-    print("\n  Job Application Bot - API Server")
-    print(f"  Running on port {port}")
-    print("  API:      /api/")
-    print("  Frontend: / (production build)\n")
-    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=False)  # nosec B104
+app = create_app()
