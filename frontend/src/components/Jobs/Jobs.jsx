@@ -952,7 +952,6 @@ export default function Jobs({ navigate, showToast, isVisible }) {
         const j = jobPanel;
         const fmtSalary = formatSalary(j.salary, j.location);
         const currency = detectCurrency(j.salary || '', j.location || '');
-        const descLines = (j.description || '').split(/[\n.!?]+/).map(s => s.trim()).filter(s => s.length > 40).slice(0, 4);
         const expMatch = (j.description || j.title || '').match(/(\d+)\+?\s*(?:to\s*\d+\s*)?years?\s*(?:of\s*)?(?:experience|exp)/i)
                       || (j.description || '').match(/experience[^.]{0,20}(\d+)\+?\s*years?/i)
                       || (j.description || '').match(/minimum\s+(\d+)\s*years?/i);
@@ -1024,24 +1023,14 @@ export default function Jobs({ navigate, showToast, isVisible }) {
                 )}
 
                 {jobPanelLoading && <p style={{ color: 'var(--muted)', fontSize: '0.82rem', marginBottom: '1rem' }}>Loading full details…</p>}
-                {descLines.length > 0 && (
-                  <div style={{ marginBottom: '1rem' }}>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Key Highlights</p>
-                    <ul style={{ paddingLeft: '1.2rem', lineHeight: 1.8, color: '#cbd5e1', fontSize: '0.88rem' }}>
-                      {descLines.map((line, i) => <li key={i}>{line}.</li>)}
-                    </ul>
-                  </div>
-                )}
 
                 {j.description ? (
-                  <details style={{ marginBottom: '1rem' }} open={descLines.length === 0}>
-                    <summary style={{ cursor: 'pointer', color: 'var(--accent2)', fontSize: '0.85rem', marginBottom: '0.5rem', userSelect: 'none', fontWeight: 600 }}>
-                      {descLines.length === 0 ? '📋 Job Description' : '📋 Full Description'}
-                    </summary>
-                    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem', fontSize: '0.85rem', lineHeight: 1.75, color: '#cbd5e1', whiteSpace: 'pre-wrap', maxHeight: 340, overflowY: 'auto' }}>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>📋 Job Description</p>
+                    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem', fontSize: '0.85rem', lineHeight: 1.75, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>
                       {j.description}
                     </div>
-                  </details>
+                  </div>
                 ) : !jobPanelLoading && (
                   <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem', color: 'var(--muted)', fontSize: '0.85rem' }}>
                     No description available. <a href={j.url} target="_blank" rel="noopener" style={{ color: 'var(--accent2)' }}>View on job site ↗</a>

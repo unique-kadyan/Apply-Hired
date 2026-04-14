@@ -580,19 +580,32 @@ def gmail_sync():
     messages = []
     seen_ids: set = set()
     try:
-        for q in [_primary_q, _secondary_q]:
+        for q_name, q in [("primary", _primary_q), ("secondary", _secondary_q)]:
             resp = http_requests.get(
                 f"{_GMAIL_API_BASE}/messages",
                 headers=_headers(access_token),
                 params={"q": q, "maxResults": 75},
                 timeout=15,
             )
-            for m in resp.json().get("messages", []):
+            if resp.status_code != 200:
+                logger.warning(
+                    f"Gmail list ({q_name}) returned {resp.status_code}: {resp.text[:300]}"
+                )
+                continue
+            payload = resp.json()
+            found_this_q = payload.get("messages", []) or []
+            logger.info(
+                f"Gmail list ({q_name}) returned {len(found_this_q)} messages"
+            )
+            for m in found_this_q:
                 if m["id"] not in seen_ids:
                     seen_ids.add(m["id"])
                     messages.append(m)
     except Exception as e:
+        logger.error(f"Gmail API error: {e}")
         return jsonify({"error": f"Gmail API error: {e}"}), 500
+
+    logger.info(f"Gmail sync: {len(messages)} total messages to scan")
 
     STATUS_RANK = {
         "new": 0,
@@ -630,88 +643,68 @@ def gmail_sync():
             continue
 
         company_hint = _extract_company_hint(sender, subject, body)
-        if not company_hint:
-            continue
-
-        pattern = {"$regex": company_hint, "$options": "i"}
-        job = db.jobs.find_one(
-            {
-                "user_id": str(request.user["id"]),
-                "status": {"$in": ["applied", "new", "saved", "previous", "interview"]},
-                "$or": [{"company": pattern}, {"title": pattern}],
-            }
-        )
 
         if category == "interview":
             extracted = _extract_interview_details(subject, body, date_str)
+            interview_count += 1
         else:
             extracted = _extract_offer_details(subject, body)
+            offer_count += 1
+
+        job = None
+        if company_hint:
+            pattern = {"$regex": company_hint, "$options": "i"}
+            job = db.jobs.find_one(
+                {
+                    "user_id": str(request.user["id"]),
+                    "status": {
+                        "$in": ["applied", "new", "saved", "previous", "interview"]
+                    },
+                    "$or": [{"company": pattern}, {"title": pattern}],
+                }
+            )
 
         if job:
             current_rank = STATUS_RANK.get(job.get("status", ""), 0)
             new_rank = STATUS_RANK.get(category, 0)
-
             if new_rank > current_rank:
-                update_fields: dict = {
-                    "status": category,
-                    "updated_at": datetime.now().isoformat(),
-                }
-                if category == "interview":
-                    existing = job.get("interview_details") or {}
-                    update_fields["interview_details"] = {
-                        **existing,
-                        **{k: v for k, v in extracted.items() if v},
-                    }
-                else:
-                    existing = job.get("offer_details") or {}
-                    update_fields["offer_details"] = {
-                        **existing,
-                        **{k: v for k, v in extracted.items() if v},
-                    }
-                db.jobs.update_one({"_id": job["_id"]}, {"$set": update_fields})
-
-        if category == "interview":
-            interview_count += 1
-        else:
-            offer_count += 1
+                details_key = (
+                    "interview_details" if category == "interview" else "offer_details"
+                )
+                existing = job.get(details_key) or {}
+                db.jobs.update_one(
+                    {"_id": job["_id"]},
+                    {
+                        "$set": {
+                            "status": category,
+                            "updated_at": datetime.now().isoformat(),
+                            details_key: {
+                                **existing,
+                                **{k: v for k, v in extracted.items() if v},
+                            },
+                        }
+                    },
+                )
 
         entry = {
             "job_title": job.get("title", "") if job else "",
-            "company": job.get("company", "") if job else company_hint,
+            "company": job.get("company", "") if job else (company_hint or "Unknown"),
             "matched": bool(job),
             "status": category,
             "email_subject": subject[:80],
             "email_from": sender[:60],
         }
         if category == "interview":
-            d = update_fields.get("interview_details", {})
-            entry["extracted"] = {
-                k: d[k]
-                for k in (
-                    "date",
-                    "time",
-                    "timezone",
-                    "round",
-                    "platform",
-                    "meeting_link",
-                    "interviewer",
-                )
-                if d.get(k)
-            }
+            keys = (
+                "date", "time", "timezone", "round",
+                "platform", "meeting_link", "interviewer",
+            )
         else:
-            d = update_fields.get("offer_details", {})
-            entry["extracted"] = {
-                k: d[k]
-                for k in (
-                    "salary",
-                    "currency",
-                    "joining_date",
-                    "deadline",
-                    "location",
-                    "benefits",
-                )
-                if d.get(k)
-            }
+            keys = (
+                "salary", "currency", "joining_date",
+                "deadline", "location", "benefits",
+            )
+        entry["extracted"] = {k: extracted[k] for k in keys if extracted.get(k)}
         updates.append(entry)
 
     db.users.update_one(
