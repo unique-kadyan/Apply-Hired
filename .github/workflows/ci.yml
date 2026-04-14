@@ -198,6 +198,7 @@ jobs:
               "routes.search",
               "routes.payment",
               "routes.gmail",
+              "routes.events",
           ]
           failed = []
           with mock.patch("pymongo.MongoClient") as mc:

@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
+import sse from '@/lib/sse';
 import styles from '@/lib/styles';
 import Toast from '@/components/shared/Toast';
 import AuthPage from '@/components/Auth/AuthPage';
@@ -56,6 +57,13 @@ export default function App() {
   }, []);
 
   const [visited, setVisited] = useState({ dashboard: true });
+
+  // Live dashboard updates: refetch whenever the server pushes a jobs_changed event.
+  useEffect(() => {
+    if (!user) return undefined;
+    const off = sse.subscribe('jobs_changed', () => fetchDashData());
+    return off;
+  }, [user, fetchDashData]);
 
   useEffect(() => {
     const onSessionExpired = () => {

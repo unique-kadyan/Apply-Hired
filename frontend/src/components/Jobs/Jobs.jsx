@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '@/lib/api';
+import sse from '@/lib/sse';
 import styles from '@/lib/styles';
 import { Badge, StatusBadge } from '@/components/shared/Badge';
 
@@ -448,6 +449,16 @@ export default function Jobs({ navigate, showToast, isVisible }) {
       }
       loadJobs();
     }
+  }, [loadJobs, isVisible]);
+
+  // Live updates: refetch when the server pushes a jobs_changed event.
+  useEffect(() => {
+    if (!isVisible) return undefined;
+    const offJobs = sse.subscribe('jobs_changed', () => {
+      loadJobs();
+      api.get('/api/jobs/tab-counts').then(r => setTabCounts(r)).catch(() => {});
+    });
+    return () => { offJobs(); };
   }, [loadJobs, isVisible]);
 
   const totalPages = Math.ceil(total / perPage);

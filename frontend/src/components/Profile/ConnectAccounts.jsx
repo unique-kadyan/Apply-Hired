@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
+import sse from '@/lib/sse';
 import styles from '@/lib/styles';
 
 function fmtDate(d) {
@@ -31,6 +32,15 @@ export default function ConnectAccounts({ profile, setProfile, showToast }) {
 
   useEffect(() => {
     api.get('/api/gmail/status').then(r => setGmailStatus(r)).catch(() => setGmailStatus({ connected: false }));
+  }, []);
+
+  // Live: when a Gmail sync finishes (manual or scheduled), refresh status & result.
+  useEffect(() => {
+    const off = sse.subscribe('gmail_synced', (data) => {
+      setGmailResult(data);
+      api.get('/api/gmail/status').then(r => setGmailStatus(r)).catch(() => {});
+    });
+    return off;
   }, []);
 
   useEffect(() => {

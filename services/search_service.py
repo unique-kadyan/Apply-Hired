@@ -9,6 +9,7 @@ from constants import JOB_MAX_AGE_DAYS, LANGUAGE_CONFLICTS, MAX_SEARCH_QUERIES
 from matcher import rank_jobs
 from scrapers import ALL_SCRAPERS, search_all_boards
 from services.currency import normalize_salary_annual_usd
+from services.events import publish
 from tracker import (
     _PREDEFINED_REASONS,
     get_not_interested_reasons,
@@ -35,9 +36,11 @@ def start_search(params: dict, user_id: int):
 
 def _update(user_id: int, **kwargs):
     _status_map.setdefault(user_id, {}).update(kwargs)
+    publish(str(user_id), "search_progress", _status_map[user_id])
 
 def _run_search(params: dict, user_id: int):
     _status_map[user_id] = {"running": True, "message": "Preparing search...", "progress": 10}
+    publish(str(user_id), "search_progress", _status_map[user_id])
 
     try:
         job_title = params.get("job_title", "")
@@ -192,3 +195,5 @@ def _run_search(params: dict, user_id: int):
         _update(user_id, message=f"Error: {e}")
     finally:
         _status_map[user_id]["running"] = False
+        publish(str(user_id), "search_progress", _status_map[user_id])
+        publish(str(user_id), "jobs_changed", {"reason": "search_completed"})

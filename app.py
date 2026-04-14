@@ -7,6 +7,7 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from routes.auth import auth_bp
 from routes.config_routes import config_bp
+from routes.events import events_bp
 from routes.gmail import gmail_bp
 from routes.jobs import jobs_bp
 from routes.payment import payment_bp
@@ -31,6 +32,7 @@ def create_app() -> Flask:
     app.register_blueprint(search_bp)
     app.register_blueprint(payment_bp)
     app.register_blueprint(gmail_bp)
+    app.register_blueprint(events_bp)
 
     start_scheduler()
     atexit.register(stop_scheduler)

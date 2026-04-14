@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
+import sse from '@/lib/sse';
 import styles from '@/lib/styles';
 import { SkillChip } from '@/components/shared/Badge';
 import Switch from '@mui/material/Switch';
@@ -147,7 +148,22 @@ export default function Search({ profile, showToast, navigate }) {
       // Sync interval default from server config
       if (c?.default_schedule_interval_hours) setScheduleInterval(c.default_schedule_interval_hours);
     }).catch(() => {});
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    // Live progress via SSE — replaces the 2 s poll while a search is running.
+    const off = sse.subscribe('search_progress', (status) => {
+      setSearchStatus(status);
+      if (!status.running) {
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        if (status.progress >= 100) {
+          showToast(status.message || 'Search complete!', 'success');
+          navigate('jobs');
+        }
+      }
+    });
+    return () => {
+      off();
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, []);
 
   useEffect(() => {

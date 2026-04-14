@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request
 from cover_letter import check_profile_completeness, generate_cover_letter
 from middleware import get_user_profile, login_required
 from scrapers import Job
+from services.events import publish
 from tracker import (
     _get_db,
     _to_object_id,
@@ -24,6 +25,22 @@ from tracker import (
 )
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/api")
+
+
+def _notify_jobs_changed(reason: str, job_id: str | None = None, status: str | None = None) -> None:
+    """Push a jobs_changed event so connected SSE clients refetch their lists."""
+    try:
+        uid = str(request.user["id"])
+    except Exception:
+        return
+    payload: dict = {"reason": reason}
+    if job_id:
+        payload["job_id"] = job_id
+    if status:
+        payload["status"] = status
+    publish(uid, "jobs_changed", payload)
+    if job_id:
+        publish(uid, "job_updated", payload)
 
 def _job_to_obj(job: dict) -> Job:
     """Convert a DB row dict to a Job namedtuple for cover letter generation."""
@@ -216,6 +233,7 @@ def change_status(job_id):
         oid = _to_object_id(job_id)
         if oid:
             db.jobs.update_one({"_id": oid}, {"$set": {"is_saved": False}})
+    _notify_jobs_changed("status_change", job_id=job_id, status=new_status)
     return jsonify({"message": f"Job #{job_id} updated to '{new_status}'"})
 
 @jobs_bp.route("/jobs/<job_id>/save", methods=["POST"])
@@ -228,6 +246,7 @@ def save_job(job_id):
     db = _get_db()
     oid = _to_object_id(job_id)
     db.jobs.update_one({"_id": oid}, {"$set": {"is_saved": True}})
+    _notify_jobs_changed("saved", job_id=job_id)
     return jsonify({"saved": True})
 
 @jobs_bp.route("/jobs/<job_id>/unsave", methods=["POST"])
@@ -240,6 +259,7 @@ def unsave_job(job_id):
     db = _get_db()
     oid = _to_object_id(job_id)
     db.jobs.update_one({"_id": oid}, {"$set": {"is_saved": False}})
+    _notify_jobs_changed("unsaved", job_id=job_id)
     return jsonify({"saved": False})
 
 @jobs_bp.route("/jobs/<job_id>/cover-letter", methods=["GET"])
@@ -296,6 +316,7 @@ def save_interview(job_id):
     ok = update_interview_details(job_id, details, user_id=request.user["id"])
     if not ok:
         return jsonify({"error": "Update failed"}), 500
+    _notify_jobs_changed("interview_updated", job_id=job_id)
     return jsonify({"message": "Interview details saved", "interview_details": details})
 
 @jobs_bp.route("/jobs/<job_id>/offer", methods=["PUT", "POST"])
@@ -320,6 +341,7 @@ def save_offer(job_id):
     ok = update_offer_details(job_id, details, user_id=request.user["id"])
     if not ok:
         return jsonify({"error": "Update failed"}), 500
+    _notify_jobs_changed("offer_updated", job_id=job_id)
     return jsonify({"message": "Offer details saved", "offer_details": details})
 
 @jobs_bp.route("/jobs/clear", methods=["POST"])
@@ -336,6 +358,8 @@ def clear_jobs():
         },
         {"$set": {"cleared": True, "updated_at": datetime.now().isoformat()}},
     )
+    if result.modified_count:
+        _notify_jobs_changed("cleared")
     return jsonify({"cleared": result.modified_count, "kept": list(keep_statuses)})
 
 @jobs_bp.route("/mark-applied-by-url", methods=["POST"])
@@ -361,6 +385,8 @@ def mark_applied_by_url():
             }
         },
     )
+    if result.modified_count:
+        _notify_jobs_changed("applied_via_extension")
     return jsonify({"matched": result.modified_count})
 
 @jobs_bp.route("/apply", methods=["POST"])
@@ -389,6 +415,8 @@ def apply_jobs():
             results.append({"id": jid, "status": "applied"})
         except Exception:
             continue
+    if results:
+        _notify_jobs_changed("bulk_apply")
     return jsonify({"applied": len(results), "results": results})
 
 @jobs_bp.route("/auto-apply", methods=["POST"])

@@ -12,6 +12,7 @@ import requests as http_requests
 from flask import Blueprint, jsonify, redirect, request, session
 
 from middleware import login_required
+from services.events import publish
 from tracker import _get_db, _to_object_id
 
 logger = logging.getLogger(__name__)
@@ -579,8 +580,16 @@ def gmail_sync():
 
     messages = []
     seen_ids: set = set()
+    debug: dict = {"queries": []}
+    # Broad fallback so we still get *something* if our keyword filter is too narrow
+    _fallback_q = "newer_than:180d"
+    queries = [
+        ("primary", _primary_q),
+        ("secondary", _secondary_q),
+        ("fallback", _fallback_q),
+    ]
     try:
-        for q_name, q in [("primary", _primary_q), ("secondary", _secondary_q)]:
+        for q_name, q in queries:
             resp = http_requests.get(
                 f"{_GMAIL_API_BASE}/messages",
                 headers=_headers(access_token),
@@ -591,12 +600,19 @@ def gmail_sync():
                 logger.warning(
                     f"Gmail list ({q_name}) returned {resp.status_code}: {resp.text[:300]}"
                 )
+                debug["queries"].append(
+                    {"name": q_name, "status": resp.status_code, "error": resp.text[:200]}
+                )
                 continue
             payload = resp.json()
             found_this_q = payload.get("messages", []) or []
             logger.info(
                 f"Gmail list ({q_name}) returned {len(found_this_q)} messages"
             )
+            debug["queries"].append({"name": q_name, "status": 200, "count": len(found_this_q)})
+            # Skip merging the broad fallback unless the keyword queries returned nothing
+            if q_name == "fallback" and messages:
+                continue
             for m in found_this_q:
                 if m["id"] not in seen_ids:
                     seen_ids.add(m["id"])
@@ -711,6 +727,20 @@ def gmail_sync():
         {"_id": oid}, {"$set": {"gmail_last_sync": datetime.now().isoformat()}}
     )
 
+    user_id_str = str(request.user["id"])
+    publish(
+        user_id_str,
+        "gmail_synced",
+        {
+            "found": len(messages),
+            "scanned": min(len(messages), 60),
+            "interview": interview_count,
+            "offer": offer_count,
+        },
+    )
+    if interview_count or offer_count:
+        publish(user_id_str, "jobs_changed", {"reason": "gmail_sync"})
+
     return jsonify(
         {
             "found": len(messages),
@@ -718,5 +748,6 @@ def gmail_sync():
             "interview": interview_count,
             "offer": offer_count,
             "updates": updates,
+            "debug": debug,
         }
     )
