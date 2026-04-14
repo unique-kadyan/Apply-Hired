@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote_plus
 
 from bson import ObjectId
 from pymongo import DESCENDING, MongoClient
@@ -18,7 +18,8 @@ _client: Optional[MongoClient] = None
 _db = None
 
 def _fix_mongo_uri(uri: str) -> str:
-    """URL-encode username and password if they contain special characters."""
+    """Normalize the user/password portion of a Mongo URI to canonical percent-encoding.
+    Idempotent: accepts both raw (`p@ss`) and already-encoded (`p%40ss`) forms."""
     if "://" not in uri:
         return uri
     scheme, rest = uri.split("://", 1)
@@ -27,8 +28,8 @@ def _fix_mongo_uri(uri: str) -> str:
     userinfo, hostpart = rest.rsplit("@", 1)
     if ":" in userinfo:
         user, passwd = userinfo.split(":", 1)
-        user = quote_plus(user)
-        passwd = quote_plus(passwd)
+        user = quote_plus(unquote_plus(user))
+        passwd = quote_plus(unquote_plus(passwd))
         userinfo = f"{user}:{passwd}"
     return f"{scheme}://{userinfo}@{hostpart}"
 
