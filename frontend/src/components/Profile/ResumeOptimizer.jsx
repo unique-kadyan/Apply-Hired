@@ -7,8 +7,11 @@ import DownloadIcon from "@mui/icons-material/Download";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
 import { downloadResumePDF } from "@/lib/resumePDF";
+import { useTier } from "@/lib/tier";
 
 export default function ResumeOptimizer({ profile, setProfile, showToast }) {
+  const tierData = useTier();
+  const tier = tierData?.tier || "free";
   const [loading, setLoading] = useState(false);
   const [optimized, setOptimized] = useState(profile.optimized_resume || null);
   const [resumeScore, setResumeScore] = useState(profile.resume_score || null);
@@ -44,7 +47,7 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
         key: order.key_id,
         amount: order.amount,
         currency: order.currency,
-        name: "JobBot",
+        name: "Kalibr",
         description: "ATS Resume Optimization",
         order_id: order.order_id,
         handler: async (response) => {
@@ -105,7 +108,7 @@ export default function ResumeOptimizer({ profile, setProfile, showToast }) {
     setLoading(false);
   };
 
-  const downloadPDF = () => downloadResumePDF(profile, optimized);
+  const downloadPDF = () => downloadResumePDF(profile, optimized, tier);
 
   if (optimized && !showForm) {
     return (

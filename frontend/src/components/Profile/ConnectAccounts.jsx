@@ -247,7 +247,7 @@ export default function ConnectAccounts({ profile, setProfile, showToast }) {
           <ol style={{ color: 'var(--muted)', fontSize: '0.8rem', paddingLeft: '1.1rem', lineHeight: 1.9, marginBottom: '0.75rem' }}>
             <li>Click the button below to open GitHub → Settings → Personal Access Tokens</li>
             <li>Click <strong style={{ color: '#e2e8f0' }}>Generate new token</strong> (Fine-grained or Classic)</li>
-            <li>Give it a name (e.g. <em>JobBot</em>), set expiration, select scope: <strong style={{ color: '#e2e8f0' }}>read:user</strong> (or leave default for fine-grained)</li>
+            <li>Give it a name (e.g. <em>Kalibr</em>), set expiration, select scope: <strong style={{ color: '#e2e8f0' }}>read:user</strong> (or leave default for fine-grained)</li>
             <li>Copy the generated token and paste it below</li>
           </ol>
           <a href={GITHUB_TOKEN_URL} target="_blank" rel="noopener noreferrer"
@@ -441,7 +441,7 @@ export default function ConnectAccounts({ profile, setProfile, showToast }) {
               Connect Gmail
             </button>
             <p style={{ color: 'var(--muted)', fontSize: '0.75rem', marginTop: '0.5rem' }}>
-              You'll be asked to grant <strong>read-only</strong> Gmail access. JobBot never reads personal emails — only scans for subject lines containing "interview", "offer", or "congratulations".
+              You'll be asked to grant <strong>read-only</strong> Gmail access. Kalibr never reads personal emails — only scans for subject lines containing "interview", "offer", or "congratulations".
             </p>
           </div>
         )}

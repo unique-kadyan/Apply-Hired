@@ -9,6 +9,13 @@ from cover_letter import check_profile_completeness, generate_cover_letter
 from middleware import get_user_profile, login_required
 from scrapers import Job
 from services.events import publish
+from services.tier import (
+    FREE_LIMITS,
+    consume_quota,
+    get_user_tier,
+    get_visible_job_ids,
+    unlock_job,
+)
 from tracker import (
     _get_db,
     _to_object_id,
@@ -135,7 +142,48 @@ def list_jobs():
     for job in jobs:
         job["tags"] = json.loads(job.get("tags", "[]"))
         job["score_details"] = json.loads(job.get("score_details", "{}"))
-    return jsonify({"jobs": jobs, "total": total, "page": page, "per_page": per_page})
+
+    # ── Free-tier visibility cap: 5 unlocked jobs per month, rest blurred ──
+    tier = get_user_tier(request.user)
+    visible_count_unlocked = 0
+    if tier == "free":
+        unlocked_ids = set(get_visible_job_ids(request.user["id"]))
+        visible_count_unlocked = len(unlocked_ids)
+        slots_left = max(0, FREE_LIMITS["jobs_visible"] - visible_count_unlocked)
+        for job in jobs:
+            jid = str(job.get("id", ""))
+            if jid in unlocked_ids:
+                continue  # already unlocked
+            if slots_left > 0:
+                # Auto-unlock the highest-ranked jobs they haven't seen yet,
+                # up to the free-tier monthly cap.
+                ok, _ids, _lim = unlock_job(request.user["id"], jid)
+                if ok:
+                    unlocked_ids.add(jid)
+                    slots_left -= 1
+                    visible_count_unlocked += 1
+                    continue
+            # Beyond the cap → return a stripped, blurred placeholder so the
+            # client can render a row with no link, no actionable data.
+            job["blurred"] = True
+            job["title"] = "Premium job — upgrade to Pro to unlock"
+            job["company"] = ""
+            job["location"] = ""
+            job["salary"] = ""
+            job["description"] = ""
+            job["url"] = ""
+            job["tags"] = []
+            job["score_details"] = {}
+
+    return jsonify({
+        "jobs": jobs,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "tier": tier,
+        "free_visible_unlocked": visible_count_unlocked if tier == "free" else None,
+        "free_visible_limit": FREE_LIMITS["jobs_visible"] if tier == "free" else None,
+    })
 
 @jobs_bp.route("/jobs/tab-counts", methods=["GET"])
 @login_required
@@ -215,8 +263,28 @@ def get_job(job_id):
     job = get_job_by_id(job_id, user_id=request.user["id"])
     if not job:
         return jsonify({"error": "Job not found"}), 404
+
+    # Free tier: detail access requires the job to be in this user's unlocked set,
+    # OR opening it should atomically unlock it (consuming a slot).
+    tier = get_user_tier(request.user)
+    if tier == "free":
+        ok, _ids, limit = unlock_job(request.user["id"], str(job_id))
+        if not ok:
+            return jsonify({
+                "error": "Free plan limit reached",
+                "message": f"You can view {limit} jobs per month on the free plan. Upgrade to Pro for unlimited access.",
+                "tier": "free",
+                "blurred": True,
+            }), 402
+
     job["tags"] = json.loads(job.get("tags", "[]"))
     job["score_details"] = json.loads(job.get("score_details", "{}"))
+
+    # Free tier: AI score detail is intentionally hidden — show overall match only.
+    if tier == "free":
+        job["score_details"] = {}
+        job["ai_reasons"] = []
+        job["ai_missing_skills"] = []
     return jsonify(job)
 
 @jobs_bp.route("/jobs/<job_id>/status", methods=["PUT", "POST"])
@@ -274,10 +342,23 @@ def get_cover_letter(job_id):
 @jobs_bp.route("/jobs/<job_id>/cover-letter", methods=["POST"])
 @login_required
 def gen_cover_letter(job_id):
-    """Generate (or regenerate) a cover letter using the user's real profile."""
+    """Generate (or regenerate) a cover letter using the user's real profile.
+    Free tier: 1 cover letter per month."""
     job = get_job_by_id(job_id, user_id=request.user["id"])
     if not job:
         return jsonify({"error": "Job not found"}), 404
+
+    tier = get_user_tier(request.user)
+    if tier == "free":
+        ok, used, limit = consume_quota(request.user, "cover_letters", amount=1)
+        if not ok:
+            return jsonify({
+                "error": f"Free plan limit reached: {used}/{limit} cover letter(s) used this month. Upgrade to Pro for unlimited generation.",
+                "used": used,
+                "limit": limit,
+                "tier": "free",
+            }), 402
+
     profile = get_user_profile(request.user)
     letter, tone = generate_cover_letter(_job_to_obj(job), profile)
     db = _get_db()
@@ -398,6 +479,18 @@ def apply_jobs():
         return jsonify({"error": "No jobs selected"}), 400
     if len(job_ids) > 10:
         return jsonify({"error": "Maximum 10 jobs at a time"}), 400
+
+    # Free tier: 5 applications per month total. Reserve quota up front.
+    tier = get_user_tier(request.user)
+    if tier == "free":
+        ok, used, limit = consume_quota(request.user, "jobs_applied", amount=len(job_ids))
+        if not ok:
+            return jsonify({
+                "error": f"Free plan limit reached: {used}/{limit} applications used this month. Upgrade to Pro for unlimited applications.",
+                "used": used,
+                "limit": limit,
+                "tier": "free",
+            }), 402
 
     profile = get_user_profile(request.user)
     results = []

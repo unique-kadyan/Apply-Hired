@@ -175,7 +175,7 @@ def _send_reset_email(to_email: str, reset_url: str):
     html = f"""
     <div style="font-family:'Segoe UI',system-ui,sans-serif;max-width:480px;margin:0 auto;
                 background:#0f172a;color:#e2e8f0;padding:2rem;border-radius:12px">
-        <h1 style="color:#60a5fa;margin:0 0 0.5rem">JobBot</h1>
+        <h1 style="color:#60a5fa;margin:0 0 0.5rem">Kalibr</h1>
         <p style="color:#94a3b8;margin:0 0 1.5rem">Reset your password</p>
         <p style="color:#cbd5e1;line-height:1.6;margin:0 0 1.5rem">
             Click the button below to reset your password. This link expires in 10 minutes.
@@ -194,14 +194,14 @@ def _send_reset_email(to_email: str, reset_url: str):
     if brevo_key:
         try:
             import requests as req
-            smtp_email = os.environ.get("SMTP_EMAIL", os.environ.get("BREVO_FROM", "noreply@jobbot.app"))
+            smtp_email = os.environ.get("SMTP_EMAIL", os.environ.get("BREVO_FROM", "noreply@kalibr.app"))
             resp = req.post(
                 "https://api.brevo.com/v3/smtp/email",
                 headers={"api-key": brevo_key, "Content-Type": "application/json"},
                 json={
-                    "sender": {"name": "JobBot", "email": smtp_email},
+                    "sender": {"name": "Kalibr", "email": smtp_email},
                     "to": [{"email": to_email}],
-                    "subject": "JobBot — Reset your password",
+                    "subject": "Kalibr — Reset your password",
                     "htmlContent": html,
                 },
                 timeout=10,
@@ -219,9 +219,9 @@ def _send_reset_email(to_email: str, reset_url: str):
             from email.mime.multipart import MIMEMultipart
             from email.mime.text import MIMEText
             msg = MIMEMultipart("alternative")
-            msg["From"] = f"JobBot <{smtp_email}>"
+            msg["From"] = f"Kalibr <{smtp_email}>"
             msg["To"] = to_email
-            msg["Subject"] = "JobBot — Reset your password"
+            msg["Subject"] = "Kalibr — Reset your password"
             msg.attach(MIMEText(html, "html"))
             with smtplib.SMTP(os.environ.get("SMTP_HOST", "smtp.gmail.com"),
                               int(os.environ.get("SMTP_PORT", 587)), timeout=10) as server:

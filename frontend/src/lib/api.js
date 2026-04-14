@@ -12,10 +12,22 @@ function getBase() {
 
 const BASE = getBase();
 
-function handleResponse(r) {
+async function handleResponse(r) {
   if (r.status === 401) {
     window.dispatchEvent(new CustomEvent('session:expired'));
     return Promise.reject(new Error('session_expired'));
+  }
+  // 402 = quota exhausted (free-plan limit hit). Fire a global event so the
+  // app can pop the upgrade modal in "exhausted" mode without each caller
+  // having to do its own bookkeeping. The body is still returned to the
+  // caller so existing per-component error handling keeps working.
+  if (r.status === 402) {
+    let body = {};
+    try { body = await r.clone().json(); } catch { /* ignore */ }
+    if (body && body.tier === 'free') {
+      window.dispatchEvent(new CustomEvent('quota:exhausted', { detail: body }));
+    }
+    return r.json();
   }
   return r.json();
 }

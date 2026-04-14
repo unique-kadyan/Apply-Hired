@@ -39,7 +39,7 @@ from tracker import get_jobs, init_db, log_search_run, save_job
 
 console = Console()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
-logger = logging.getLogger("jobbot")
+logger = logging.getLogger("kalibr")
 
 
 def run_search(generate_letters: bool = False):

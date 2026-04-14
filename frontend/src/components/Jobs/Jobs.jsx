@@ -2,6 +2,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '@/lib/api';
 import sse from '@/lib/sse';
+import { useTier } from '@/lib/tier';
+import { ProBadge, UpgradeBanner } from '@/components/shared/UpgradePrompt';
 import styles from '@/lib/styles';
 import { Badge, StatusBadge } from '@/components/shared/Badge';
 
@@ -190,6 +192,9 @@ async function exportCoverLetterPdf(letter, jobTitle, company) {
 }
 
 export default function Jobs({ navigate, showToast, isVisible }) {
+  const tierData = useTier();
+  const tier = tierData?.tier || 'free';
+  const isFree = tier === 'free';
   const [jobs, setJobs] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [filters, setFilters] = useState({ status: '', min_score: 0, salary: '' });
@@ -518,11 +523,23 @@ export default function Jobs({ navigate, showToast, isVisible }) {
   return (
     <div style={styles.container}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <h1 style={{ fontSize: '1.5rem' }}>Jobs</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '1.5rem' }}>
+          Jobs <ProBadge tier={tier} />
+        </h1>
         <span style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>
           {total > 0 ? `${((page-1)*perPage)+1}–${Math.min(page*perPage, total)} of ${total} jobs` : '0 jobs'}
         </span>
       </div>
+
+      {isFree && (
+        <div style={{ marginBottom: '1rem' }}>
+          <UpgradeBanner
+            title={`You're on the Free plan — ${tierData?.usage?.jobs_visible ?? 0}/${tierData?.limits?.jobs_visible ?? 5} jobs viewed this month`}
+            body="Upgrade to Pro for unlimited job views, unlimited applications, and unlimited cover letters."
+            onUpgrade={() => window.kalibrUpgrade && window.kalibrUpgrade()}
+          />
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: '0', marginBottom: '1rem', borderBottom: '2px solid var(--border)' }}>
         {[
@@ -721,13 +738,29 @@ export default function Jobs({ navigate, showToast, isVisible }) {
               })}
             </tr></thead>
             <tbody>
-              {jobs.map(j => (
+              {jobs.map(j => j.blurred ? (
+                <tr key={j.id} style={{ borderBottom: '1px solid var(--border)', background: 'rgba(124,58,237,0.04)', cursor: 'not-allowed', userSelect: 'none' }}>
+                  <td colSpan={9} style={{ padding: '0.85rem 1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', filter: 'blur(0.5px)', opacity: 0.85 }}>
+                      <span style={{ fontSize: '1.1rem' }}>🔒</span>
+                      <span style={{ flex: 1, color: '#cbd5e1', fontStyle: 'italic' }}>
+                        Premium job — upgrade to Pro to unlock this and unlimited matches
+                      </span>
+                      <span style={{ background: '#1e293b', color: '#475569', padding: '0.2rem 0.7rem', borderRadius: 8, fontSize: '0.75rem', letterSpacing: '0.04em' }}>HIDDEN</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
                 <tr key={j.id} onClick={async () => {
                   setJobPanel(j);
                   setJobPanelLoading(true);
                   try {
                     const full = await api.get(`/api/jobs/${j.id}`);
                     if (full && !full.error) setJobPanel(full);
+                    else if (full?.blurred) {
+                      showToast(full.message || 'Upgrade to Pro to view more jobs', 'warning');
+                      setJobPanel(null);
+                    }
                   } finally { setJobPanelLoading(false); }
                 }} style={{ borderBottom: '1px solid var(--border)', background: selected.has(j.id) ? 'rgba(37,99,235,0.08)' : 'transparent', transition: 'background 0.1s', cursor: 'pointer' }}>
                   {tab === 'not_applied' && (
@@ -739,6 +772,31 @@ export default function Jobs({ navigate, showToast, isVisible }) {
                   <td style={{ padding: '0.5rem 0.6rem' }}><Badge score={j.score} /></td>
                   <td style={{ padding: '0.5rem 0.6rem', maxWidth: 0, width: '40%' }}>
                     <span onClick={e => { e.stopPropagation(); setJobPanel(j); }} style={{ fontWeight: 600, cursor: 'pointer', color: '#93c5fd', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={j.title}>{j.title}</span>
+                    {(() => {
+                      // Required years: prefer backend value if set, fallback to inline regex.
+                      const reqYears = j.required_years
+                        ?? (j.description || j.title || '').match(/(\d+)\+?\s*(?:to\s*\d+\s*)?years?\s*(?:of\s*)?(?:experience|exp)/i)?.[1]
+                        ?? null;
+                      const tags = (j.tags || []).slice(0, 4);
+                      if (!reqYears && tags.length === 0) return null;
+                      return (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.3rem', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                          {reqYears && (
+                            <span title={`Requires ${reqYears}+ years of experience`} style={{ fontSize: '0.7rem', color: '#fcd34d', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', padding: '0.08rem 0.4rem', borderRadius: 8, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                              🎓 {reqYears}+ yrs
+                            </span>
+                          )}
+                          {tags.map((t, i) => (
+                            <span key={i} title={t} style={{ fontSize: '0.7rem', color: '#93c5fd', background: 'rgba(37,99,235,0.12)', border: '1px solid rgba(37,99,235,0.25)', padding: '0.08rem 0.4rem', borderRadius: 8, whiteSpace: 'nowrap' }}>
+                              {String(t).length > 18 ? String(t).slice(0, 17) + '…' : t}
+                            </span>
+                          ))}
+                          {(j.tags || []).length > 4 && (
+                            <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>+{(j.tags || []).length - 4}</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="hide-sm" style={{ padding: '0.5rem 0.6rem', fontSize: '0.83rem', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(j.company || '').substring(0, 20)}</td>
                   <td className="hide-md" style={{ padding: '0.5rem 0.6rem' }}>

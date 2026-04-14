@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 from config import LOCATION_PREFERENCES
 from middleware import get_user_profile, login_required
 from services.search_service import get_search_status, is_search_running, start_search
+from services.tier import get_user_tier
 from tracker import _get_db, _to_object_id, get_stats
 
 _CURRENCY_TO_USD = {
@@ -86,13 +87,22 @@ def get_schedule():
 @search_bp.route("/search/schedule", methods=["PUT"])
 @login_required
 def set_schedule():
-    """Save auto-search schedule settings for this user."""
+    """Save auto-search schedule settings for this user.
+    Auto-search is a Pro feature — free users cannot enable it."""
     data = request.get_json() or {}
+    enabled = bool(data.get("enabled", False))
+    tier = get_user_tier(request.user)
+    if enabled and tier not in ("admin", "pro"):
+        return jsonify({
+            "error": "Auto-search is a Pro feature.",
+            "message": "Upgrade to Pro to schedule recurring job searches every hour.",
+            "tier": tier,
+        }), 402
     db = _get_db()
     db.users.update_one(
         {"_id": _to_object_id(request.user["id"])},
         {"$set": {
-            "auto_search_enabled": bool(data.get("enabled", False)),
+            "auto_search_enabled": enabled,
             "auto_search_interval_hours": int(data.get("interval_hours", 24)),
             "auto_search_params": data.get("params", {}),
         }},

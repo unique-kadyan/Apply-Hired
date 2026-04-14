@@ -44,9 +44,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const url = document.getElementById("serverUrl").value.trim().replace(/\/$/, "");
     await chrome.storage.sync.set({ serverUrl: url });
 
-    // Open JobBot in new tab to sign in
+    // Open Kalibr in new tab to sign in
     chrome.tabs.create({ url: url });
-    messageEl.textContent = "Sign in to JobBot, then click the extension again.";
+    messageEl.textContent = "Sign in to Kalibr, then click the extension again.";
   });
 
   // Fill button

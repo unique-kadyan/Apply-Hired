@@ -1,4 +1,4 @@
-# Apply-Hired (JobBot)
+# Kalibr — Calibrate your career
 
 Full-stack job search automation platform. Searches 13+ job boards in parallel, scores every listing against your profile, generates AI cover letters, and tracks your application pipeline from discovery through offer.
 

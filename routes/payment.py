@@ -53,6 +53,17 @@ from services.payment_service import (
     is_configured,
     verify_payment,
 )
+from services.tier import (
+    FREE_LIMITS,
+    PRO_LIMITS,
+    PRO_PLANS,
+    RESUME_OPTIMIZE_PRICE_INR,
+    consume_quota,
+    get_usage,
+    get_user_tier,
+    get_visible_job_ids,
+    mark_user_pro,
+)
 from tracker import _get_db, update_user_profile
 
 logger = logging.getLogger(__name__)
@@ -185,6 +196,7 @@ def create_payment_order():
                 "amount": price["razorpay_amount"],
                 "display_amount": price["display_amount"],
                 "status": "created",
+                "purpose": "resume_optimize",
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
@@ -233,16 +245,214 @@ def verify_payment_route():
 @payment_bp.route("/has-paid", methods=["GET"])
 @login_required
 def has_paid():
-    if is_admin(request.user):
-        return jsonify({"paid": True, "admin": True})
+    """Legacy endpoint — kept for the resume optimizer flow.
+    Returns True only if the user has an UNCONSUMED resume-optimization payment
+    OR is admin/Pro."""
+    tier = get_user_tier(request.user)
+    if tier in ("admin", "pro"):
+        return jsonify({"paid": True, "tier": tier})
     db = _get_db()
+    # Free users: a "paid" record only counts if it hasn't been consumed yet.
     paid = db.payments.find_one(
         {
             "user_id": str(request.user["id"]),
             "status": "paid",
+            "consumed": {"$ne": True},
+            "purpose": {"$in": ["resume_optimize", None]},
         }
     )
-    return jsonify({"paid": bool(paid)})
+    return jsonify({"paid": bool(paid), "tier": tier})
+
+
+@payment_bp.route("/tier/status", methods=["GET"])
+@login_required
+def tier_status():
+    """Return the user's current tier + monthly quota usage.
+    Frontend uses this to render upgrade prompts and gating."""
+    tier = get_user_tier(request.user)
+    limits = PRO_LIMITS if tier in ("admin", "pro") else FREE_LIMITS
+    uid = request.user["id"]
+    usage = {
+        "jobs_visible": len(get_visible_job_ids(uid)) if tier == "free" else 0,
+        "jobs_applied": get_usage(uid, "jobs_applied"),
+        "cover_letters": get_usage(uid, "cover_letters"),
+        "resume_optimizations": get_usage(uid, "resume_optimizations"),
+    }
+    return jsonify({
+        "tier": tier,
+        "limits": limits,
+        "usage": usage,
+        "resume_optimize_price_inr": RESUME_OPTIMIZE_PRICE_INR,
+        "pro_plans": PRO_PLANS,
+    })
+
+
+@payment_bp.route("/subscribe/create-order", methods=["POST"])
+@login_required
+def subscribe_create_order():
+    """Create a Razorpay order for a Pro subscription purchase.
+    Free users hit this when they click 'Upgrade to Pro' — we hand the order
+    back to the frontend, which opens Razorpay Checkout."""
+    if not is_configured():
+        return jsonify({"error": "Payment gateway not configured"}), 500
+
+    data = request.get_json() or {}
+    plan_key = (data.get("plan") or "monthly").lower()
+    plan = PRO_PLANS.get(plan_key)
+    if not plan:
+        return jsonify({"error": f"Unknown plan '{plan_key}'"}), 400
+
+    amount_paise = plan["price_inr"] * 100
+    try:
+        order = create_order(
+            amount_paise=amount_paise,
+            receipt=f"pro_{str(request.user['id'])[-8:]}_{int(datetime.now().timestamp())}",
+        )
+    except Exception as e:
+        logger.error(f"Subscribe order creation failed: {e}")
+        return jsonify({"error": "Failed to create subscription order"}), 500
+
+    db = _get_db()
+    db.payments.insert_one({
+        "user_id": str(request.user["id"]),
+        "order_id": order["id"],
+        "amount": amount_paise,
+        "display_amount": f"₹{plan['price_inr']}",
+        "status": "created",
+        "purpose": "pro_subscription",
+        "plan": plan_key,
+        "months": plan["months"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return jsonify({
+        "order_id": order["id"],
+        "amount": amount_paise,
+        "currency": "INR",
+        "key_id": _key_id(),
+        "plan": plan_key,
+        "label": plan["label"],
+    })
+
+
+@payment_bp.route("/subscribe/verify", methods=["POST"])
+@login_required
+def subscribe_verify():
+    """Verify a Pro subscription payment + activate Pro on the user.
+    Frontend calls this from the Razorpay Checkout success handler."""
+    data = request.get_json() or {}
+    order_id = data.get("order_id", "")
+    payment_id = data.get("payment_id", "")
+    signature = data.get("signature", "")
+
+    if not order_id or not payment_id or not signature:
+        return jsonify({"error": "Missing payment details"}), 400
+    if not verify_payment(order_id, payment_id, signature):
+        return jsonify({"error": "Payment verification failed — signature mismatch"}), 400
+
+    db = _get_db()
+    pay_doc = db.payments.find_one({
+        "order_id": order_id,
+        "user_id": str(request.user["id"]),
+        "purpose": "pro_subscription",
+    })
+    if not pay_doc:
+        return jsonify({"error": "Order not found"}), 404
+
+    months = int(pay_doc.get("months") or 1)
+    mark_user_pro(request.user["id"], months=months, razorpay_subscription_id=payment_id)
+
+    db.payments.update_one(
+        {"_id": pay_doc["_id"]},
+        {"$set": {
+            "status": "paid",
+            "payment_id": payment_id,
+            "signature": signature,
+            "paid_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return jsonify({"upgraded": True, "months": months, "tier": "pro"})
+
+
+@payment_bp.route("/razorpay/webhook", methods=["POST"])
+def razorpay_webhook():
+    """Razorpay webhook for resilience — fires even if the user closes the
+    browser tab right after paying. Configure in Razorpay dashboard:
+      Settings → Webhooks → URL: https://<your-app>/api/payment/razorpay/webhook
+      Active events: payment.captured
+
+    Verifies the X-Razorpay-Signature header against RAZORPAY_WEBHOOK_SECRET.
+    """
+    import hashlib
+    import hmac
+    raw = request.get_data()
+    signature = request.headers.get("X-Razorpay-Signature", "")
+    secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "").encode()
+    if not secret:
+        logger.warning("Razorpay webhook hit but RAZORPAY_WEBHOOK_SECRET not configured")
+        return jsonify({"ok": False, "error": "webhook_secret_missing"}), 503
+
+    expected = hmac.new(secret, raw, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        logger.warning("Razorpay webhook signature mismatch")
+        return jsonify({"ok": False, "error": "signature_mismatch"}), 400
+
+    payload = request.get_json(silent=True) or {}
+    event = payload.get("event", "")
+    if event != "payment.captured":
+        return jsonify({"ok": True, "ignored": event})
+
+    pay_entity = (payload.get("payload") or {}).get("payment", {}).get("entity", {}) or {}
+    order_id = pay_entity.get("order_id", "")
+    payment_id = pay_entity.get("id", "")
+    if not order_id:
+        return jsonify({"ok": False, "error": "no_order_id"}), 400
+
+    db = _get_db()
+    pay_doc = db.payments.find_one({"order_id": order_id})
+    if not pay_doc:
+        # Not our order, or already cleaned — accept silently
+        return jsonify({"ok": True, "unknown_order": order_id})
+
+    if pay_doc.get("status") == "paid":
+        return jsonify({"ok": True, "already_processed": True})
+
+    if pay_doc.get("purpose") == "pro_subscription":
+        months = int(pay_doc.get("months") or 1)
+        mark_user_pro(pay_doc["user_id"], months=months, razorpay_subscription_id=payment_id)
+
+    db.payments.update_one(
+        {"_id": pay_doc["_id"]},
+        {"$set": {
+            "status": "paid",
+            "payment_id": payment_id,
+            "paid_at": datetime.now(timezone.utc).isoformat(),
+            "via": "webhook",
+        }},
+    )
+    return jsonify({"ok": True})
+
+
+@payment_bp.route("/tier/grant-pro", methods=["POST"])
+@login_required
+def grant_pro_admin():
+    """Admin-only: manually grant Pro to a user (by email or self).
+    For real subscription purchases use /api/payment/subscribe (TODO)."""
+    if not is_admin(request.user):
+        return jsonify({"error": "Admin only"}), 403
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    months = int(data.get("months") or 1)
+
+    target_id = request.user["id"]
+    if email:
+        db = _get_db()
+        u = db.users.find_one({"email": email}, {"_id": 1})
+        if not u:
+            return jsonify({"error": f"No user with email {email}"}), 404
+        target_id = u["_id"]
+    mark_user_pro(target_id, months=months, razorpay_subscription_id="admin_grant")
+    return jsonify({"granted": True, "user_id": str(target_id), "months": months})
 
 
 def _str(val) -> str:
@@ -571,17 +781,31 @@ def _reconstruct_and_score(
 @payment_bp.route("/optimize-resume", methods=["POST"])
 @login_required
 def optimize_resume():
-    admin = is_admin(request.user)
-    if not admin:
+    """Resume optimisation gate:
+      - admin/Pro: unlimited
+      - free: each use requires an unconsumed `purpose=resume_optimize` payment;
+        the payment is marked consumed after a successful optimisation."""
+    tier = get_user_tier(request.user)
+    payment_doc = None
+    if tier not in ("admin", "pro"):
         db = _get_db()
-        paid = db.payments.find_one(
+        payment_doc = db.payments.find_one_and_update(
             {
                 "user_id": str(request.user["id"]),
                 "status": "paid",
-            }
+                "consumed": {"$ne": True},
+                "purpose": {"$in": ["resume_optimize", None]},
+            },
+            {"$set": {"consumed": True, "consumed_at": datetime.now(timezone.utc).isoformat()}},
         )
-        if not paid:
-            return jsonify({"error": "Payment required to use this feature"}), 402
+        if not payment_doc:
+            return jsonify({
+                "error": f"Payment of ₹{RESUME_OPTIMIZE_PRICE_INR} required to optimise your resume.",
+                "tier": tier,
+                "price_inr": RESUME_OPTIMIZE_PRICE_INR,
+            }), 402
+        # Best-effort usage analytics — never blocks
+        consume_quota(request.user, "resume_optimizations", amount=1)
 
     profile = get_user_profile(request.user)
     data = request.get_json() or {}
@@ -820,16 +1044,8 @@ Rules:
 
         update_user_profile(request.user["id"], profile)
 
-        if not admin:
-            db.payments.update_one(
-                {"_id": paid["_id"]},
-                {
-                    "$set": {
-                        "status": "used",
-                        "used_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                },
-            )
+        # Payment was already marked consumed at the top of this route via
+        # find_one_and_update — no further action needed here.
 
         return jsonify(
             {
@@ -889,10 +1105,16 @@ def download_resume_pdf():
             return jsonify({"error": "server_pdf_unavailable"}), 503
 
         env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), autoescape=True)
-        template_file = random.choice(template_files)
+        # Free tier: pinned to the first template + first accent (no variety unlock)
+        tier = get_user_tier(request.user)
+        if tier in ("admin", "pro"):
+            template_file = random.choice(template_files)  # nosec B311
+            accent_color = random.choice(_ACCENT_COLORS)   # nosec B311
+        else:
+            template_file = sorted(template_files)[0]
+            accent_color = _ACCENT_COLORS[0] if _ACCENT_COLORS else "#2563eb"
         template = env.get_template(template_file)
 
-        accent_color = random.choice(_ACCENT_COLORS)
         html_content = template.render(
             profile=profile, optimized=optimized, accent_color=accent_color
         )

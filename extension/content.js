@@ -65,7 +65,7 @@ function fillAllFields() {
     }
   });
 
-  showNotification("JobBot: Form filled! Review and submit.");
+  showNotification("Kalibr: Form filled! Review and submit.");
 }
 
 function getIdentifiers(el) {
@@ -126,7 +126,7 @@ function clickSubmitButton() {
     const btn = document.querySelector(sel);
     if (btn && btn.offsetParent) {
       btn.click();
-      showNotification("JobBot: Application submitted!");
+      showNotification("Kalibr: Application submitted!");
       // Notify extension to mark as applied
       chrome.runtime.sendMessage({ action: "formSubmitted", url: window.location.href });
       return;
@@ -141,22 +141,22 @@ function clickSubmitButton() {
         .some(t => text === t || text.startsWith(t))) {
       if (btn.offsetParent) {
         btn.click();
-        showNotification("JobBot: Application submitted!");
+        showNotification("Kalibr: Application submitted!");
         chrome.runtime.sendMessage({ action: "formSubmitted", url: window.location.href });
         return;
       }
     }
   }
 
-  showNotification("JobBot: No submit button found. Please submit manually.");
+  showNotification("Kalibr: No submit button found. Please submit manually.");
 }
 
 function showNotification(text) {
-  const existing = document.getElementById("jobbot-notify");
+  const existing = document.getElementById("kalibr-notify");
   if (existing) existing.remove();
 
   const div = document.createElement("div");
-  div.id = "jobbot-notify";
+  div.id = "kalibr-notify";
   div.style.cssText = `
     position: fixed; bottom: 20px; right: 20px; z-index: 999999;
     background: #1e293b; color: #e2e8f0; padding: 12px 20px;

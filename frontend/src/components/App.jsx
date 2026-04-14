@@ -3,7 +3,10 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
 import sse from '@/lib/sse';
 import styles from '@/lib/styles';
+import { refreshTier, useTier } from '@/lib/tier';
 import Toast from '@/components/shared/Toast';
+import Logo from '@/components/shared/Logo';
+import UpgradeModal from '@/components/shared/UpgradeModal';
 import AuthPage from '@/components/Auth/AuthPage';
 import WelcomeOverlay from '@/components/WelcomeOverlay';
 import Dashboard from '@/components/Dashboard/Dashboard';
@@ -28,6 +31,65 @@ export default function App() {
   const [pageArg, setPageArg] = useState(null);
   const [profile, setProfile] = useState({});
   const [toast, setToast] = useState(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [upgradeMode, setUpgradeMode] = useState('default'); // 'default' | 'welcome' | 'exhausted'
+  const [quotaInfo, setQuotaInfo] = useState(null);
+  const tierData = useTier();
+
+  // Global upgrade trigger: any nested component can call window.kalibrUpgrade()
+  // to open the modal without prop-drilling through every layer.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    window.kalibrUpgrade = (mode = 'default', info = null) => {
+      setUpgradeMode(mode);
+      setQuotaInfo(info);
+      setUpgradeOpen(true);
+    };
+    return () => { delete window.kalibrUpgrade; };
+  }, []);
+
+  // Welcome banner — auto-opens once per browser session for logged-in free
+  // users so they always see the plan comparison + "Continue with Free" / "Upgrade"
+  // choice. Pro/admin users are skipped. Session-keyed so it doesn't re-popup
+  // on every navigation, but does re-popup on next login.
+  useEffect(() => {
+    if (!user || !tierData?.tier || upgradeOpen) return;
+    if (tierData.tier !== 'free') return;
+    try {
+      const key = `_welcomeShown_${user.id || user.email}`;
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+    } catch { /* sessionStorage unavailable */ }
+    setUpgradeMode('welcome');
+    setQuotaInfo(null);
+    setUpgradeOpen(true);
+  }, [user, tierData?.tier]);
+
+  // Quota-exhausted listener — any 402 response from the API auto-opens the
+  // exhausted modal so the user can't miss the limit.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handler = (e) => {
+      const d = e.detail || {};
+      const used = d.used != null ? d.used : (d.free_visible_unlocked || 0);
+      const limit = d.limit != null ? d.limit : (d.free_visible_limit || 5);
+      let feature = d.feature;
+      if (!feature) {
+        const msg = (d.error || '').toLowerCase();
+        if (msg.includes('cover letter')) feature = 'Cover letters';
+        else if (msg.includes('application')) feature = 'Applications';
+        else if (msg.includes('view')) feature = 'Job views';
+        else if (msg.includes('chrome')) feature = 'Chrome extension';
+        else if (msg.includes('auto-search')) feature = 'Auto-search';
+        else feature = 'Free plan limit';
+      }
+      setQuotaInfo({ feature, used, limit, message: d.message || d.error });
+      setUpgradeMode('exhausted');
+      setUpgradeOpen(true);
+    };
+    window.addEventListener('quota:exhausted', handler);
+    return () => window.removeEventListener('quota:exhausted', handler);
+  }, []);
 
   const _loadCachedDash = () => {
     try { const c = sessionStorage.getItem('_dashData'); return c ? JSON.parse(c) : null; } catch { return null; }
@@ -85,6 +147,7 @@ export default function App() {
         setUser(res.user);
         api.get('/api/profile').then(setProfile);
         fetchDashData();
+        refreshTier();
       }
       setAuthChecked(true);
     }).catch(() => setAuthChecked(true));
@@ -126,7 +189,13 @@ export default function App() {
 
   const handleLogout = async () => {
     await api.post('/api/auth/logout', {});
-    try { sessionStorage.removeItem('_dashData'); } catch {}
+    try {
+      sessionStorage.removeItem('_dashData');
+      // Clear welcome-shown flags so the comparison modal re-appears on next login
+      Object.keys(sessionStorage)
+        .filter((k) => k.startsWith('_welcomeShown_'))
+        .forEach((k) => sessionStorage.removeItem(k));
+    } catch { /* sessionStorage unavailable */ }
     setUser(null);
     setProfile({});
     setDashData(null);
@@ -176,7 +245,9 @@ export default function App() {
     return (
       <div>
         <div style={styles.navbar}>
-          <div style={{ ...styles.logo, cursor: 'pointer' }} onClick={() => navigate('dashboard')}>JobBot</div>
+          <div style={{ cursor: 'pointer' }} onClick={() => navigate('dashboard')}>
+            <Logo size={28} />
+          </div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{user.name}</span>
             <button onClick={handleLogout} style={{ ...styles.navLink, color: '#f87171', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
@@ -193,7 +264,9 @@ export default function App() {
   return (
     <div>
       <div style={styles.navbar}>
-        <div style={{ ...styles.logo, cursor: 'pointer' }} onClick={() => navigate('dashboard')}>JobBot</div>
+        <div style={{ cursor: 'pointer' }} onClick={() => navigate('dashboard')}>
+          <Logo size={28} />
+        </div>
         <nav style={{ display: 'flex', gap: '0.25rem', flex: 1 }}>
           {[
             ['dashboard', 'Dashboard', <DashboardIcon style={{ fontSize: 16 }} />],
@@ -209,6 +282,11 @@ export default function App() {
           ))}
         </nav>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginLeft: 'auto' }}>
+          <button onClick={() => setUpgradeOpen(true)} title="Upgrade to Pro" style={{
+            background: 'linear-gradient(135deg,#7c3aed,#2563eb)', color: '#fff', border: 'none',
+            borderRadius: 8, padding: '0.4rem 0.85rem', fontWeight: 700, fontSize: '0.78rem',
+            cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
+          }}>⚡ <span className="hide-sm">Upgrade</span></button>
           <div onClick={() => navigate('profile')} title="My Profile" style={{ cursor: 'pointer', width: 32, height: 32, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', border: '2px solid var(--bg3)', transition: 'border-color 0.15s' }}
             onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent2)'}
             onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--bg3)'}>
@@ -256,6 +334,13 @@ export default function App() {
         </div>
       )}
 
+      <UpgradeModal
+        open={upgradeOpen}
+        onClose={() => { setUpgradeOpen(false); setUpgradeMode('default'); setQuotaInfo(null); }}
+        showToast={showToast}
+        mode={upgradeMode}
+        quotaInfo={quotaInfo}
+      />
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );

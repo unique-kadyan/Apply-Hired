@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "JobBot Auto-Apply",
+  "name": "Kalibr Auto-Apply",
   "version": "1.0.0",
-  "description": "Auto-fill job application forms with your JobBot profile. One-click apply.",
+  "description": "Auto-fill job application forms with your Kalibr profile. One-click apply.",
   "permissions": ["activeTab", "storage", "scripting"],
   "host_permissions": ["<all_urls>"],
   "action": {

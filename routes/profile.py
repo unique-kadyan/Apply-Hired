@@ -23,6 +23,7 @@ from services.profile_import import (
     import_linkedin_url,
     merge_github_into_profile,
 )
+from services.tier import get_user_tier
 from tracker import update_user_profile
 
 logger = logging.getLogger(__name__)
@@ -193,7 +194,14 @@ def connect_portfolio():
 @login_required
 def get_autofill_data():
     """Return profile data formatted for auto-filling job application forms.
-    Used by the Chrome Extension."""
+    Used by the Chrome Extension. Pro/admin only — free users see an upgrade prompt."""
+    tier = get_user_tier(request.user)
+    if tier not in ("admin", "pro"):
+        return jsonify({
+            "error": "Chrome extension auto-fill is a Pro feature.",
+            "message": "Upgrade to Pro to enable one-click auto-fill on every job application form.",
+            "tier": tier,
+        }), 402
     profile = get_user_profile(request.user)
     name = profile.get("name", "")
     parts = name.split() if name else []

@@ -35,7 +35,8 @@ const SKILL_LABELS = {
 // ─── Public entry point ───────────────────────────────────────────────────────
 // Option A: server-side WeasyPrint PDF (real HTML/CSS templates)
 // Option B: jsPDF text-layer fallback (text-extractable, ATS-compatible)
-export async function downloadResumePDF(profile, optimized) {
+// `tier` ∈ "admin" | "pro" | "free" — free users get template index 0 only.
+export async function downloadResumePDF(profile, optimized, tier = 'free') {
   const safeName = (profile.name || 'Resume').replace(/\s+/g, '_');
 
   // Option A — ask the server to generate the PDF
@@ -71,14 +72,15 @@ export async function downloadResumePDF(profile, optimized) {
   }
 
   // Option B — jsPDF text-layer (local, always works)
-  await _downloadResumePDFLocal(profile, optimized, safeName);
+  await _downloadResumePDFLocal(profile, optimized, safeName, tier);
 }
 
-async function _downloadResumePDFLocal(profile, optimized, safeName) {
+async function _downloadResumePDFLocal(profile, optimized, safeName, tier = 'free') {
   const { default: jsPDF } = await import('jspdf');
-  const accent  = pick(PALETTES);
-  const bullet  = pick(BULLET_CHARS);
-  const tmplIdx = Math.floor(Math.random() * 10);   // 0-9
+  const isPaid  = tier === 'pro' || tier === 'admin';
+  const accent  = isPaid ? pick(PALETTES) : PALETTES[0];           // free: blue only
+  const bullet  = isPaid ? pick(BULLET_CHARS) : BULLET_CHARS[0];   // free: bullet only
+  const tmplIdx = isPaid ? Math.floor(Math.random() * 10) : 0;     // free: classic-elegant only
   const doc     = new jsPDF({ unit: 'mm', format: 'a4' });
 
   const RENDERERS = [

@@ -9,7 +9,7 @@ from email.mime.text import MIMEText
 logger = logging.getLogger(__name__)
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-RESEND_FROM = os.environ.get("RESEND_FROM", "JobBot <onboarding@resend.dev>")
+RESEND_FROM = os.environ.get("RESEND_FROM", "Kalibr <onboarding@resend.dev>")
 
 SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
@@ -23,7 +23,7 @@ def _build_html(otp: str) -> str:
     return f"""
     <div style="font-family:'Segoe UI',system-ui,sans-serif;max-width:480px;margin:0 auto;
                 background:#0f172a;color:#e2e8f0;padding:2rem;border-radius:12px">
-        <h1 style="color:#60a5fa;margin:0 0 0.5rem">JobBot</h1>
+        <h1 style="color:#60a5fa;margin:0 0 0.5rem">Kalibr</h1>
         <p style="color:#94a3b8;margin:0 0 1.5rem">Verify your email to create your account</p>
         <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;
                     padding:1.5rem;text-align:center;margin-bottom:1.5rem">
@@ -44,7 +44,7 @@ def _send_via_resend(to_email: str, otp: str) -> bool:
         resend.Emails.send({
             "from": RESEND_FROM,
             "to": [to_email],
-            "subject": f"JobBot — Your verification code is {otp}",
+            "subject": f"Kalibr — Your verification code is {otp}",
             "html": _build_html(otp),
         })
         print(f"[Resend] OTP sent to {to_email}")
@@ -56,9 +56,9 @@ def _send_via_resend(to_email: str, otp: str) -> bool:
 def _send_via_smtp(to_email: str, otp: str) -> bool:
     """Send email via SMTP (works locally)."""
     msg = MIMEMultipart("alternative")
-    msg["From"] = f"JobBot <{SMTP_EMAIL}>"
+    msg["From"] = f"Kalibr <{SMTP_EMAIL}>"
     msg["To"] = to_email
-    msg["Subject"] = f"JobBot — Your verification code is {otp}"
+    msg["Subject"] = f"Kalibr — Your verification code is {otp}"
     msg.attach(MIMEText(_build_html(otp), "html"))
 
     try:
@@ -84,9 +84,9 @@ def _send_via_brevo(to_email: str, otp: str) -> bool:
             "https://api.brevo.com/v3/smtp/email",
             headers={"api-key": brevo_key, "Content-Type": "application/json"},
             json={
-                "sender": {"name": "JobBot", "email": os.environ.get("BREVO_FROM", SMTP_EMAIL or "noreply@jobbot.app")},
+                "sender": {"name": "Kalibr", "email": os.environ.get("BREVO_FROM", SMTP_EMAIL or "noreply@kalibr.app")},
                 "to": [{"email": to_email}],
-                "subject": f"JobBot — Your verification code is {otp}",
+                "subject": f"Kalibr — Your verification code is {otp}",
                 "htmlContent": _build_html(otp),
             },
             timeout=10,

@@ -46,7 +46,7 @@ def _get_db():
 
     safe_uri = _fix_mongo_uri(MONGO_URI)
     _client = MongoClient(safe_uri, tlsCAFile=certifi.where())
-    _db = _client.get_default_database(default="jobbot")
+    _db = _client.get_default_database(default="kalibr")
     logger.info(f"Connected to MongoDB: {_db.name}")
     return _db
 

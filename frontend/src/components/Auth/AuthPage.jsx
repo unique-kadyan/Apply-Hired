@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import styles from '@/lib/styles';
+import Logo from '@/components/shared/Logo';
 
 export default function AuthPage({ onAuth, showToast }) {
   const [mode, setMode] = useState('login');
@@ -82,8 +83,8 @@ export default function AuthPage({ onAuth, showToast }) {
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
       <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: '2.5rem', width: '100%', maxWidth: 420, animation: 'fadeIn 0.4s ease' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div style={{ fontSize: '2.5rem', fontWeight: 800, background: 'linear-gradient(135deg, #3b82f6, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '0.5rem' }}>
-            JobBot
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.5rem' }}>
+            <Logo size={48} />
           </div>
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
             {mode === 'reset' ? 'Set your new password' : mode === 'forgot' ? 'Enter your email to receive a reset link' : otpSent ? `Enter the code sent to ${email}` : mode === 'login' ? 'Welcome back! Sign in to continue.' : 'Create your account to get started.'}

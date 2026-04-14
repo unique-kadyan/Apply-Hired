@@ -120,7 +120,7 @@ class RemoteOKScraper(BaseScraper):
     def fetch_jobs(self, query: str) -> list[Job]:
         resp = self._safe_get(
             self.base_url,
-            headers={"User-Agent": "JobBot/1.0 (rajeshsinghkadyan@gmail.com)"},
+            headers={"User-Agent": "Kalibr/1.0 (rajeshsinghkadyan@gmail.com)"},
         )
         if not resp:
             return []
@@ -423,7 +423,7 @@ class WeWorkRemotelyScraper(BaseScraper):
         resp = self._safe_get(
             self.base_url,
             params={"term": query},
-            headers={"User-Agent": "JobBot/1.0"},
+            headers={"User-Agent": "Kalibr/1.0"},
         )
         if not resp:
             return []
@@ -550,7 +550,7 @@ class FindWorkScraper(BaseScraper):
         resp = self._safe_get(
             self.base_url,
             params={"search": query, "remote": "true", "order_by": "-date_posted"},
-            headers={"User-Agent": "JobBot/1.0"},
+            headers={"User-Agent": "Kalibr/1.0"},
         )
         if not resp:
             return []
@@ -1830,8 +1830,8 @@ class CareerJetScraper(BaseScraper):
             "page": 1,
             # Required fields per CareerJet TOS
             "user_ip": "1.1.1.1",  # client IP (1.1.1.1 = anonymous placeholder)
-            "url": "https://jobbot.app",
-            "user_agent": "JobBot/1.0",
+            "url": "https://kalibr.app",
+            "user_agent": "Kalibr/1.0",
         }
 
         resp = self._safe_get(self.base_url, params=params, timeout=20)

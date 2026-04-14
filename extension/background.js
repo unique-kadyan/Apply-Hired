@@ -1,4 +1,4 @@
-// Background service worker — handles API calls to JobBot server
+// Background service worker — handles API calls to Kalibr server
 
 const DEFAULT_SERVER = "https://apply-hired.onrender.com";
 
@@ -12,7 +12,7 @@ async function getSessionCookie() {
   return data.sessionCookie || "";
 }
 
-// Fetch autofill data from JobBot API
+// Fetch autofill data from Kalibr API
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "getAutofillData") {
     (async () => {
@@ -24,7 +24,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           headers: cookie ? { Cookie: cookie } : {},
         });
         if (!resp.ok) {
-          sendResponse({ error: "Not logged in. Open JobBot and sign in first." });
+          sendResponse({ error: "Not logged in. Open Kalibr and sign in first." });
           return;
         }
         const data = await resp.json();

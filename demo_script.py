@@ -1,5 +1,5 @@
 """
-Demo Automation Script for JobBot — Screen Recording Ready
+Demo Automation Script for Kalibr — Screen Recording Ready
 ===========================================================
 Run this script while screen-recording to create a polished product demo video.
 
@@ -162,7 +162,7 @@ def scene_intro(driver):
     time.sleep(2)
 
     show_banner(driver,
-                "JobBot — AI-Powered Job Application Automation",
+                "Kalibr — AI-Powered Job Application Automation",
                 "Find, match, and apply to jobs in minutes", 4)
     time.sleep(4.5)
 
@@ -570,7 +570,7 @@ def scene_outro(driver):
                     background:linear-gradient(135deg,#3b82f6,#a855f7);
                     -webkit-background-clip:text;-webkit-text-fill-color:transparent;
                     margin-bottom:24px">
-                    JobBot
+                    Kalibr
                 </div>
                 <div style="font-size:20px;color:#94a3b8;margin-bottom:40px">
                     AI-Powered Job Application Automation
@@ -624,7 +624,7 @@ def scene_outro(driver):
 
 def main():
     print("\n" + "=" * 60)
-    print("  JobBot — Demo Automation Script")
+    print("  Kalibr — Demo Automation Script")
     print("  Start screen recording, then press Enter...")
     print("=" * 60)
     input()
